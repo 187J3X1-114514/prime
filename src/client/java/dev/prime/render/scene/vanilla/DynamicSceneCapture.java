@@ -347,8 +347,20 @@ public final class DynamicSceneCapture {
 
     public static boolean tryBeginMotionObject(
             VanillaSceneBoundary.Element element, long key) {
+        return tryBeginMotionObject(element, key, true);
+    }
+
+    public static boolean tryBeginMotionObject(
+            VanillaSceneBoundary.Element element,
+            long key,
+            boolean identityValid) {
         Session session = ACTIVE.get();
         if (session == null || session.element != element) {
+            return false;
+        }
+        if (!identityValid) {
+            session.builder.report(
+                    DynamicSceneFrame.CompatibilityIssue.MISSING_MOTION_IDENTITY);
             return false;
         }
         session.beginMotionObject(element, key);

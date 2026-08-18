@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Unique;
 @Mixin(EntityRenderState.class)
 public abstract class EntityRenderStateMixin implements PrimeEntityRenderState {
     @Unique private int prime$entityId;
+    @Unique private boolean prime$hasEntityId;
 
     @Override
     public int prime$entityId() {
@@ -15,7 +16,13 @@ public abstract class EntityRenderStateMixin implements PrimeEntityRenderState {
     }
 
     @Override
+    public boolean prime$hasEntityId() {
+        return this.prime$hasEntityId;
+    }
+
+    @Override
     public void prime$entityId(int entityId) {
         this.prime$entityId = entityId;
+        this.prime$hasEntityId = true;
     }
 }

@@ -25,13 +25,138 @@ import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Realtime-only pipeline, queue ABI and reconstruction outputs. */
-public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
+/** Full realtime wavefront renderer. */
+public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipelineSupport {
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
+
     static int dispatchCount(int scatterCount) {
         return 4 * Math.max(scatterCount - 1, 0) + 6;
     }
+
+    public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
+        super(
+                context,
+                backend,
+                RealtimeWavefrontGroups.standardSchedule(
+                        context.capabilities().wavefrontShaderSuffix()),
+                RealtimeWavefrontGroups.sharcSchedule(
+                        context.capabilities().wavefrontShaderSuffix()),
+                dispatchCount(dev.prime.render.ScatterSettings.DEFAULT_COUNT),
+                "Prime realtime ray tracing pipeline",
+                "Prime realtime shader binding table");
+    }
+
+    @Override
+    protected int recordTransport(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            TraceProgram activeProgram,
+            IntegratorFrameInput input,
+            long commandOffset) {
+        this.traceDirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                input.width(),
+                input.height(),
+                RealtimeWavefrontGroups.HEAD);
+        this.allImagesBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_AREA,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.primaryDirectBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_SUN,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.primaryDirectBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+        this.allImagesBarrier(commandBuffer, stack);
+        int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
+        for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
+            this.recordRound(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    commandOffset,
+                    traceQueue);
+            traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
+                    ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
+                    : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
+        }
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.TRANSPARENT_RESOLVE,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
+        this.traceDirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                input.width(),
+                input.height(),
+                RealtimeWavefrontGroups.RESOLVE);
+        return dispatchCount(input.scatterCount());
+    }
+
+    private void recordRound(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            TraceProgram activeProgram,
+            long commandOffset,
+            int traceQueue) {
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.step(traceQueue),
+                commandOffset,
+                traceQueue);
+        this.queueBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.light(),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.directRadianceBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.shade(traceQueue),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.transparentShade(traceQueue),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
+        this.allImagesBarrier(commandBuffer, stack);
+    }
+}
+
+/** Shared Vulkan resources for independently scheduled realtime renderers. */
+abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPipeline {
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
@@ -46,6 +171,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     private final VulkanContext context;
     private final TraceBackend backend;
+    private final RaygenSchedule sharcSchedule;
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
@@ -58,9 +184,18 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     private int lastRecordedPassCount;
     private boolean destroyed;
 
-    public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
+    RealtimeRayTracingPipelineSupport(
+            VulkanContext context,
+            TraceBackend backend,
+            RaygenSchedule schedule,
+            RaygenSchedule sharcSchedule,
+            int defaultPassCount,
+            String pipelineLabel,
+            String shaderBindingTableLabel) {
         this.context = context;
         this.backend = java.util.Objects.requireNonNull(backend, "backend");
+        this.sharcSchedule = java.util.Objects.requireNonNull(
+                sharcSchedule, "sharcSchedule");
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
@@ -75,20 +210,18 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         setLayout,
                         "realtime");
             }
-            String suffix = context.capabilities().wavefrontShaderSuffix();
             traceProgram = TraceProgram.create(
                     context,
                     layout,
-                    RealtimeWavefrontGroups.standardSchedule(suffix),
-                    "Prime realtime ray tracing pipeline",
-                    "Prime realtime shader binding table");
+                    schedule,
+                    pipelineLabel,
+                    shaderBindingTableLabel);
             diagnostics = new RealtimeSharcDiagnostics(context);
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
             this.sharcDiagnostics = diagnostics;
-            this.lastRecordedPassCount = dispatchCount(
-                    dev.prime.render.ScatterSettings.DEFAULT_COUNT);
+            this.lastRecordedPassCount = defaultPassCount;
         } catch (RuntimeException exception) {
             if (diagnostics != null) {
                 diagnostics.destroy();
@@ -152,7 +285,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     this.context,
                     this.pipelineLayout,
                     this.backend.bindings().descriptorSetLayout(),
-                    this.descriptorSetLayout);
+                    this.descriptorSetLayout,
+                    this.sharcSchedule);
         } else if (!sharcEffective && this.sharc != null) {
             RealtimeSharc previous = this.sharc;
             this.sharc = null;
@@ -340,70 +474,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.bind(commandBuffer, stack, pushConstants, activeProgram);
             long commandOffset = queueCommandOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
-            this.trace(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    width,
-                    height,
-                    RealtimeWavefrontGroups.HEAD);
-            this.wavefrontResourceBarrier(
-                    commandBuffer, stack, this.bindings.allImages);
-            int dispatchCount = dispatchCount(input.scatterCount());
+            int dispatchCount = this.recordTransport(
+                    commandBuffer, stack, activeProgram, input, commandOffset);
             this.lastRecordedPassCount = dispatchCount;
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    RealtimeWavefrontGroups.PRIMARY_AREA,
-                    commandOffset,
-                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
-            this.wavefrontResourceBarrier(
-                    commandBuffer, stack, this.bindings.primaryDirectImages);
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    RealtimeWavefrontGroups.PRIMARY_SUN,
-                    commandOffset,
-                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
-            this.wavefrontResourceBarrier(
-                    commandBuffer, stack, this.bindings.primaryDirectImages);
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    RealtimeWavefrontGroups.PRIMARY,
-                    commandOffset,
-                    ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-            this.wavefrontResourceBarrier(
-                    commandBuffer, stack, this.bindings.allImages);
-            int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-            for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
-                this.recordRound(
-                        commandBuffer,
-                        stack,
-                        activeProgram,
-                        commandOffset,
-                        traceQueue);
-                traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
-                        ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
-                        : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-            }
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    RealtimeWavefrontGroups.TRANSPARENT_RESOLVE,
-                    commandOffset,
-                    ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
-            this.trace(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    width,
-                    height,
-                    RealtimeWavefrontGroups.RESOLVE);
             if (this.sharc != null) {
                 this.sharc.recordIntegratedUpdateAndResolve(
                         commandBuffer,
@@ -420,46 +493,12 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         }
     }
 
-    private void recordRound(
+    protected abstract int recordTransport(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             TraceProgram activeProgram,
-            long commandOffset,
-            int traceQueue) {
-        this.traceIndirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.step(traceQueue),
-                commandOffset,
-                traceQueue);
-        this.wavefrontBarrier(commandBuffer, stack);
-        this.traceIndirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.light(),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.wavefrontResourceBarrier(
-                commandBuffer, stack, this.bindings.directRadianceImages);
-        this.traceIndirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.shade(traceQueue),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-        this.traceIndirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.transparentShade(traceQueue),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
-        this.wavefrontResourceBarrier(
-                commandBuffer, stack, this.bindings.allImages);
-    }
+            IntegratorFrameInput input,
+            long commandOffset);
 
     private void bind(
             VkCommandBuffer commandBuffer,
@@ -488,7 +527,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 pushConstants);
     }
 
-    private void trace(
+    protected final void traceDirect(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             TraceProgram activeProgram,
@@ -499,7 +538,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 commandBuffer, stack, activeProgram, width, height, group);
     }
 
-    private void traceIndirect(
+    protected final void traceQueued(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             TraceProgram activeProgram,
@@ -530,8 +569,26 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
     }
 
-    private void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
+    protected final void queueBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
         WavefrontCommands.wavefrontBarrier(commandBuffer, stack, this.wavefront);
+    }
+
+    protected final void primaryDirectBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
+        this.wavefrontResourceBarrier(
+                commandBuffer, stack, this.bindings.primaryDirectImages);
+    }
+
+    protected final void directRadianceBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
+        this.wavefrontResourceBarrier(
+                commandBuffer, stack, this.bindings.directRadianceImages);
+    }
+
+    protected final void allImagesBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
+        this.wavefrontResourceBarrier(commandBuffer, stack, this.bindings.allImages);
     }
 
     private void wavefrontResourceBarrier(

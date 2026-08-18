@@ -182,6 +182,53 @@ final class DynamicMeshBuilderTest {
     }
 
     @Test
+    void duplicateIdentityUsesZeroMotionWithoutDisablingValidObjects() {
+        DynamicMeshBuilder previousBuilder =
+                new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        entity(previousBuilder, 7L, 0.0F, 0.0F);
+        entity(previousBuilder, 8L, 20.0F, 0.0F);
+        DynamicSceneFrame previous =
+                previousBuilder.build(0, 0, 0, List.of());
+
+        DynamicMeshBuilder currentBuilder =
+                new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        entity(currentBuilder, 7L, 2.0F, 0.0F);
+        entity(currentBuilder, 7L, 12.0F, 0.0F);
+        entity(currentBuilder, 8L, 25.0F, 0.0F);
+        DynamicSceneFrame current =
+                currentBuilder.build(0, 0, 0, List.of());
+
+        assertEquals(1, current.motionSegments().size());
+        assertEquals(8L, current.motionSegments().getFirst().key());
+        assertTrue(current.compatibilityIssues().contains(
+                DynamicSceneFrame.CompatibilityIssue.DUPLICATE_MOTION_IDENTITY));
+
+        DynamicSceneMotion motion = DynamicSceneMotion.prepare(current, previous);
+        float[] expected = current.mesh().segments().getFirst().positions().clone();
+        System.arraycopy(
+                previous.mesh().segments().getFirst().positions(),
+                9,
+                expected,
+                18,
+                9);
+        assertArrayEquals(expected, motion.previousPositions());
+    }
+
+    @Test
+    void emptyMotionObjectDoesNotCreateAnIdentityCollision() {
+        DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        builder.beginMotionObject(VanillaSceneBoundary.Element.ENTITY, 7L);
+        builder.endMotionObject(VanillaSceneBoundary.Element.ENTITY, 7L);
+        entity(builder, 7L, 0.0F, 0.0F);
+
+        DynamicSceneFrame frame = builder.build(0, 0, 0, List.of());
+
+        assertEquals(1, frame.motionSegments().size());
+        assertFalse(frame.compatibilityIssues().contains(
+                DynamicSceneFrame.CompatibilityIssue.DUPLICATE_MOTION_IDENTITY));
+    }
+
+    @Test
     void removedEntityDoesNotRequireAFullFrameMotionPayload() {
         DynamicSceneFrame previous = oneEntity(7L, 0.0F, 0.0F);
         DynamicSceneFrame current = new DynamicMeshBuilder(0.0, 0.0, 0.0)

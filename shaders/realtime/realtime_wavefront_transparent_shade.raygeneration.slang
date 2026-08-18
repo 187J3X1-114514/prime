@@ -9,5 +9,6 @@ void main()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
     }
-    primeWavefrontTransparentShade(context, launchIndex, sourceQueue);
+    primeWavefrontTransparentShade(
+            PrimeStagedSecondaryAreaNee(), context, launchIndex, sourceQueue);
 }

@@ -21,7 +21,7 @@ public record DynamicSceneMotion(
         }
     }
 
-    /** Pairs stable object identities; unmatched particle triangles retain zero object motion. */
+    /** Pairs stable object identities; unmatched or ambiguous geometry keeps zero object motion. */
     public static DynamicSceneMotion prepare(
             DynamicSceneFrame current, DynamicSceneFrame previous) {
         Objects.requireNonNull(current, "current");
@@ -29,7 +29,6 @@ public record DynamicSceneMotion(
         float[] motionPositions = currentPositions.clone();
         List<DynamicSceneFrame.MotionSegment> currentSegments =
                 current.motionSegments();
-        segmentMap(currentSegments);
         if (previous == null) {
             return new DynamicSceneMotion(current, motionPositions);
         }
@@ -66,10 +65,7 @@ public record DynamicSceneMotion(
                 new HashMap<>(segments.size());
         for (DynamicSceneFrame.MotionSegment segment : segments) {
             MotionKey key = new MotionKey(segment.element(), segment.key());
-            if (result.put(key, segment) != null) {
-                throw new IllegalArgumentException(
-                        "Dynamic frame contains a duplicate motion identity");
-            }
+            result.put(key, segment);
         }
         return result;
     }

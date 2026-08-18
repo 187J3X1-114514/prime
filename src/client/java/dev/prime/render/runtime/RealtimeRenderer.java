@@ -19,6 +19,7 @@ import dev.prime.render.vulkan.DisplayExposureDiagnostics;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
+import dev.prime.render.vulkan.RealtimeLightweightRayTracingPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
 import dev.prime.render.vulkan.SharcDiagnosticsSnapshot;
 import dev.prime.render.vulkan.SunShadowPipeline;
@@ -49,6 +50,7 @@ final class RealtimeRenderer implements Destroyable {
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private MaterialSettings.Snapshot materialSettings;
     private boolean sharcRequested;
+    private RealtimeIntegratorMode integratorMode = RealtimeIntegratorMode.DEFAULT;
     private boolean pipelineInvalid;
     private boolean destroyed;
 
@@ -56,7 +58,18 @@ final class RealtimeRenderer implements Destroyable {
             VulkanContext context,
             TraceBackend backend,
             DlssRrNative.Context ngxContext) {
-        this(context, backend, ngxContext, RealtimeRayTracingPipeline::new);
+        this(
+                context,
+                backend,
+                ngxContext,
+                (pipelineContext, pipelineBackend, mode) ->
+                        switch (mode) {
+                            case FULL_WAVEFRONT -> new RealtimeRayTracingPipeline(
+                                    pipelineContext, pipelineBackend);
+                            case LIGHTWEIGHT_WAVEFRONT ->
+                                    new RealtimeLightweightRayTracingPipeline(
+                                            pipelineContext, pipelineBackend);
+                        });
     }
 
     RealtimeRenderer(
@@ -69,7 +82,7 @@ final class RealtimeRenderer implements Destroyable {
         this.ngxContext = ngxContext;
         this.integratorFactory = Objects.requireNonNull(integratorFactory, "integratorFactory");
         this.reconstructionRegistry = new ReconstructionBackendRegistry(context, ngxContext);
-        this.pipeline = this.createPipeline();
+        this.pipeline = this.createPipeline(this.integratorMode);
         this.executor = new RealtimeFrameExecutor(context);
         this.exposureDiagnostics = new DisplayExposureDiagnostics(context);
     }
@@ -128,6 +141,7 @@ final class RealtimeRenderer implements Destroyable {
                 current.output().width(),
                 current.output().height(),
                 this.sampleIndex(),
+                this.integratorMode,
                 this.pipeline.passCount(),
                 this.pipeline.sizedResourceBytes(),
                 this.sharcRequested,
@@ -151,10 +165,13 @@ final class RealtimeRenderer implements Destroyable {
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures,
-            boolean sharcRequested) {
+            boolean sharcRequested,
+            RealtimeIntegratorMode requestedIntegratorMode) {
+        Objects.requireNonNull(requestedIntegratorMode, "requestedIntegratorMode");
         VulkanReconstructionResources current = this.resources;
         boolean resourcesMatch = current != null && current.matches(selection);
-        boolean replacePipeline = this.pipelineInvalid;
+        boolean integratorChanged = requestedIntegratorMode != this.integratorMode;
+        boolean replacePipeline = this.pipelineInvalid || integratorChanged;
         if (resourcesMatch && !replacePipeline) {
             this.pipeline.ensureDescriptors(
                     tlas,
@@ -180,7 +197,7 @@ final class RealtimeRenderer implements Destroyable {
                         replacementResources.selection().extent().height());
             }
             if (replacePipeline) {
-                replacementPipeline = this.createPipeline();
+                replacementPipeline = this.createPipeline(requestedIntegratorMode);
             }
             VulkanReconstructionResources targetResources = resourcesMatch
                     ? current
@@ -219,6 +236,7 @@ final class RealtimeRenderer implements Destroyable {
         if (replacePipeline) {
             RealtimeIntegratorPipeline previous = this.pipeline;
             this.pipeline = replacementPipeline;
+            this.integratorMode = requestedIntegratorMode;
             this.pipelineInvalid = false;
             this.sampleState = this.sampleState.invalidated();
             this.resources.requestReset();
@@ -262,7 +280,8 @@ final class RealtimeRenderer implements Destroyable {
                 input.atlasView(),
                 input.atlasSampler(),
                 input.sceneTextures(),
-                settings.sharcEnabled());
+                settings.sharcEnabled(),
+                settings.integratorMode());
         boolean materialChanged = !settings.material().equals(this.materialSettings);
         this.materialSettings = settings.material();
         boolean reconfigured = resized || materialChanged || sharcChanged;
@@ -442,6 +461,7 @@ final class RealtimeRenderer implements Destroyable {
             int displayWidth,
             int displayHeight,
             int accumulatedSamples,
+            RealtimeIntegratorMode integratorMode,
             int integratorPassCount,
             long integratorResourceBytes,
             boolean sharcRequested,
@@ -464,7 +484,7 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeIntegratorPipeline replacementPipeline = null;
         VulkanReconstructionResources replacementResources = null;
         try {
-            replacementPipeline = this.createPipeline();
+            replacementPipeline = this.createPipeline(this.integratorMode);
             VulkanReconstructionResources current = this.resources;
             if (current != null) {
                 replacementResources = this.reconstructionRegistry.createResources(
@@ -496,21 +516,24 @@ final class RealtimeRenderer implements Destroyable {
             return;
         }
         RealtimeIntegratorPipeline replacement =
-                this.createPipeline();
+                this.createPipeline(this.integratorMode);
         RealtimeIntegratorPipeline previous = this.pipeline;
         this.pipeline = replacement;
         this.pipelineInvalid = false;
         this.context.defer(previous);
     }
 
-    private RealtimeIntegratorPipeline createPipeline() {
-        return this.integratorFactory.create(this.context, this.backend);
+    private RealtimeIntegratorPipeline createPipeline(RealtimeIntegratorMode mode) {
+        return this.integratorFactory.create(this.context, this.backend, mode);
     }
 
-    /** Internal extension point; product settings intentionally expose no backend selection. */
+    /** Internal extension point for constructing a selected realtime specialization. */
     @FunctionalInterface
     interface IntegratorFactory {
-        RealtimeIntegratorPipeline create(VulkanContext context, TraceBackend backend);
+        RealtimeIntegratorPipeline create(
+                VulkanContext context,
+                TraceBackend backend,
+                RealtimeIntegratorMode mode);
     }
 
     @Override

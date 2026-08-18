@@ -35,6 +35,7 @@ final class TracePipelinesContractTest {
     private static final int OP_GROUP_NON_UNIFORM_BROADCAST_FIRST = 338;
     private static final int OP_GROUP_NON_UNIFORM_BALLOT = 339;
     private static final int OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT = 342;
+    private static final int OP_TRACE_RAY_KHR = 4445;
     private static final int DECORATION_ARRAY_STRIDE = 6;
     private static final int DECORATION_BINDING = 33;
     private static final int DECORATION_DESCRIPTOR_SET = 34;
@@ -65,6 +66,12 @@ final class TracePipelinesContractTest {
         assertEquals(6, RealtimeRayTracingPipeline.dispatchCount(1));
         assertEquals(258, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
+
+        assertEquals(12, RealtimeLightweightRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(9, RealtimeLightweightRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(49, RealtimeLightweightRayTracingPipeline.dispatchCount(12));
+        assertEquals(5, RealtimeLightweightRayTracingPipeline.dispatchCount(1));
+        assertEquals(257, RealtimeLightweightRayTracingPipeline.dispatchCount(64));
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(4, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
@@ -120,6 +127,65 @@ final class TracePipelinesContractTest {
             assertEquals(realtime.module(group), sharc.module(group));
             assertEquals(realtime.control(group), sharc.control(group));
         }
+    }
+
+    @Test
+    void lightweightScheduleSpecializesTransportButReusesCommonStages() {
+        RaygenSchedule full = RealtimeWavefrontGroups.standardSchedule(".rgen.spv");
+        RaygenSchedule lightweight =
+                RealtimeLightweightWavefrontGroups.standardSchedule(".rgen.spv");
+        assertEquals(9, lightweight.moduleCount());
+        assertEquals(12, lightweight.groupCount());
+        assertEquals(full.moduleResource(0), lightweight.moduleResource(0));
+        assertEquals(full.moduleResource(4), lightweight.moduleResource(3));
+        assertEquals(full.moduleResource(8), lightweight.moduleResource(7));
+        assertEquals(full.moduleResource(9), lightweight.moduleResource(8));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_step.rgen.spv",
+                lightweight.moduleResource(1));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_primary.rgen.spv",
+                lightweight.moduleResource(2));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_light.rgen.spv",
+                lightweight.moduleResource(4));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_shade.rgen.spv",
+                lightweight.moduleResource(5));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_transparent_shade.rgen.spv",
+                lightweight.moduleResource(6));
+        assertTrue(java.util.stream.IntStream.range(0, lightweight.moduleCount())
+                .mapToObj(lightweight::moduleResource)
+                .noneMatch(resource -> resource.contains("primary_area")));
+        assertEquals(List.of(0, 1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8),
+                java.util.stream.IntStream
+                        .range(0, lightweight.groupCount())
+                        .map(lightweight::module)
+                        .boxed()
+                        .toList());
+
+        RaygenSchedule sharc =
+                RealtimeLightweightWavefrontGroups.sharcSchedule(".rgen.spv");
+        assertEquals(lightweight.moduleCount(), sharc.moduleCount());
+        assertEquals(lightweight.groupCount(), sharc.groupCount());
+        for (int module = 0; module < lightweight.moduleCount(); module++) {
+            if (module != 4 && module != 5) {
+                assertEquals(lightweight.moduleResource(module), sharc.moduleResource(module));
+            }
+        }
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_sharc_light.rgen.spv",
+                sharc.moduleResource(4));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_sharc_shade.rgen.spv",
+                sharc.moduleResource(5));
+        assertEquals(List.of(0, 1, 257, 0, 0, 4, 2, 258, 2, 258, 3, 5),
+                java.util.stream.IntStream
+                        .range(0, lightweight.groupCount())
+                        .map(lightweight::control)
+                        .boxed()
+                        .toList());
     }
 
     @Test
@@ -211,9 +277,21 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "step", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
+                    Set.of(tracePayload, shadowPayload),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_step", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
                     Set.of(),
                     payloadShapes(
                             wavefrontShader("realtime", "primary", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_primary", suffix),
                             STORAGE_RAY_PAYLOAD));
             for (String stage : List.of("primary_area", "primary_sun")) {
                 assertEquals(
@@ -252,7 +330,19 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(),
                     payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_shade", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
                             wavefrontShader("realtime", "transparent_shade", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_transparent_shade", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(shadowPayload),
@@ -264,7 +354,34 @@ final class TracePipelinesContractTest {
                     payloadShapes(
                             wavefrontShader("realtime", "light", suffix),
                             STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_light", suffix),
+                            STORAGE_RAY_PAYLOAD));
         }
+    }
+
+    @Test
+    void lightweightProgramsRetainSunShadowTracingWithoutAreaAlternatives()
+            throws IOException {
+        assertEquals(
+                2,
+                parse(wavefrontShader("realtime", "light", ""))
+                        .opcodeCount(OP_TRACE_RAY_KHR));
+        assertEquals(
+                1,
+                parse(wavefrontShader("realtime", "lightweight_light", ""))
+                        .opcodeCount(OP_TRACE_RAY_KHR));
+        assertEquals(
+                3,
+                parse(wavefrontShader("realtime", "step", ""))
+                        .opcodeCount(OP_TRACE_RAY_KHR));
+        assertEquals(
+                2,
+                parse(wavefrontShader("realtime", "lightweight_step", ""))
+                        .opcodeCount(OP_TRACE_RAY_KHR));
     }
 
     @Test
@@ -423,6 +540,7 @@ final class TracePipelinesContractTest {
                 throw new IllegalArgumentException("Malformed SPIR-V instruction");
             }
             result.opcodes.add(opcode);
+            result.opcodeCounts.merge(opcode, 1, Integer::sum);
             if (opcode == OP_TYPE_INT
                     || opcode == OP_TYPE_FLOAT
                     || opcode == OP_TYPE_VECTOR
@@ -496,6 +614,11 @@ final class TracePipelinesContractTest {
         final Map<Integer, Integer> arrayStrides = new HashMap<>();
         final List<Variable> variables = new ArrayList<>();
         final Set<Integer> opcodes = new HashSet<>();
+        final Map<Integer, Integer> opcodeCounts = new HashMap<>();
+
+        int opcodeCount(int opcode) {
+            return this.opcodeCounts.getOrDefault(opcode, 0);
+        }
 
         Type requireType(int identifier) {
             Type type = this.types.get(identifier);

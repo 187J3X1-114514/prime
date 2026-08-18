@@ -4,5 +4,7 @@ package dev.prime.render.scene.vanilla;
 public interface PrimeEntityRenderState {
     int prime$entityId();
 
+    boolean prime$hasEntityId();
+
     void prime$entityId(int entityId);
 }

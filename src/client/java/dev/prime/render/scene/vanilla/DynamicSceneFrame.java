@@ -3,7 +3,11 @@ package dev.prime.render.scene.vanilla;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import dev.prime.render.terrain.CpuClusterMesh;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -25,7 +29,9 @@ public record DynamicSceneFrame(
         mesh = Objects.requireNonNull(mesh, "mesh");
         textures = List.copyOf(textures);
         motionSegments = List.copyOf(motionSegments);
-        compatibilityIssues = Set.copyOf(compatibilityIssues);
+        EnumSet<CompatibilityIssue> issues = compatibilityIssues.isEmpty()
+                ? EnumSet.noneOf(CompatibilityIssue.class)
+                : EnumSet.copyOf(compatibilityIssues);
         if (entityTriangles < 0
                 || blockEntityTriangles < 0
                 || particleTriangles < 0
@@ -56,6 +62,8 @@ public record DynamicSceneFrame(
             previousEnd = Math.addExact(
                     segment.firstTriangle(), segment.triangleCount());
         }
+        motionSegments = unambiguousMotionSegments(motionSegments, issues);
+        compatibilityIssues = Set.copyOf(issues);
     }
 
     public boolean isEmpty() {
@@ -74,7 +82,11 @@ public record DynamicSceneFrame(
         UNSUPPORTED_TOPOLOGY(
                 "a non-triangle render topology was omitted"),
         CUSTOM_SUBMIT_NODE(
-                "a Fabric custom submit node has no general mesh replay contract and was omitted");
+                "a Fabric custom submit node has no general mesh replay contract and was omitted"),
+        MISSING_MOTION_IDENTITY(
+                "an entity submission bypassed stable identity extraction and uses zero object motion"),
+        DUPLICATE_MOTION_IDENTITY(
+                "an entity or block entity was submitted more than once with the same motion identity and uses zero object motion");
 
         private final String description;
 
@@ -114,4 +126,40 @@ public record DynamicSceneFrame(
             }
         }
     }
+
+    private static List<MotionSegment> unambiguousMotionSegments(
+            List<MotionSegment> segments,
+            EnumSet<CompatibilityIssue> issues) {
+        Map<MotionIdentity, Integer> counts = new HashMap<>(segments.size());
+        for (MotionSegment segment : segments) {
+            if (segment.triangleCount() > 0) {
+                counts.merge(
+                        new MotionIdentity(segment.element(), segment.key()),
+                        1,
+                        Math::addExact);
+            }
+        }
+
+        ArrayList<MotionSegment> result = new ArrayList<>(segments.size());
+        boolean duplicate = false;
+        for (MotionSegment segment : segments) {
+            if (segment.triangleCount() == 0) {
+                continue;
+            }
+            int count = counts.get(
+                    new MotionIdentity(segment.element(), segment.key()));
+            if (count == 1) {
+                result.add(segment);
+            } else {
+                duplicate = true;
+            }
+        }
+        if (duplicate) {
+            issues.add(CompatibilityIssue.DUPLICATE_MOTION_IDENTITY);
+        }
+        return List.copyOf(result);
+    }
+
+    private record MotionIdentity(
+            VanillaSceneBoundary.Element element, long key) {}
 }

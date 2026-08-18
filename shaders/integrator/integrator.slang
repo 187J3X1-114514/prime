@@ -856,6 +856,8 @@ PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
 }
 
 interface IPrimeSecondaryAreaNee {
+    bool enabled();
+
     float3 estimate(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
@@ -901,6 +903,8 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
 }
 
 struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
+    bool enabled() { return true; }
+
     float3 estimate(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
@@ -925,6 +929,8 @@ struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
 }
 
 struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
+    bool enabled() { return true; }
+
     float3 estimate(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
@@ -932,6 +938,19 @@ struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
             PrimePreparedSampleBase preparedSample,
             PrimeOpenPbrVolumeStack volumeStack) {
         // The merged Light stage consumes the persisted hit with this exact pre-scatter path.
+        return float3(0.0);
+    }
+}
+
+struct PrimeNoSecondaryAreaNee : IPrimeSecondaryAreaNee {
+    bool enabled() { return false; }
+
+    float3 estimate(
+            inout PrimeIntegratorContext context,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            PrimePreparedSampleBase preparedSample,
+            PrimeOpenPbrVolumeStack volumeStack) {
         return float3(0.0);
     }
 }
@@ -1569,7 +1588,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
-    bool previousUsedAreaNee = path.bounce > 0u;
+    bool previousUsedAreaNee = areaNee.enabled() && path.bounce > 0u;
     float3 emitted = primeEvaluateHitEmission(
             context, path, surface, previousUsedAreaNee);
     primeAccumulateTransparentBranch(
@@ -1670,12 +1689,13 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             surfaceLinearRoughness)) {
         return false;
     }
-    if (primarySurfaceReplacement
+    if (areaNee.enabled()
+            && primarySurfaceReplacement
             && primeAreaLightSamplingMode()
                     != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
-    if (supportsSolidAngle && !primarySurfaceReplacement) {
+    if (areaNee.enabled() && supportsSolidAngle && !primarySurfaceReplacement) {
         path.flags |= PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
     }
     path.bounce++;
@@ -1769,7 +1789,8 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
     }
 
     float3 viewDirection = -path.rayDirection;
-    bool previousUsedAreaNee = denoiserState.hasPrimarySurface;
+    bool previousUsedAreaNee =
+            areaNee.enabled() && denoiserState.hasPrimarySurface;
     float3 emitted = primeEvaluateHitEmission(
             context, path, surface, previousUsedAreaNee);
     if (!denoiserState.hasPrimarySurface) {
@@ -1914,14 +1935,17 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     surfaceLinearRoughness)) {
         return false;
     }
-    if (supportsSolidAngle
+    if (areaNee.enabled()
+            && supportsSolidAngle
             && denoiserState.hasPrimarySurface
             && path.bounce == denoiserState.primaryBounce
             && primeAreaLightSamplingMode()
                     != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
-    if (supportsSolidAngle && denoiserState.hasPrimarySurface
+    if (areaNee.enabled()
+            && supportsSolidAngle
+            && denoiserState.hasPrimarySurface
             && path.bounce != denoiserState.primaryBounce) {
         path.flags |= PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
     }

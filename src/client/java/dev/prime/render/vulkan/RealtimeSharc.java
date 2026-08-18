@@ -53,7 +53,8 @@ final class RealtimeSharc implements Destroyable {
             VulkanContext context,
             long rayTracingPipelineLayout,
             long sharedSetLayout,
-            long integratorSetLayout) {
+            long integratorSetLayout,
+            RaygenSchedule querySchedule) {
         this.context = Objects.requireNonNull(context, "context");
         VulkanBuffer hash = null;
         VulkanBuffer accumulationBuffer = null;
@@ -74,11 +75,10 @@ final class RealtimeSharc implements Destroyable {
                             | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     false,
                     "Prime SHARC frame constants");
-            String suffix = context.capabilities().wavefrontShaderSuffix();
             query = TraceProgram.create(
                     context,
                     rayTracingPipelineLayout,
-                    RealtimeWavefrontGroups.sharcSchedule(suffix),
+                    Objects.requireNonNull(querySchedule, "querySchedule"),
                     "Prime SHARC query pipeline",
                     "Prime SHARC query shader binding table");
             try (MemoryStack stack = MemoryStack.stackPush()) {

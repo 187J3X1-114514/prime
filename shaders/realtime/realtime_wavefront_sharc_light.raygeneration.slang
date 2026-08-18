@@ -11,6 +11,7 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
     primeWavefrontLight(
+            PrimeMixedWavefrontLightNee(),
             PrimeSharcIndirectReuse(),
             PrimeIntegratedSharcTraining(),
             context,

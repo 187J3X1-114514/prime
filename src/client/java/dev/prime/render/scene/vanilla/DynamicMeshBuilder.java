@@ -56,11 +56,11 @@ final class DynamicMeshBuilder {
                     "Dynamic motion object capture closed out of order");
         }
         this.openMotionObject = null;
-        this.motionSegments.add(new DynamicSceneFrame.MotionSegment(
-                element,
-                key,
-                object.firstTriangle,
-                this.positions.size / 9 - object.firstTriangle));
+        int triangleCount = this.positions.size / 9 - object.firstTriangle;
+        if (triangleCount > 0) {
+            this.motionSegments.add(new DynamicSceneFrame.MotionSegment(
+                    element, key, object.firstTriangle, triangleCount));
+        }
     }
 
     VertexSink open(

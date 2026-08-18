@@ -1,4 +1,6 @@
 #include "realtime/realtime_wavefront_light.slang"
+#include "realtime/sharc_query_policy.slang"
+#include "realtime/sharc_training_policy.slang"
 
 [shader("raygeneration")]
 void main()
@@ -9,9 +11,9 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
     primeWavefrontLight(
-            PrimeMixedWavefrontLightNee(),
-            PrimeNoIndirectReuse(),
-            PrimeNoWavefrontSharcTraining(),
+            PrimeSunOnlyWavefrontLightNee(),
+            PrimeSharcIndirectReuse(),
+            PrimeIntegratedSharcTraining(),
             context,
             launchIndex);
 }

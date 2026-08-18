@@ -22,12 +22,15 @@ void primePublishWavefrontShadePath(uint recordIndex, bool transparentBranch) {
 #endif
 }
 
-void primeWavefrontTransparentPrimaryDirect(
+void primeWavefrontTransparentPrimaryDirect<AreaNee>(
+        AreaNee areaNee,
         inout PrimeIntegratorContext context,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
-        uint control) {
+        uint control)
+    where AreaNee : IPrimeSecondaryAreaNee
+{
     bool guideEnabled = primeWavefrontGuideEnabled(control);
     bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     if (!guideEnabled || hasGuide) {
@@ -67,19 +70,21 @@ void primeWavefrontTransparentPrimaryDirect(
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             volumeStack,
             false);
-    PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
-            context,
-            surface,
-            viewDirection,
-            preparedSample,
-            volumeStack,
-            false);
     float3 diffuseDirect =
             path.throughput * sun.lighting.diffuse * sun.visibility;
     float3 specularDirect =
             path.throughput * sun.lighting.specular * sun.visibility;
-    diffuseDirect += path.throughput * nonsun.diffuse;
-    specularDirect += path.throughput * nonsun.specular;
+    if (areaNee.enabled()) {
+        PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
+                context,
+                surface,
+                viewDirection,
+                preparedSample,
+                volumeStack,
+                false);
+        diffuseDirect += path.throughput * nonsun.diffuse;
+        specularDirect += path.throughput * nonsun.specular;
+    }
     primeAccumulateTransparentPrimaryDirect(
             context,
             pixel,
@@ -88,10 +93,13 @@ void primeWavefrontTransparentPrimaryDirect(
             specularDirect);
 }
 
-void primeWavefrontStep(
+void primeWavefrontStep<AreaNee>(
+        AreaNee areaNee,
         inout PrimeIntegratorContext context,
         uint launchIndex,
-        uint sourceQueue) {
+        uint sourceQueue)
+    where AreaNee : IPrimeSecondaryAreaNee
+{
     uint recordIndex =
             primeWavefrontQueuedPath(sourceQueue, launchIndex);
     uint packedDiagnostic = asuint(
@@ -131,7 +139,7 @@ void primeWavefrontStep(
         PrimeWavefrontTransportRecord record =
                 primeLoadWavefrontTransportRecord(recordIndex);
         primeWavefrontTransparentPrimaryDirect(
-                context, recordIndex, record, surface, traceControl);
+                areaNee, context, recordIndex, record, surface, traceControl);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     // Surface-hit compaction depends on traversal output and therefore remains scalar after SER.

@@ -369,9 +369,10 @@ public final class VulkanRenderer implements AutoCloseable {
             if (realtime != null) {
                 lines.add(String.format(
                         Locale.ROOT,
-                        "Rendering path: %s; quality: %s",
+                        "Rendering path: %s; quality: %s; realtime integrator: %s",
                         renderingPath(realtime.postProcessingMode()),
-                        reconstructionQuality(realtime.quality())));
+                        reconstructionQuality(realtime.quality()),
+                        realtime.integratorMode().id()));
                 lines.add(String.format(
                         Locale.ROOT,
                         "Render resolution: %d x %d; display resolution: %d x %d; accumulated samples: %,d; integrator passes: %d; integrator bytes: %,d",

@@ -1,11 +1,13 @@
 #include "realtime/realtime_wavefront_common.slang"
 
-void primeWavefrontShade<IndirectReuse, SharcTraining>(
+void primeWavefrontShade<AreaNee, IndirectReuse, SharcTraining>(
+        AreaNee areaNee,
         IndirectReuse indirectReuse,
         SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint launchIndex,
         uint sourceQueue)
+    where AreaNee : IPrimeSecondaryAreaNee
     where IndirectReuse : IPrimeIndirectReuse
     where SharcTraining : IPrimeWavefrontSharcTraining
 {
@@ -32,7 +34,8 @@ void primeWavefrontShade<IndirectReuse, SharcTraining>(
         sharcTraining.recordMiss(context, path, integrator);
     }
 
-    if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
+    if (areaNee.enabled()
+            && primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
             && !primePreviousCannotUseMis(path)) {
         path.previousLightNormal =
                 primeLoadWavefrontPreviousLightNormal(recordIndex);
@@ -46,7 +49,7 @@ void primeWavefrontShade<IndirectReuse, SharcTraining>(
             primeWavefrontDenoiserState(control, result);
     bool continuation = primeIntegrateWavefrontSurface(
             PrimeStagedSecondarySunNee(),
-            PrimeStagedSecondaryAreaNee(),
+            areaNee,
             indirectReuse,
             context,
             path,

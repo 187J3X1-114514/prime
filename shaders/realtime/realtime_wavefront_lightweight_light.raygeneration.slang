@@ -9,7 +9,7 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
     primeWavefrontLight(
-            PrimeMixedWavefrontLightNee(),
+            PrimeSunOnlyWavefrontLightNee(),
             PrimeNoIndirectReuse(),
             PrimeNoWavefrontSharcTraining(),
             context,

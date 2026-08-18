@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront_step.slang"
+#include "realtime/realtime_wavefront_transparent_shade.slang"
 
 [shader("raygeneration")]
 void main()
@@ -7,8 +7,8 @@ void main()
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
     if (launchIndex == 0u) {
-        primeResetWavefrontQueue(sourceQueue);
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
     }
-    primeWavefrontStep(
-            PrimeStagedSecondaryAreaNee(), context, launchIndex, sourceQueue);
+    primeWavefrontTransparentShade(
+            PrimeNoSecondaryAreaNee(), context, launchIndex, sourceQueue);
 }

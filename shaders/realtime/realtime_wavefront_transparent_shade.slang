@@ -1,9 +1,12 @@
 #include "realtime/realtime_wavefront_common.slang"
 
-void primeWavefrontTransparentShade(
+void primeWavefrontTransparentShade<AreaNee>(
+        AreaNee areaNee,
         inout PrimeIntegratorContext context,
         uint launchIndex,
-        uint sourceQueue) {
+        uint sourceQueue)
+    where AreaNee : IPrimeSecondaryAreaNee
+{
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE, launchIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
@@ -20,7 +23,8 @@ void primeWavefrontTransparentShade(
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = float4(0.0);
 
-    if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
+    if (areaNee.enabled()
+            && primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
             && !primePreviousCannotUseMis(path)) {
         path.previousLightNormal =
                 primeLoadWavefrontPreviousLightNormal(recordIndex);
@@ -48,7 +52,7 @@ void primeWavefrontTransparentShade(
     bool hadDirectionalGuide = directionalGuide;
     bool continuation = primeIntegrateTransparentWavefrontSurface(
             PrimeStagedSecondarySunNee(),
-            PrimeStagedSecondaryAreaNee(),
+            areaNee,
             context,
             path,
             integrator,

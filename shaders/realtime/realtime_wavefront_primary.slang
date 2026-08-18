@@ -7,7 +7,8 @@ struct PrimeWavefrontContinuations {
     bool secondActive;
 };
 
-PrimeWavefrontContinuations primeInitializeTransparentWavefront(
+PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
+        AreaNee areaNee,
         inout PrimeIntegratorContext context,
         uint2 pixel,
         PathState path,
@@ -15,7 +16,9 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
         PrimeIntegrationResult initialResult,
-        uint maximumBounces) {
+        uint maximumBounces)
+    where AreaNee : IPrimeSecondaryAreaNee
+{
     PrimeWavefrontContinuations queued;
     queued.firstPathIndex = primeWavefrontIndex(pixel, 0u);
     queued.secondPathIndex = primeWavefrontIndex(pixel, 1u);
@@ -189,6 +192,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
                     surfaceLinearRoughness);
         }
         if (continuation
+                && areaNee.enabled()
                 && !discreteOnlyInterface
                 && primeAreaLightSamplingMode()
                         != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
@@ -223,9 +227,12 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
     return queued;
 }
 
-void primeWavefrontPrimary(
+void primeWavefrontPrimary<AreaNee>(
+        AreaNee areaNee,
         inout PrimeIntegratorContext context,
-        uint launchIndex) {
+        uint launchIndex)
+    where AreaNee : IPrimeSecondaryAreaNee
+{
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_SHADE_QUEUE, launchIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
@@ -253,6 +260,7 @@ void primeWavefrontPrimary(
                 primeLoadWavefrontIntermediate(pixel, recordIndex, record);
         continuations =
                 primeInitializeTransparentWavefront(
+                        areaNee,
                         context,
                         pixel,
                         path,
@@ -267,7 +275,7 @@ void primeWavefrontPrimary(
                 primeLoadWavefrontIntermediate(pixel, recordIndex, record);
         bool continuation = primeIntegrateWavefrontSurface(
                 PrimeStagedSecondarySunNee(),
-                PrimeStagedSecondaryAreaNee(),
+                areaNee,
                 PrimeNoIndirectReuse(),
                 context,
                 path,

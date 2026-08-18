@@ -28,9 +28,12 @@ public abstract class EntityRenderDispatcherMixin {
             PoseStack poseStack,
             SubmitNodeCollector collector,
             Operation<Void> original) {
-        long key = ((PrimeEntityRenderState) state).prime$entityId();
+        PrimeEntityRenderState primeState = (PrimeEntityRenderState) state;
+        long key = primeState.prime$entityId();
         boolean captured = DynamicSceneCapture.tryBeginMotionObject(
-                VanillaSceneBoundary.Element.ENTITY, key);
+                VanillaSceneBoundary.Element.ENTITY,
+                key,
+                primeState.prime$hasEntityId());
         try {
             original.call(state, camera, x, y, z, poseStack, collector);
         } finally {

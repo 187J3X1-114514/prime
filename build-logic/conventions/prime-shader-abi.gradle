@@ -1139,6 +1139,8 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							[compile: ['', '_subgroup', '_ser'], alias: [:]],
 					'realtime_wavefront_lightweight_primary':
 							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+					'realtime_wavefront_lightweight_primary_light':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_lightweight_shade':
 							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
 					'realtime_wavefront_lightweight_transparent_shade':

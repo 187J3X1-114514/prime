@@ -10,7 +10,7 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
     }
     primeWavefrontShade(
-            PrimeNoSecondaryAreaNee(),
+            PrimeStagedLightweightAreaNee(),
             PrimeNoIndirectReuse(),
             PrimeNoWavefrontSharcTraining(),
             context,

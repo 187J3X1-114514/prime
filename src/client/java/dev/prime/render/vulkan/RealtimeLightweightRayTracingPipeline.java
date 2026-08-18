@@ -6,9 +6,9 @@ import dev.prime.render.shader.ShaderAbi;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
-/** Independent realtime renderer without emissive-block NEE. */
+/** Independent realtime renderer with single-candidate emissive-block NEE. */
 public final class RealtimeLightweightRayTracingPipeline
-        extends RealtimeRayTracingPipelineSupport {
+        extends RealtimeRayTracingPipeline.IndependentSupport {
     static final int RAYGEN_GROUP_COUNT = RealtimeLightweightWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeLightweightWavefrontGroups.MODULE_COUNT;
 

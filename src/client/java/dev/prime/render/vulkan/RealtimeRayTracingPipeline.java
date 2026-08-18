@@ -153,6 +153,27 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
         this.allImagesBarrier(commandBuffer, stack);
     }
+
+    // A named member keeps sibling renderers off javac's auxiliary-class access path.
+    abstract static class IndependentSupport extends RealtimeRayTracingPipelineSupport {
+        IndependentSupport(
+                VulkanContext context,
+                TraceBackend backend,
+                RaygenSchedule schedule,
+                RaygenSchedule sharcSchedule,
+                int defaultPassCount,
+                String pipelineLabel,
+                String shaderBindingTableLabel) {
+            super(
+                    context,
+                    backend,
+                    schedule,
+                    sharcSchedule,
+                    defaultPassCount,
+                    pipelineLabel,
+                    shaderBindingTableLabel);
+        }
+    }
 }
 
 /** Shared Vulkan resources for independently scheduled realtime renderers. */

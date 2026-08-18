@@ -1,8 +1,11 @@
 #include "realtime/realtime_wavefront_common.slang"
 
-void primeWavefrontPrimarySun(
+void primeWavefrontPrimarySun<AreaNee>(
+        AreaNee areaNee,
         inout PrimeIntegratorContext context,
-        uint launchIndex) {
+        uint launchIndex)
+    where AreaNee : IPrimeSecondaryAreaNee
+{
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
     PrimeWavefrontTransportRecord record =
@@ -56,6 +59,27 @@ void primeWavefrontPrimarySun(
                 direct.diffuse + direct.specular,
                 sun.visibility,
                 sun.penumbra);
+    }
+    if (areaNee.enabled()) {
+        PrimeDirectLightingSplit area = areaNee.estimatePrimary(
+                context,
+                surface,
+                viewDirection,
+                preparedSample,
+                volumeStack,
+                transparent);
+        area.diffuse *= path.throughput;
+        area.specular *= path.throughput;
+        primeAccumulatePrimaryDirectSplit(context, pixel, area);
+
+        PrimeDenoiserGuides guides = primeEmptyDenoiserGuides();
+        guides.primaryAreaDiffuse = area.diffuse;
+        guides.primaryAreaSpecular = area.specular;
+        if (any(area.diffuse > float3(0.0))
+                || any(area.specular > float3(0.0))) {
+            guides.primaryAreaDirection = area.direction;
+        }
+        primeStoreWavefrontArea(pixel, guides);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }

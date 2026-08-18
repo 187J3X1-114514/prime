@@ -75,7 +75,7 @@ void primeWavefrontTransparentPrimaryDirect<AreaNee>(
     float3 specularDirect =
             path.throughput * sun.lighting.specular * sun.visibility;
     if (areaNee.enabled()) {
-        PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
+        PrimeDirectLightingSplit nonsun = areaNee.estimatePrimary(
                 context,
                 surface,
                 viewDirection,

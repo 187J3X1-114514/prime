@@ -157,6 +157,32 @@ void primeCheckRoulette(
             || primeTransparentRouletteBlocked(true, true, true)) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
+    float noAreaProbability =
+            primeLightweightAreaFamilyProbabilityValue(false, false);
+    float dayAreaProbability =
+            primeLightweightAreaFamilyProbabilityValue(true, true);
+    float nightAreaProbability =
+            primeLightweightAreaFamilyProbabilityValue(true, false);
+    uint dayFlags = primeLightweightSecondaryNeeFlags(dayAreaProbability);
+    uint nightFlags = primeLightweightSecondaryNeeFlags(nightAreaProbability);
+    if (noAreaProbability != 0.0
+            || dayAreaProbability != PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY
+            || nightAreaProbability != 1.0
+            || primeLightweightSecondaryNeeFlags(noAreaProbability) != 0u
+            || (dayFlags & PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE) == 0u
+            || (dayFlags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) == 0u
+            || (dayFlags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) != 0u
+            || (nightFlags & PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE) == 0u
+            || (nightFlags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) != 0u
+            || (nightFlags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u
+            || !primePreviousSunNeeEnabled(dayFlags)
+            || primePreviousSunNeeEnabled(nightFlags)
+            || !primeStandaloneAreaHitSuppressed(true, false, dayFlags)
+            || primeStandaloneAreaHitSuppressed(false, false, dayFlags)
+            || primeStandaloneAreaHitSuppressed(true, true, dayFlags)
+            || primeStandaloneAreaHitSuppressed(true, false, 0u)) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
     if (survival > 0.0) {
         float3 reweighted = primeRussianRouletteReweight(throughput, survival);
         primeTransportClassify(result.mask, reweighted);

@@ -10,5 +10,5 @@ void main()
         primeResetWavefrontQueue(sourceQueue);
     }
     primeWavefrontStep(
-            PrimeNoSecondaryAreaNee(), context, launchIndex, sourceQueue);
+            PrimeStagedLightweightAreaNee(), context, launchIndex, sourceQueue);
 }

@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront_light.slang"
+#include "realtime/realtime_wavefront_primary_sun.slang"
 
 [shader("raygeneration")]
 void main()
@@ -8,10 +8,6 @@ void main()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
-    primeWavefrontLight(
-            PrimeLightweightWavefrontLightNee(),
-            PrimeNoIndirectReuse(),
-            PrimeNoWavefrontSharcTraining(),
-            context,
-            launchIndex);
+    primeWavefrontPrimarySun(
+            PrimeStagedLightweightAreaNee(), context, launchIndex);
 }

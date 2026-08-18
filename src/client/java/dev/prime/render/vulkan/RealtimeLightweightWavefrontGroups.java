@@ -42,7 +42,7 @@ final class RealtimeLightweightWavefrontGroups {
                 prefix + "head" + suffix,
                 prefix + "lightweight_step" + suffix,
                 prefix + "lightweight_primary" + suffix,
-                prefix + "primary_sun" + suffix,
+                prefix + "lightweight_primary_light" + suffix,
                 light,
                 shade,
                 prefix + "lightweight_transparent_shade" + suffix,

@@ -8,5 +8,6 @@ void main()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
-    primeWavefrontPrimarySun(context, launchIndex);
+    primeWavefrontPrimarySun(
+            PrimeNoSecondaryAreaNee(), context, launchIndex);
 }

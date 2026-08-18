@@ -202,10 +202,8 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee, Continu
         }
         if (continuation
                 && areaNee.enabled()
-                && !discreteOnlyInterface
-                && primeAreaLightSamplingMode()
-                        != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
-            branchPath.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
+                && !discreteOnlyInterface) {
+            branchPath.flags |= areaNee.primaryPathFlags();
         }
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;

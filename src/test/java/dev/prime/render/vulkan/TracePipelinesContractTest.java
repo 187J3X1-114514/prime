@@ -137,7 +137,10 @@ final class TracePipelinesContractTest {
         assertEquals(9, lightweight.moduleCount());
         assertEquals(12, lightweight.groupCount());
         assertEquals(full.moduleResource(0), lightweight.moduleResource(0));
-        assertEquals(full.moduleResource(4), lightweight.moduleResource(3));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_primary_light.rgen.spv",
+                lightweight.moduleResource(3));
+        assertFalse(full.moduleResource(4).equals(lightweight.moduleResource(3)));
         assertEquals(full.moduleResource(8), lightweight.moduleResource(7));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_lightweight_transparent_resolve.rgen.spv",
@@ -304,6 +307,12 @@ final class TracePipelinesContractTest {
                                 STORAGE_RAY_PAYLOAD));
             }
             assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_primary_light", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
                     Set.of(),
                     payloadShapes(
                             wavefrontShader("realtime", "resolve", suffix),
@@ -373,14 +382,14 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void lightweightProgramsRetainSunShadowTracingWithoutAreaAlternatives()
+    void lightweightProgramsAddAliasAreaNeeWithoutAddingPasses()
             throws IOException {
         assertEquals(
                 2,
                 parse(wavefrontShader("realtime", "light", ""))
                         .opcodeCount(OP_TRACE_RAY_KHR));
         assertEquals(
-                1,
+                2,
                 parse(wavefrontShader("realtime", "lightweight_light", ""))
                         .opcodeCount(OP_TRACE_RAY_KHR));
         assertEquals(
@@ -388,9 +397,16 @@ final class TracePipelinesContractTest {
                 parse(wavefrontShader("realtime", "step", ""))
                         .opcodeCount(OP_TRACE_RAY_KHR));
         assertEquals(
-                2,
+                3,
                 parse(wavefrontShader("realtime", "lightweight_step", ""))
                         .opcodeCount(OP_TRACE_RAY_KHR));
+        assertEquals(
+                2,
+                parse(wavefrontShader(
+                                "realtime", "lightweight_primary_light", ""))
+                        .opcodeCount(OP_TRACE_RAY_KHR));
+        assertEquals(12, RealtimeLightweightWavefrontGroups.standardSchedule(".rgen.spv")
+                .groupCount());
     }
 
     @Test

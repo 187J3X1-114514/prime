@@ -9,7 +9,7 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
     }
     primeWavefrontPrimary(
-            PrimeNoSecondaryAreaNee(),
+            PrimeStagedLightweightAreaNee(),
             PrimeRefractedTransparentContinuation(),
             context,
             launchIndex);

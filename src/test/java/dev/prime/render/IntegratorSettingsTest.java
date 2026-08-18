@@ -229,9 +229,8 @@ final class IntegratorSettingsTest {
         float etaScale = 2.25F;
         float survival = IntegratorSettings.rouletteSurvival(throughput, etaScale);
         assertEquals(throughput, survival * (throughput / survival), 1.0e-6F);
-        assertEquals((float) Math.sqrt(0.45F), survival, 1.0e-6F);
-        assertEquals((float) Math.sqrt(0.001F),
-                IntegratorSettings.rouletteSurvival(0.001F, 1.0F));
+        assertEquals(0.45F, survival, 1.0e-6F);
+        assertEquals(0.001F, IntegratorSettings.rouletteSurvival(0.001F, 1.0F));
         assertEquals(1.0F, IntegratorSettings.rouletteSurvival(10.0F, 1.0F));
     }
 

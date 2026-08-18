@@ -47,7 +47,7 @@ final class RealtimeLightweightWavefrontGroups {
                 shade,
                 prefix + "lightweight_transparent_shade" + suffix,
                 prefix + "resolve" + suffix,
-                prefix + "transparent_resolve" + suffix), MODULES, CONTROLS);
+                prefix + "lightweight_transparent_resolve" + suffix), MODULES, CONTROLS);
     }
 
     static int module(int group) {

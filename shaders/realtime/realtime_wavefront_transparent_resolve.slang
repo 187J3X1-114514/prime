@@ -57,6 +57,9 @@ void primeWavefrontTransparentResolve(
     // live across traversal. The probes are reconstruction-only and cannot affect this load.
     PrimeIntegrationResult result =
             primeResolveTransparentWavefrontResult(pixel);
+    // Full mode keeps its established probe-owned TIR identity. The queued bit is consumed only
+    // by the probe-free lightweight resolve.
+    result.transparentReflectionOnly = false;
     float4 reflectionPreviousVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
     if (hasProbes) {
         result.transparentReflectionOnly = probes.primaryReflectionOnly;

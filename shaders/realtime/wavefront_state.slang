@@ -670,6 +670,7 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         bool hasGuide,
         bool diffusePath,
         uint guideBounce,
+        bool primaryReflectionOnly,
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
@@ -697,6 +698,9 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
     }
     if (branchResult.directionalGuide) {
         control |= PRIME_WAVEFRONT_DIRECTIONAL_GUIDE;
+    }
+    if (primaryReflectionOnly) {
+        control |= PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY;
     }
     record.transport.rayDirectionAndDenoiserControl.w = asfloat(control);
     record = primeWavefrontWithQueuedPsrState(record, psrState);
@@ -1425,6 +1429,8 @@ PrimeIntegrationResult primeResolveTransparentWavefrontResult(uint2 pixel) {
     result.transmissionAnchorDistance = transmission.anchorDistance;
     result.reflectionDirectionalGuide = reflection.directionalGuide;
     result.transparentPrimary = true;
+    result.transparentReflectionOnly =
+            (transmissionControl & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u;
     return result;
 }
 

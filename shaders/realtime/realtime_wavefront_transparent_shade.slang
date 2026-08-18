@@ -1,11 +1,13 @@
 #include "realtime/realtime_wavefront_common.slang"
 
-void primeWavefrontTransparentShade<AreaNee>(
+void primeWavefrontTransparentShade<AreaNee, Continuation>(
         AreaNee areaNee,
+        Continuation continuationPolicy,
         inout PrimeIntegratorContext context,
         uint launchIndex,
         uint sourceQueue)
     where AreaNee : IPrimeSecondaryAreaNee
+    where Continuation : IPrimeTransparentContinuation
 {
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE, launchIndex);
@@ -53,6 +55,7 @@ void primeWavefrontTransparentShade<AreaNee>(
     bool continuation = primeIntegrateTransparentWavefrontSurface(
             PrimeStagedSecondarySunNee(),
             areaNee,
+            continuationPolicy,
             context,
             path,
             integrator,

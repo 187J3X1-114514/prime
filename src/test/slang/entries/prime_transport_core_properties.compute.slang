@@ -151,6 +151,12 @@ void primeCheckRoulette(
             || !primeRussianRouletteApplies(2, 1)) {
         result.mask |= PRIME_TEST_FAILURE_RANGE;
     }
+    if (!primeTransparentRouletteBlocked(true, true, false)
+            || primeTransparentRouletteBlocked(false, true, false)
+            || primeTransparentRouletteBlocked(true, false, false)
+            || primeTransparentRouletteBlocked(true, true, true)) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
     if (survival > 0.0) {
         float3 reweighted = primeRussianRouletteReweight(throughput, survival);
         primeTransportClassify(result.mask, reweighted);

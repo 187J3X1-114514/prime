@@ -7,8 +7,9 @@ struct PrimeWavefrontContinuations {
     bool secondActive;
 };
 
-PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
+PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee, Continuation>(
         AreaNee areaNee,
+        Continuation continuationPolicy,
         inout PrimeIntegratorContext context,
         uint2 pixel,
         PathState path,
@@ -18,6 +19,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
         PrimeIntegrationResult initialResult,
         uint maximumBounces)
     where AreaNee : IPrimeSecondaryAreaNee
+    where Continuation : IPrimeTransparentContinuation
 {
     PrimeWavefrontContinuations queued;
     queued.firstPathIndex = primeWavefrontIndex(pixel, 0u);
@@ -108,6 +110,9 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
             PrimeTransmissiveBsdfSample[2](
                     primarySample.paths.transmission,
                     primarySample.paths.reflection);
+    bool primaryReflectionOnly =
+            !primeHasScatter(primarySample.paths.transmission.bsdfSample)
+            && primeHasScatter(primarySample.paths.reflection.bsdfSample);
     for (uint branch = 0u; branch < 2u; ++branch) {
         bool transmissionBranch = branch == 0u;
         bool guideEnabled = transmissionBranch
@@ -189,7 +194,11 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                     bsdf,
                     preparedSample,
                     branchDiscreteOnly,
-                    surfaceLinearRoughness);
+                    surfaceLinearRoughness,
+                    primeTransparentRouletteBlocked(
+                            continuationPolicy.pathOwnsGuide(),
+                            guideEnabled,
+                            hasGuide));
         }
         if (continuation
                 && areaNee.enabled()
@@ -213,6 +222,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 hasGuide,
                 diffusePath,
                 guideBounce,
+                primaryReflectionOnly,
                 continuation);
         uint pathIndex = primeWavefrontIndex(pixel, branch);
         primeWavefrontPaths[pathIndex] = record;
@@ -227,11 +237,13 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
     return queued;
 }
 
-void primeWavefrontPrimary<AreaNee>(
+void primeWavefrontPrimary<AreaNee, Continuation>(
         AreaNee areaNee,
+        Continuation continuationPolicy,
         inout PrimeIntegratorContext context,
         uint launchIndex)
     where AreaNee : IPrimeSecondaryAreaNee
+    where Continuation : IPrimeTransparentContinuation
 {
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_SHADE_QUEUE, launchIndex);
@@ -261,6 +273,7 @@ void primeWavefrontPrimary<AreaNee>(
         continuations =
                 primeInitializeTransparentWavefront(
                         areaNee,
+                        continuationPolicy,
                         context,
                         pixel,
                         path,

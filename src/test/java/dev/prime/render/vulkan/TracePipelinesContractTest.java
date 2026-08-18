@@ -130,7 +130,7 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void lightweightScheduleSpecializesTransportButReusesCommonStages() {
+    void lightweightScheduleSpecializesTransportAndTransparentResolve() {
         RaygenSchedule full = RealtimeWavefrontGroups.standardSchedule(".rgen.spv");
         RaygenSchedule lightweight =
                 RealtimeLightweightWavefrontGroups.standardSchedule(".rgen.spv");
@@ -139,7 +139,10 @@ final class TracePipelinesContractTest {
         assertEquals(full.moduleResource(0), lightweight.moduleResource(0));
         assertEquals(full.moduleResource(4), lightweight.moduleResource(3));
         assertEquals(full.moduleResource(8), lightweight.moduleResource(7));
-        assertEquals(full.moduleResource(9), lightweight.moduleResource(8));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_lightweight_transparent_resolve.rgen.spv",
+                lightweight.moduleResource(8));
+        assertFalse(full.moduleResource(9).equals(lightweight.moduleResource(8)));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_lightweight_step.rgen.spv",
                 lightweight.moduleResource(1));
@@ -325,6 +328,12 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(),
                     payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "lightweight_transparent_resolve", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
                             wavefrontShader("realtime", "shade", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
@@ -381,6 +390,17 @@ final class TracePipelinesContractTest {
         assertEquals(
                 2,
                 parse(wavefrontShader("realtime", "lightweight_step", ""))
+                        .opcodeCount(OP_TRACE_RAY_KHR));
+    }
+
+    @Test
+    void lightweightTransparentResolveDoesNotTraceGuideProbes() throws IOException {
+        assertTrue(parse(wavefrontShader("realtime", "transparent_resolve", ""))
+                .opcodeCount(OP_TRACE_RAY_KHR) > 0);
+        assertEquals(
+                0,
+                parse(wavefrontShader(
+                                "realtime", "lightweight_transparent_resolve", ""))
                         .opcodeCount(OP_TRACE_RAY_KHR));
     }
 

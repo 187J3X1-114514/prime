@@ -157,9 +157,12 @@ fixes:
 - At most two non-air transparent regions can be nested reliably. Deeper nesting, open models, and
   boundaries without a meaningful inside and outside do not guarantee correct absorption or
   refraction.
-- Realtime transparent lighting uses fixed transmission and reflection branches at the first
-  interface, then bounded single-branch sampling and straight shadow filtering. It does not fully
-  solve arbitrary chains of refractive light transport.
+- Realtime transparent lighting keeps fixed transmission and reflection slots at the first
+  interface and straight shadow filtering. Full mode retains both conditional primary branches
+  and then uses bounded single-branch sampling. Lightweight keeps the same conditional primary
+  transmission/reflection split, forces refraction only at later transparent interfaces except at
+  TIR, and removes independent transparent guide probes. Its branches defer RR until the first stable
+  anchor is captured. Neither mode fully solves arbitrary refractive chains.
 - Shadow rays connecting a surface to a light do not refract at transparent interfaces. They only
   accumulate absorption along the original direction.
 - Volumetric sun shadows approximate visibility from one sun direction; they do not represent sky

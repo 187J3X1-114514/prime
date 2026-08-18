@@ -13,3 +13,11 @@ public static const uint PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE = 4u;
 // Its candidate-set-dependent density cannot be reconstructed from a later emitter hit.
 public static const uint PRIME_PATH_PREVIOUS_AREA_RIS = 8u;
 public static const float PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY = 0.5;
+
+// A probe-free transparent path owns its reconstruction observation. Roulette may start only
+// after that path has captured a stable solid-angle guide; modes with independent probes do not
+// need this transport lifetime constraint.
+public bool primeTransparentRouletteBlocked(
+        bool pathOwnsGuide, bool guideEnabled, bool hasGuide) {
+    return pathOwnsGuide && guideEnabled && !hasGuide;
+}

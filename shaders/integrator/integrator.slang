@@ -1382,7 +1382,8 @@ bool primeAdvancePath(
         BsdfSample bsdf,
         PrimePreparedSampleBase bounceSample,
         bool discreteOnlyInterface,
-        float surfaceLinearRoughness) {
+        float surfaceLinearRoughness,
+        bool skipRoulette) {
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
     float3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
@@ -1411,6 +1412,9 @@ bool primeAdvancePath(
             bsdf.relativeEta,
             (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
     primeRecordNonnegative(context.diagnostics, path.etaScale);
+    if (skipRoulette) {
+        return true;
+    }
     // bounce counts every completed scatter, including discrete-only transparent interfaces.
     if (!primeRussianRouletteApplies(
             path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
@@ -1421,6 +1425,25 @@ bool primeAdvancePath(
             PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
             PRIME_SAMPLE_DIMENSION_PRIMARY);
     return primeRussianRoulette(context, path, rouletteSample);
+}
+
+bool primeAdvancePath(
+        inout PrimeIntegratorContext context,
+        inout PathState path,
+        SurfaceInteraction surface,
+        BsdfSample bsdf,
+        PrimePreparedSampleBase bounceSample,
+        bool discreteOnlyInterface,
+        float surfaceLinearRoughness) {
+    return primeAdvancePath(
+            context,
+            path,
+            surface,
+            bsdf,
+            bounceSample,
+            discreteOnlyInterface,
+            surfaceLinearRoughness,
+            false);
 }
 
 // Queue-resident PSR state stores the bounded discrete chain as an incremental path length and
@@ -1501,11 +1524,29 @@ void primeAccumulateTransparentBranch(
     }
 }
 
+interface IPrimeTransparentContinuation {
+    bool forceTransmission(SurfaceInteraction surface);
+    bool pathOwnsGuide();
+}
+
+struct PrimeCompleteTransparentContinuation : IPrimeTransparentContinuation {
+    bool forceTransmission(SurfaceInteraction surface) { return false; }
+    bool pathOwnsGuide() { return false; }
+}
+
+struct PrimeRefractedTransparentContinuation : IPrimeTransparentContinuation {
+    bool forceTransmission(SurfaceInteraction surface) {
+        return primeMaterialIsTransmissive(surface.materialControl);
+    }
+    bool pathOwnsGuide() { return true; }
+}
+
 // Advances one fixed primary-transparent branch by one queued vertex. Its signal lane remains
 // branch-owned while traversal/SER sorts both continuations with every other path.
-bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
+bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee, Continuation>(
         SunNee sunNee,
         AreaNee areaNee,
+        Continuation continuation,
         inout PrimeIntegratorContext context,
         inout PathState path,
         IntegratorRecord integrator,
@@ -1522,6 +1563,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
+    where Continuation : IPrimeTransparentContinuation
 {
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
@@ -1575,16 +1617,22 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     bool transmissive = primeMaterialIsTransmissive(surface.materialControl);
+    bool forceTransmission = continuation.forceTransmission(surface);
     float surfaceLinearRoughness = (transmissive || !hasGuide)
             ? primeSurfaceLinearRoughness(surface)
             : PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
-            surface, viewDirection, volumeStack);
-    bool supportsSolidAngle = primeClosureSupports(
-            closureTraits, PRIME_MEASURE_SOLID_ANGLE);
-    bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
+    bool supportsSolidAngle = false;
+    bool discreteOnlyInterface = false;
+    if (!forceTransmission) {
+        PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+                surface, viewDirection, volumeStack);
+        supportsSolidAngle = primeClosureSupports(
+                closureTraits, PRIME_MEASURE_SOLID_ANGLE);
+        discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
+    }
+    bool discreteContinuation = forceTransmission || discreteOnlyInterface;
     bool primarySurfaceReplacement =
-            guideEnabled && !hasGuide && !discreteOnlyInterface;
+            guideEnabled && !hasGuide && !discreteContinuation;
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
@@ -1594,7 +1642,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     primeAccumulateTransparentBranch(
             context, result, contributionDiffuse, emitted);
 
-    if (supportsSolidAngle && !primarySurfaceReplacement) {
+    if (supportsSolidAngle && !primarySurfaceReplacement && !forceTransmission) {
         // Wavefront Step evaluates primary transparent direct lighting after its surface trace,
         // keeping both shadow traces out of this register-heavy BSDF continuation.
         primeSetNumericalContext(
@@ -1617,15 +1665,36 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
                 direct);
     }
 
-    float3 scatterSample = primeSobolSample3D(
-            preparedSample,
-            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    float3 scatterSample = forceTransmission
+            ? float3(0.0)
+            : primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY);
     PrimePathScatter scatter;
     PrimeDenoiseAlbedos surfaceAlbedos;
     surfaceAlbedos.diffuse = float3(0.0);
     surfaceAlbedos.specular = float3(0.0);
-    if (primarySurfaceReplacement) {
+    if (forceTransmission) {
+        // Lightweight transport follows the same canonical refracted chain used by the guide
+        // probe. Secondary Fresnel/rough reflection is intentionally removed; TIR remains the
+        // only reflected continuation because no refracted direction exists in that case.
+        PrimeTransmissiveBsdfSample sampled =
+                primeSampleMinecraftTransparentContinuation(
+                        surface.baseColor,
+                        primeSurfaceOpacity(surface),
+                        primeSurfaceOutwardShadingNormal(surface),
+                        surface.materialControl,
+                        surface.roughness,
+                        surface.opticalControl,
+                        viewDirection,
+                        surface.t,
+                        volumeStack,
+                        surface.adjacentBaseColor,
+                        surface.adjacentInterfaceControl);
+        scatter.bsdf = sampled.bsdfSample;
+        scatter.volumeStack = sampled.volumeStack;
+    } else if (primarySurfaceReplacement) {
         PrimeGuidedPathScatter guided = primeSampleGuidedPathSurface(
                 context,
                 surface,
@@ -1673,7 +1742,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         } else {
             result.guides.specularDirection = virtualDirection;
         }
-    } else if (guideEnabled && !hasGuide && discreteOnlyInterface
+    } else if (guideEnabled && !hasGuide && discreteContinuation
             && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u) {
         psrState = primeAppendQueuedPsrDiscrete(
                 psrState, path.physicalOrigin, surface, bsdf);
@@ -1685,8 +1754,10 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             surface,
             bsdf,
             preparedSample,
-            discreteOnlyInterface,
-            surfaceLinearRoughness)) {
+            discreteContinuation,
+            surfaceLinearRoughness,
+            primeTransparentRouletteBlocked(
+                    continuation.pathOwnsGuide(), guideEnabled, hasGuide))) {
         return false;
     }
     if (areaNee.enabled()
@@ -1695,7 +1766,8 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
                     != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
-    if (areaNee.enabled() && supportsSolidAngle && !primarySurfaceReplacement) {
+    if (areaNee.enabled() && supportsSolidAngle
+            && !primarySurfaceReplacement && !forceTransmission) {
         path.flags |= PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
     }
     path.bounce++;

@@ -9,5 +9,8 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
     }
     primeWavefrontPrimary(
-            PrimeStagedSecondaryAreaNee(), context, launchIndex);
+            PrimeStagedSecondaryAreaNee(),
+            PrimeCompleteTransparentContinuation(),
+            context,
+            launchIndex);
 }

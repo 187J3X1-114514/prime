@@ -156,6 +156,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
 }
 
 /** Shared Vulkan resources for independently scheduled realtime renderers. */
+@SuppressWarnings("auxiliaryclass")
 abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPipeline {
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;

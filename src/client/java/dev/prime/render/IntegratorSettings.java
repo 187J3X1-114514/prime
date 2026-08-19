@@ -175,7 +175,9 @@ public final class IntegratorSettings {
     }
 
     static float rouletteSurvival(float maximumThroughput, float etaScale) {
-        return Math.max(0.0F, Math.min(1.0F, maximumThroughput * etaScale));
+        return (float) Math.min(
+                1.0,
+                Math.sqrt(Math.max(0.0F, maximumThroughput * etaScale)));
     }
 
     static float updateMean(float previousMean, float sample, int sampleIndex) {

@@ -101,17 +101,12 @@ public float primeRussianRouletteMetric(float3 throughput, float etaScale)
 
 public float primeRussianRouletteSurvival(float3 throughput, float etaScale)
 {
-    return min(max(primeRussianRouletteMetric(throughput, etaScale), 0.0), 1.0);
+    return min(sqrt(max(primeRussianRouletteMetric(throughput, etaScale), 0.0)), 1.0);
 }
 
 public bool primeRussianRouletteApplies(uint completedScatters, uint minimumCompletedScatters)
 {
     return completedScatters >= minimumCompletedScatters;
-}
-
-public float primeOfflineRussianRouletteSurvival(float3 throughput, float etaScale)
-{
-    return min(sqrt(max(primeRussianRouletteMetric(throughput, etaScale), 0.0)), 1.0);
 }
 
 public uint primePackWavefrontEtaScale(float etaScale)

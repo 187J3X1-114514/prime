@@ -19,21 +19,42 @@ final class RealtimeSharcTest {
     }
 
     @Test
-    void sparseUpdateCyclesEveryFourByFourPhase() {
-        for (int frame = 0; frame < 32; frame++) {
-            assertEquals(frame % 16, RealtimeSharc.updatePhase(frame));
+    void threeByThreeTrainingRotatesEachSweepAwayFromReconstructionJitter() {
+        for (int sweep = 0; sweep < 18; sweep++) {
+            boolean[] visited = new boolean[9];
+            for (int local = 0; local < 9; local++) {
+                int phase = RealtimeSharc.updatePhase(sweep * 9 + local);
+                assertFalse(visited[phase]);
+                visited[phase] = true;
+            }
+            for (boolean selected : visited) {
+                assertTrue(selected);
+            }
         }
+        assertEquals(0, RealtimeSharc.updatePhase(0));
+        assertEquals(1, RealtimeSharc.updatePhase(9));
+        assertEquals(8, RealtimeSharc.updatePhase(72));
+        assertEquals(0, RealtimeSharc.updatePhase(81));
+        for (int frame = 0; frame < 8; frame++) {
+            assertTrue(
+                    RealtimeSharc.updatePhase(frame)
+                            != RealtimeSharc.updatePhase(frame + 64));
+            assertTrue(
+                    RealtimeSharc.updatePhase(frame)
+                            != RealtimeSharc.updatePhase(frame + 72));
+        }
+        long unsignedMaximum = 0xffff_ffffL;
         assertEquals(
-                Integer.remainderUnsigned(-1, 16),
+                (int) ((unsignedMaximum % 9 + (unsignedMaximum / 9) % 9) % 9),
                 RealtimeSharc.updatePhase(-1));
     }
 
     @Test
-    void integratedTrainingStoresFourCollapsedAnchorsPerCarrierPath() {
-        assertEquals(4, RealtimeSharc.TRAINING_ANCHOR_COUNT);
-        assertEquals(320, RealtimeSharc.TRAINING_RECORD_BYTES);
-        assertEquals(41_472_000L, RealtimeSharc.trainingBytes(1920, 1080));
-        assertEquals(165_888_000L, RealtimeSharc.trainingBytes(3840, 2160));
+    void integratedTrainingStoresSixCollapsedAnchorsPerCarrierPath() {
+        assertEquals(6, RealtimeSharc.TRAINING_ANCHOR_COUNT);
+        assertEquals(472, RealtimeSharc.TRAINING_RECORD_BYTES);
+        assertEquals(108_748_800L, RealtimeSharc.trainingBytes(1920, 1080));
+        assertEquals(434_995_200L, RealtimeSharc.trainingBytes(3840, 2160));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RealtimeSharc.trainingBytes(0, 1080));

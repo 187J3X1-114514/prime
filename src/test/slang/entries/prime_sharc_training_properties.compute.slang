@@ -81,13 +81,14 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
             || !primeSharcTrainingPixelInPhase(
                     trainingPixel, expectedPhase)
             || any(primeSharcTrainingCoordinate(trainingPixel)
-                    != trainingPixel / 4u)
+                    != trainingPixel / PRIME_SHARC_TRAINING_GRID_SIZE)
             || primeSharcTrainingAnchorCount(anchorControl) != anchorIndex
             || primeSharcTrainingStoredAnchorCount(anchorControl)
-                    != min(anchorIndex, 4u)
-            || anchorSlot != min(anchorIndex, 3u)
+                    != min(anchorIndex, PRIME_SHARC_TRAINING_ANCHOR_CAPACITY)
+            || anchorSlot != min(
+                    anchorIndex, PRIME_SHARC_TRAINING_ANCHOR_CAPACITY - 1u)
             || primeSharcTrainingCanAppendAnchor(anchorControl)
-                    != (anchorIndex < 4u)
+                    != (anchorIndex < PRIME_SHARC_TRAINING_ANCHOR_CAPACITY)
             || !primeSharcTrainingHasPendingDirection(pendingControl)
             || primeSharcTrainingPendingAnchor(pendingControl) != anchorSlot
             || primeSharcTrainingHasPendingDirection(

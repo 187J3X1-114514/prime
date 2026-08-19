@@ -25,9 +25,9 @@ final class RealtimeSharc implements Destroyable {
     static final long ACCUMULATION_BYTES = (long) CAPACITY * 32L;
     static final long RESOLVED_BYTES = (long) CAPACITY * 24L;
     static final long CACHE_BYTES = HASH_BYTES + ACCUMULATION_BYTES + RESOLVED_BYTES;
-    static final int TRAINING_ANCHOR_COUNT = 4;
-    static final int TRAINING_RECORD_BYTES = 320;
-    static final int TRAINING_GRID_SIZE = 4;
+    static final int TRAINING_ANCHOR_COUNT = 6;
+    static final int TRAINING_RECORD_BYTES = 16 + TRAINING_ANCHOR_COUNT * 76;
+    static final int TRAINING_GRID_SIZE = 3;
     static final int TRAINING_PHASE_COUNT = TRAINING_GRID_SIZE * TRAINING_GRID_SIZE;
     private static final int ACCUMULATION_FRAMES = 64;
     private static final int STALE_FRAMES = 128;
@@ -503,7 +503,13 @@ final class RealtimeSharc implements Destroyable {
     }
 
     static int updatePhase(int frameIndex) {
-        return Integer.remainderUnsigned(frameIndex, TRAINING_PHASE_COUNT);
+        long frame = Integer.toUnsignedLong(frameIndex);
+        long sweep = frame / TRAINING_PHASE_COUNT;
+        // Rotate each complete spatial sweep so the effective 81-frame schedule does not lock to
+        // the 64/72-frame RR jitter periods while every nine frames still cover all pixels once.
+        return (int) ((frame % TRAINING_PHASE_COUNT
+                        + sweep % TRAINING_PHASE_COUNT)
+                % TRAINING_PHASE_COUNT);
     }
 
     static boolean requiresClear(

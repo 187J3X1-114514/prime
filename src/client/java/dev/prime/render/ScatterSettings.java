@@ -4,7 +4,7 @@ package dev.prime.render;
 public final class ScatterSettings {
     public static final int MINIMUM_COUNT = 1;
     public static final int MAXIMUM_COUNT = 64;
-    public static final int DEFAULT_COUNT = 16;
+    public static final int DEFAULT_COUNT = 12;
 
     private ScatterSettings() {
     }

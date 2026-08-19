@@ -8,7 +8,7 @@
   "prime.options.path_tracing": "Prime Path Tracing",
   "prime.options.path_tracing.tooltip": "Enables Prime path-traced rendering. Disable it to restore vanilla rendering when you need more performance or encounter compatibility problems.",
   "prime.options.sharc": "SHARC Radiance Cache",
-  "prime.options.sharc.tooltip": "Remembers bounced lighting already calculated near the player and reuses it in later frames. This usually makes realtime path tracing faster and less noisy, at the cost of about 256 MiB of VRAM; it turns off automatically on unsupported GPUs.",
+  "prime.options.sharc.tooltip": "Remembers bounced lighting already calculated near the player and reuses it in later frames. The fixed cache costs about 256 MiB, plus resolution-dependent training records (about 104 MiB at 1920×1080 internal resolution); it turns off automatically on unsupported GPUs.",
   "prime.options.scatter_count": "Scatter Count",
   "prime.options.scatter_count.tooltip": "Sets the shared maximum path scatter count for every realtime and offline integrator (1–64).",
   "prime.options.terrain_worker_percentage": "Terrain Worker Share",

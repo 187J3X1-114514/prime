@@ -117,7 +117,7 @@ bool primeAdvanceOfflinePath(
             path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
-    float survival = primeOfflineRussianRouletteSurvival(
+    float survival = primeRussianRouletteSurvival(
             path.throughput, path.etaScale);
     primeRecordUnit(context.diagnostics, survival);
     float rouletteSample = primeHashSample1D(

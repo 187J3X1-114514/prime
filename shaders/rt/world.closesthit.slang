@@ -50,21 +50,15 @@ void main(
     bool dynamic = (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
             && section.lightAddress != uint64_t(0);
     primePayload.hitKind = PRIME_HIT_SURFACE;
-    bool bakedMaterial = primeUsesBakedMaterial(primitive);
-    float textureLodValue =
-            bakedMaterial
-                    ? 0.0
-                    : primeRayConeTextureLod(primitive, normal, hit.position);
     primitive = primeResolveSurfacePrimitive(
             section,
             primitive,
             relation,
-            textureLodValue,
             barycentrics,
             hit.localPosition,
             normal);
-    bakedMaterial = primeUsesBakedMaterial(primitive);
-    textureLodValue =
+    bool bakedMaterial = primeUsesBakedMaterial(primitive);
+    float textureLodValue =
             bakedMaterial
                     ? 0.0
                     : primeRayConeTextureLod(primitive, normal, hit.position);

@@ -94,13 +94,10 @@ void main(
     PrimeHitTriangle hit = primeHitTriangle(
             section, barycentrics, authoredNormal);
     float3 outwardNormal = hit.geometricNormal;
-    float textureLodValue = primeRayConeTextureLod(
-            primitive, outwardNormal, hit.position);
     primitive = primeResolveSurfacePrimitive(
             section,
             primitive,
             relation,
-            textureLodValue,
             barycentrics,
             hit.localPosition,
             outwardNormal);
@@ -110,8 +107,6 @@ void main(
         IgnoreHit();
         return;
     }
-    textureLodValue = primeRayConeTextureLod(
-            primitive, outwardNormal, hit.position);
     uint recipeControl = primePrimitiveControl(primitive);
     float2 materialUv = primeInterpolateUv(
             section,
@@ -119,8 +114,7 @@ void main(
             barycentrics,
             hit.localPosition,
             outwardNormal);
-    float surfaceOpacity = primeEvaluateOpacity(
-            primitive, materialUv, textureLodValue);
+    float surfaceOpacity = primeEvaluateOpacity(primitive, materialUv);
     if ((recipeControl & PRIME_RECIPE_ALPHA_CUTOUT) != 0u
             && surfaceOpacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         IgnoreHit();

@@ -85,7 +85,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def wavefrontContract = schema.realtimeWavefrontContract
 		def offlineWavefrontContract = schema.offlineWavefrontContract
 
-		if (primitive.size != 32 || section.size != 96 || lightNode.size != 48
+		if (primitive.size != 32 || section.size != 96 || lightNode.size != 32
 				|| worldLightHeader.size != 48 || worldLightSummary.size != 48
 				|| lightAliasEntry.size != 8
 				|| lightLeaf.size != 8 || lightLeafEntry.size != 8
@@ -160,6 +160,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| wavefrontContract.areaRecordSize
 						!= 16 + wavefrontSurfaceRecord.size * wavefrontContract.pathSlotsPerPixel
 				|| wavefrontContract.queueEntriesPerPixel != 2
+				|| wavefrontContract.queueStorageEntriesPerPixel != 9
 				|| wavefrontContract.queueCount != 6
 				|| wavefrontContract.traceQueue0 != 0
 				|| wavefrontContract.traceQueue1 != 1
@@ -177,6 +178,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
 				|| offlineWavefrontContract.areaRecordSize != 0
 				|| offlineWavefrontContract.queueEntriesPerPixel != 1
+				|| offlineWavefrontContract.queueStorageEntriesPerPixel != 2
 				|| offlineWavefrontContract.queueCount != 2
 				|| offlineWavefrontContract.queueCommandStride != 16
 				|| offlineWavefrontContract.queueIndexSize != 4
@@ -408,11 +410,13 @@ public final class ShaderAbi {
     public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
     public static final int OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
     public static final int OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
+    public static final int OFFLINE_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueStorageEntriesPerPixel};
     public static final int OFFLINE_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
     public static final int OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
     public static final int OFFLINE_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
     public static final int WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
+    public static final int WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueStorageEntriesPerPixel};
     public static final int WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
     public static final int WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
     public static final int WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
@@ -797,6 +801,7 @@ public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContr
 public static const uint PRIME_WAVEFRONT_SURFACE_RECORD_SIZE = ${wavefrontSurfaceRecord.size};
 public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
 public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
+public static const uint PRIME_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueStorageEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
 public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
 public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
@@ -894,6 +899,7 @@ public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontCo
 public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
 public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${offlineWavefrontContract.areaRecordSize};
 public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
+public static const uint PRIME_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueStorageEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
 public static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
 public static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};

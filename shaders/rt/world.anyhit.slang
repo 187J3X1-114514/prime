@@ -34,13 +34,10 @@ void main(in BuiltInTriangleIntersectionAttributes attributes) {
     PrimeHitTriangle hit = primeHitTriangle(
             section, barycentrics, authoredNormal);
     float3 normal = hit.geometricNormal;
-    float textureLodValue = primeRayConeTextureLod(
-            primitive, normal, hit.position);
     primitive = primeResolveSurfacePrimitive(
             section,
             primitive,
             relation,
-            textureLodValue,
             barycentrics,
             hit.localPosition,
             normal);
@@ -49,13 +46,10 @@ void main(in BuiltInTriangleIntersectionAttributes attributes) {
         // shadow.anyhit.slang instead, where straight glass and water transmission are accumulated.
         return;
     }
-    textureLodValue = primeRayConeTextureLod(
-            primitive, normal, hit.position);
     float opacity = primeEvaluateOpacity(
             primitive,
             primeInterpolateUv(
-                    section, primitive, barycentrics, hit.localPosition, normal),
-            textureLodValue);
+                    section, primitive, barycentrics, hit.localPosition, normal));
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         IgnoreHit();
     }

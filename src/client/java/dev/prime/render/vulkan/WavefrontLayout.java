@@ -4,6 +4,7 @@ package dev.prime.render.vulkan;
 record WavefrontLayout(
         int pathSlotsPerPixel,
         int queueEntriesPerPixel,
+        int queueStorageEntriesPerPixel,
         int pathRecordSize,
         int areaRecordSize,
         int queueCount,
@@ -26,11 +27,11 @@ record WavefrontLayout(
 
     long queueBytes(int width, int height) {
         long pixels = pixels(width, height);
-        long capacity = Math.multiplyExact(pixels, this.queueEntriesPerPixel);
         long areas = Math.multiplyExact(pixels, this.areaRecordSize);
         long commands = Math.multiplyExact(this.queueCount, this.commandStride);
         long indices = Math.multiplyExact(
-                Math.multiplyExact(this.queueCount, capacity), this.indexSize);
+                Math.multiplyExact(pixels, this.queueStorageEntriesPerPixel),
+                this.indexSize);
         return Math.addExact(areas, Math.addExact(commands, indices));
     }
 

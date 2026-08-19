@@ -35,11 +35,10 @@
       ]
     },
     "lightNode": {
-      "size": 48,
+      "size": 32,
       "fields": [
-        { "name": "boundsMinPower", "type": "vec4", "offset": 0 },
-        { "name": "boundsMaxReserved", "type": "vec4", "offset": 16 },
-        { "name": "directionChildCentroidReserved", "type": "uvec4", "offset": 32 }
+        { "name": "centroidPower", "type": "vec4", "offset": 0 },
+        { "name": "directionChildReserved", "type": "uvec4", "offset": 16 }
       ]
     },
     "worldLightHeader": {
@@ -305,6 +304,7 @@
     "pathSlotsPerPixel": 2,
     "areaRecordSize": 208,
     "queueEntriesPerPixel": 2,
+    "queueStorageEntriesPerPixel": 9,
     "queueCount": 6,
     "traceQueue0": 0,
     "traceQueue1": 1,
@@ -321,6 +321,7 @@
     "pathSlotsPerPixel": 1,
     "areaRecordSize": 0,
     "queueEntriesPerPixel": 1,
+    "queueStorageEntriesPerPixel": 2,
     "queueCount": 2,
     "queueCommandStride": 16,
     "queueIndexSize": 4,

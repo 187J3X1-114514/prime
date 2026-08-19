@@ -907,9 +907,15 @@ struct PrimeCompiledClosure {
     PrimeClosureTraits traits;
 };
 
-PrimeClosureTraits primeOpaqueClosureTraits(PrimeCompactOpaqueState state) {
-    bool conductor = state.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR;
-    bool discreteSpecular = primeOpenPbrMicrofacetEffectivelySmooth(state.microfacet);
+PrimeOpenPbrMicrofacet primeClosureMicrofacet(float perceptualRoughness) {
+    PrimeOpenPbrMicrofacet result;
+    result.alpha = primeOpenPbrSpecularNdfRoughnesses(
+            perceptualRoughness, 0.0);
+    return result;
+}
+
+PrimeClosureTraits primeOpaqueClosureTraits(
+        bool conductor, bool discreteSpecular) {
     PrimeClosureTraits result;
     result.measureMask = !conductor || !discreteSpecular
             ? PRIME_MEASURE_SOLID_ANGLE
@@ -923,6 +929,22 @@ PrimeClosureTraits primeOpaqueClosureTraits(PrimeCompactOpaqueState state) {
                     ? PRIME_BSDF_EVENT_DISCRETE
                     : PRIME_BSDF_EVENT_GLOSSY);
     return result;
+}
+
+PrimeClosureTraits primeOpaqueClosureTraits(PrimeCompactOpaqueState state) {
+    bool conductor = state.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR;
+    bool discreteSpecular = primeOpenPbrMicrofacetEffectivelySmooth(state.microfacet);
+    return primeOpaqueClosureTraits(conductor, discreteSpecular);
+}
+
+PrimeClosureTraits primeOpaqueClosureTraits(
+        float roughness, uint opticalControl, uint materialControl) {
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            roughness, opticalControl, materialControl);
+    return primeOpaqueClosureTraits(
+            primeOpticalMaterialIsMetal(translated),
+            primeOpenPbrMicrofacetEffectivelySmooth(
+                    primeClosureMicrofacet(translated.perceptualRoughness)));
 }
 
 PrimeCompiledClosure primeCompileOpaqueClosure(
@@ -1657,6 +1679,24 @@ PrimeCompiledClosure primeCompileFoliageClosure(
     return result;
 }
 
+PrimeClosureTraits primeFoliageClosureTraits(
+        float roughness, uint opticalControl, uint materialControl) {
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            roughness, opticalControl, materialControl);
+    bool discreteSpecular = primeOpenPbrMicrofacetEffectivelySmooth(
+            primeClosureMicrofacet(translated.perceptualRoughness));
+    PrimeClosureTraits result;
+    result.measureMask = PRIME_MEASURE_SOLID_ANGLE
+            | (discreteSpecular ? PRIME_MEASURE_DISCRETE : 0u);
+    result.eventMask = PRIME_BSDF_EVENT_REFLECTION
+            | PRIME_BSDF_EVENT_TRANSMISSION
+            | PRIME_BSDF_EVENT_DIFFUSE
+            | (discreteSpecular
+                    ? PRIME_BSDF_EVENT_DISCRETE
+                    : PRIME_BSDF_EVENT_GLOSSY);
+    return result;
+}
+
 BsdfEvaluation primeEvaluateMinecraftFoliage(
         float3 baseColor,
         float3 outwardNormal,
@@ -2018,6 +2058,74 @@ PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
             opticalControl,
             adjacentBaseColor,
             adjacentInterfaceControl);
+    return result;
+}
+
+float primeMinecraftInterfaceIor(uint materialControl, uint opticalControl) {
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            0.0, opticalControl, materialControl);
+    return primeMaterialIsWater(materialControl)
+            ? 1.333
+            : primeOpenPbrF0ToIor(translated.dielectricF0);
+}
+
+PrimeClosureTraits primeMinecraftTransmissionClosureTraits(
+        float3 outwardNormal,
+        uint materialControl,
+        float roughness,
+        uint opticalControl,
+        float3 viewDirection,
+        PrimeOpenPbrVolumeStack volumeStack,
+        uint adjacentInterfaceControl) {
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            roughness, opticalControl, materialControl);
+    float interfaceRoughness = primeMaterialEffectiveLinearRoughness(
+            materialControl, translated.perceptualRoughness);
+    bool thinWalled = (materialControl & PRIME_MATERIAL_THIN_WALLED) != 0u;
+    float originalIor = primeMaterialIsWater(materialControl)
+            ? 1.333
+            : primeOpenPbrF0ToIor(translated.dielectricF0);
+    float relativeIor;
+    if (primeHasAdjacentMedium(adjacentInterfaceControl)) {
+        float adjacentIor = primeMinecraftInterfaceIor(
+                primeAdjacentMaterialControl(adjacentInterfaceControl),
+                primeAdjacentFresnelCode(adjacentInterfaceControl));
+        if (primeUsesAdjacentAirGap(
+                materialControl, opticalControl, adjacentInterfaceControl)) {
+            interfaceRoughness = 0.0;
+            thinWalled = true;
+            relativeIor = 1.0 / adjacentIor;
+        } else {
+            relativeIor = originalIor * (1.0 / adjacentIor);
+        }
+    } else {
+        float3 closureNormal = thinWalled
+                        && dot(outwardNormal, viewDirection) < 0.0
+                ? -outwardNormal
+                : outwardNormal;
+        relativeIor = originalIor * primeCompactInverseOutsideIor(
+                dot(closureNormal, viewDirection), volumeStack);
+    }
+    PrimeOpenPbrMicrofacet microfacet =
+            primeClosureMicrofacet(interfaceRoughness);
+    if (thinWalled) {
+        microfacet.alpha = clamp(
+                microfacet.alpha
+                        * primeOpenPbrThinDielectricRoughnessScaler2(relativeIor),
+                float2(0.0),
+                float2(1.0));
+    }
+    PrimeClosureTraits result;
+    bool discrete = relativeIor == 1.0
+            || primeOpenPbrMicrofacetEffectivelySmooth(microfacet);
+    result.measureMask = discrete
+            ? PRIME_MEASURE_DISCRETE
+            : PRIME_MEASURE_SOLID_ANGLE;
+    result.eventMask = PRIME_BSDF_EVENT_REFLECTION
+            | PRIME_BSDF_EVENT_TRANSMISSION
+            | (discrete
+                    ? PRIME_BSDF_EVENT_DISCRETE
+                    : PRIME_BSDF_EVENT_GLOSSY);
     return result;
 }
 

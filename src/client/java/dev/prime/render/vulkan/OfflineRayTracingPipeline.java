@@ -35,6 +35,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
+            ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE,
             0,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COUNT,

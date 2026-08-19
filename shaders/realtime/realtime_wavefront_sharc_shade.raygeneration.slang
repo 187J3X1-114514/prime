@@ -13,7 +13,7 @@ void main()
     }
     primeWavefrontShade(
             PrimeStagedSecondaryAreaNee(),
-            PrimeSharcIndirectReuse(),
+            PrimeNoIndirectReuse(),
             PrimeIntegratedSharcTraining(),
             context,
             launchIndex,

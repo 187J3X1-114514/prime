@@ -184,6 +184,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL,
             ShaderAbi.WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
+            ShaderAbi.WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL,
             ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE,
             ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE,
             ShaderAbi.WAVEFRONT_QUEUE_COUNT,

@@ -1,5 +1,6 @@
 package dev.prime.render.terrain;
 
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -16,6 +17,7 @@ public final class CpuVoxelMesh {
     private final int cutoutTriangleCount;
     private final int transmissiveTriangleCount;
     private final OpacityMicromapData opacityMicromap;
+    private final int gpuContentHash;
 
     public CpuVoxelMesh(
             float[] positions,
@@ -48,6 +50,18 @@ public final class CpuVoxelMesh {
         this.opaqueTriangleCount = opaqueTriangleCount;
         this.cutoutTriangleCount = cutoutTriangleCount;
         this.transmissiveTriangleCount = transmissiveTriangleCount;
+        int hash = rawFloatHash(this.positions);
+        hash = 31 * hash + Arrays.hashCode(this.primitiveRecords);
+        hash = 31 * hash + this.opaqueTriangleCount;
+        hash = 31 * hash + this.cutoutTriangleCount;
+        hash = 31 * hash + this.transmissiveTriangleCount;
+        hash = 31 * hash + Arrays.hashCode(this.opacityMicromap.blocks());
+        hash = 31 * hash + Arrays.hashCode(this.opacityMicromap.blockOffsets());
+        hash = 31 * hash + Arrays.hashCode(this.opacityMicromap.blockFormats());
+        hash = 31 * hash + Arrays.hashCode(
+                this.opacityMicromap.blockSubdivisionLevels());
+        hash = 31 * hash + Arrays.hashCode(this.opacityMicromap.triangleIndices());
+        this.gpuContentHash = hash;
     }
 
     /** Borrowed read-only backing storage. */
@@ -94,5 +108,18 @@ public final class CpuVoxelMesh {
         return Math.addExact(
                 Math.addExact(this.positionBytes(), this.primitiveBytes()),
                 this.opacityMicromap.byteSize());
+    }
+
+    /** Stable fingerprint of the borrowed read-only GPU payload. */
+    public int gpuContentHash() {
+        return this.gpuContentHash;
+    }
+
+    private static int rawFloatHash(float[] values) {
+        int result = 1;
+        for (float value : values) {
+            result = 31 * result + Float.floatToRawIntBits(value);
+        }
+        return result;
     }
 }

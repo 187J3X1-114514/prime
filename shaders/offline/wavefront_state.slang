@@ -57,12 +57,6 @@ uint primeOfflineAreaControl(
     return control;
 }
 
-uint primeOfflineAreaStartingMediumCount(PrimeOfflinePathRecord record) {
-    return (asuint(record.areaContributionAndValid.w)
-            >> PRIME_OFFLINE_AREA_MEDIUM_SHIFT)
-            & PRIME_OFFLINE_AREA_MEDIUM_MASK;
-}
-
 uint primeOfflinePreviousLightNormal(PrimeOfflinePathRecord record) {
     return (asuint(record.areaContributionAndValid.w)
             >> PRIME_OFFLINE_LIGHT_NORMAL_SHIFT)
@@ -248,18 +242,6 @@ PrimeOpenPbrVolumeStack primeOfflineVolumeStack(PrimeOfflineTransportRecord reco
 bool primeOfflineIsActive(PrimeOfflinePathRecord record) {
     return (asuint(record.transport.rayDirectionAndControl.w)
             & PRIME_OFFLINE_CONTROL_ACTIVE) != 0u;
-}
-
-PrimeOfflinePathRecord primeOfflineWithoutAreaRequest(
-        PrimeOfflinePathRecord record) {
-    record.areaDirectionAndDistance = float4(0.0);
-    uint packedNormal = asuint(record.areaContributionAndValid.w)
-            & (PRIME_OFFLINE_LIGHT_NORMAL_MASK
-                    << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT);
-    record.areaContributionAndValid = float4(
-            0.0, 0.0, 0.0, asfloat(packedNormal));
-    record.areaTargetEmitter = uint4(PRIME_NO_PRIMITIVE_INDEX);
-    return record;
 }
 
 #endif

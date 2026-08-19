@@ -15,6 +15,7 @@ public final class CompiledClusterLights {
     private static final int LEGACY_LIGHT_NODE_SIZE = 32;
     private static final int LEGACY_LIGHT_NODE_FORWARD_SIZE = 8;
     private static final int LEGACY_LIGHT_NODE_REVERSE_SIZE = 4;
+    private static final int PRE_V15_LIGHT_NODE_SIZE = 48;
 
     public static final CompiledClusterLights EMPTY =
             new CompiledClusterLights(new int[0], Summary.EMPTY);
@@ -284,7 +285,7 @@ public final class CompiledClusterLights {
         upgraded[11] = emitterCount;
         tree.packInto(upgraded, nodeStart, leafStart, entryStart);
         upgraded[nodeStart
-                        + ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET
+                        + ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET
                                 / Integer.BYTES] =
                 packedDirection;
         System.arraycopy(
@@ -303,6 +304,75 @@ public final class CompiledClusterLights {
             upgraded[newEmitterStart + emitter * emitterWords + 21] = tree.leafPath(emitter);
         }
         return upgraded;
+    }
+
+    /** Replaces v13-v14 bounded nodes with their already-quantized proposal centroids. */
+    static int[] compactTreeNodes(int[] oldWords) {
+        Objects.requireNonNull(oldWords, "oldWords");
+        if (oldWords.length < HEADER_WORDS) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+        long nodeStart = getLong(oldWords, 0);
+        long leafStart = getLong(oldWords, 2);
+        long entryStart = getLong(oldWords, 4);
+        long emitterStart = getLong(oldWords, 6);
+        long cellStart = getLong(oldWords, 8);
+        long byteSize = (long) oldWords.length * Integer.BYTES;
+        long nodeBytes = leafStart - nodeStart;
+        if (nodeStart != (long) HEADER_WORDS * Integer.BYTES
+                || nodeBytes <= 0L
+                || nodeBytes % PRE_V15_LIGHT_NODE_SIZE != 0L
+                || entryStart < leafStart
+                || emitterStart < entryStart
+                || cellStart < emitterStart
+                || cellStart > byteSize
+                || ((nodeStart | leafStart | entryStart | emitterStart | cellStart) & 3L) != 0L) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+        int nodeCount = Math.toIntExact(nodeBytes / PRE_V15_LIGHT_NODE_SIZE);
+        long reduction = Math.multiplyExact(
+                (long) nodeCount, PRE_V15_LIGHT_NODE_SIZE - ShaderAbi.LIGHT_NODE_SIZE);
+        int[] upgraded = new int[Math.toIntExact((byteSize - reduction) / Integer.BYTES)];
+        int nodeWord = Math.toIntExact(nodeStart / Integer.BYTES);
+        System.arraycopy(oldWords, 0, upgraded, 0, nodeWord);
+        int oldNodeWords = PRE_V15_LIGHT_NODE_SIZE / Integer.BYTES;
+        int newNodeWords = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
+        for (int node = 0; node < nodeCount; node++) {
+            int oldBase = nodeWord + node * oldNodeWords;
+            int newBase = nodeWord + node * newNodeWords;
+            int packedCentroid = oldWords[oldBase + 10];
+            upgraded[newBase] = Float.floatToRawIntBits(unpackCentroidAxis(
+                    oldWords, oldBase, packedCentroid & 0x3ff));
+            upgraded[newBase + 1] = Float.floatToRawIntBits(unpackCentroidAxis(
+                    oldWords, oldBase + 1, packedCentroid >> 10 & 0x3ff));
+            upgraded[newBase + 2] = Float.floatToRawIntBits(unpackCentroidAxis(
+                    oldWords, oldBase + 2, packedCentroid >> 20 & 0x3ff));
+            upgraded[newBase + 3] = oldWords[oldBase + 3];
+            upgraded[newBase + 4] = oldWords[oldBase + 8];
+            upgraded[newBase + 5] = oldWords[oldBase + 9];
+            upgraded[newBase + 6] = 0;
+            upgraded[newBase + 7] = 0;
+        }
+        int oldLeafWord = Math.toIntExact(leafStart / Integer.BYTES);
+        int newLeafWord = Math.toIntExact((leafStart - reduction) / Integer.BYTES);
+        System.arraycopy(
+                oldWords,
+                oldLeafWord,
+                upgraded,
+                newLeafWord,
+                oldWords.length - oldLeafWord);
+        putLong(upgraded, 2, leafStart - reduction);
+        putLong(upgraded, 4, entryStart - reduction);
+        putLong(upgraded, 6, emitterStart - reduction);
+        putLong(upgraded, 8, cellStart - reduction);
+        return upgraded;
+    }
+
+    private static float unpackCentroidAxis(
+            int[] words, int minimumWord, int quantized) {
+        float minimum = Float.intBitsToFloat(words[minimumWord]);
+        float maximum = Float.intBitsToFloat(words[minimumWord + 4]);
+        return minimum + (maximum - minimum) * ((float) quantized / 1023.0F);
     }
 
     /** Adds the v14 flat emitter alias table without rebuilding the existing local light tree. */
@@ -481,7 +551,7 @@ public final class CompiledClusterLights {
         }
         int rootDirectionWord = Math.toIntExact(
                 (nodeStart
-                                + ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET)
+                                + ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET)
                         / Integer.BYTES);
         if (words[rootDirectionWord] != packedDirection) {
             throw new IllegalArgumentException(
@@ -515,33 +585,22 @@ public final class CompiledClusterLights {
         int nodeWords = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
         int leafWords = ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES;
         int entryWords = ShaderAbi.LIGHT_LEAF_ENTRY_SIZE / Integer.BYTES;
-        int minPowerWord = ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET / Integer.BYTES;
-        int maxReservedWord = ShaderAbi.LIGHT_NODE_BOUNDS_MAX_RESERVED_OFFSET / Integer.BYTES;
+        int centroidPowerWord = ShaderAbi.LIGHT_NODE_CENTROID_POWER_OFFSET / Integer.BYTES;
         int controlWord =
-                ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET / Integer.BYTES;
+                ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET / Integer.BYTES;
         int childOrLeafWord = controlWord + 1;
         for (int node = 0; node < nodeCount; node++) {
             int base = nodeWord + node * nodeWords;
-            float minX = Float.intBitsToFloat(words[base + minPowerWord]);
-            float minY = Float.intBitsToFloat(words[base + minPowerWord + 1]);
-            float minZ = Float.intBitsToFloat(words[base + minPowerWord + 2]);
-            float power = Float.intBitsToFloat(words[base + minPowerWord + 3]);
-            float maxX = Float.intBitsToFloat(words[base + maxReservedWord]);
-            float maxY = Float.intBitsToFloat(words[base + maxReservedWord + 1]);
-            float maxZ = Float.intBitsToFloat(words[base + maxReservedWord + 2]);
-            if (!Float.isFinite(minX)
-                    || !Float.isFinite(minY)
-                    || !Float.isFinite(minZ)
-                    || !Float.isFinite(maxX)
-                    || !Float.isFinite(maxY)
-                    || !Float.isFinite(maxZ)
-                    || minX > maxX
-                    || minY > maxY
-                    || minZ > maxZ
+            float centroidX = Float.intBitsToFloat(words[base + centroidPowerWord]);
+            float centroidY = Float.intBitsToFloat(words[base + centroidPowerWord + 1]);
+            float centroidZ = Float.intBitsToFloat(words[base + centroidPowerWord + 2]);
+            float power = Float.intBitsToFloat(words[base + centroidPowerWord + 3]);
+            if (!Float.isFinite(centroidX)
+                    || !Float.isFinite(centroidY)
+                    || !Float.isFinite(centroidZ)
                     || !(power > 0.0F)
                     || !Float.isFinite(power)
-                    || words[base + maxReservedWord + 3] != 0
-                    || (words[base + controlWord + 2] & 0xc000_0000) != 0
+                    || words[base + controlWord + 2] != 0
                     || words[base + controlWord + 3] != 0) {
                 throw new IllegalArgumentException("Compiled light tree node is invalid");
             }

@@ -11,7 +11,7 @@ final class ShaderAbiTest {
         assertEquals(32, ShaderAbi.PRIMITIVE_RECORD_SIZE);
         assertEquals(96, ShaderAbi.SECTION_RECORD_SIZE);
         assertEquals(64, ShaderAbi.SECTION_INSTANCE_TINT_OFFSET);
-        assertEquals(48, ShaderAbi.LIGHT_NODE_SIZE);
+        assertEquals(32, ShaderAbi.LIGHT_NODE_SIZE);
         assertEquals(48, ShaderAbi.WORLD_LIGHT_HEADER_SIZE);
         assertEquals(48, ShaderAbi.WORLD_LIGHT_SUMMARY_SIZE);
         assertEquals(8, ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE);
@@ -69,6 +69,7 @@ final class ShaderAbiTest {
         assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         assertEquals(208, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL);
+        assertEquals(9, ShaderAbi.WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL);
         assertEquals(6, ShaderAbi.WAVEFRONT_QUEUE_COUNT);
         assertEquals(0, ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
         assertEquals(1, ShaderAbi.WAVEFRONT_TRACE_QUEUE_1);
@@ -85,6 +86,7 @@ final class ShaderAbiTest {
         assertEquals(176, ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(1, ShaderAbi.OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         assertEquals(1, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL);
+        assertEquals(2, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL);
         assertEquals(2, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COUNT);
         assertEquals(16, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE);
         assertEquals(4, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_INDEX_SIZE);
@@ -200,9 +202,8 @@ final class ShaderAbiTest {
         assertEquals(76, ShaderAbi.SECTION_TRANSMISSIVE_MACRO_TRIANGLE_BASE_OFFSET);
         assertEquals(80, ShaderAbi.SECTION_SURFACE_RELATION_ADDRESS_OFFSET);
         assertEquals(88, ShaderAbi.SECTION_POSITION_ADDRESS_OFFSET);
-        assertEquals(0, ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET);
-        assertEquals(16, ShaderAbi.LIGHT_NODE_BOUNDS_MAX_RESERVED_OFFSET);
-        assertEquals(32, ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET);
+        assertEquals(0, ShaderAbi.LIGHT_NODE_CENTROID_POWER_OFFSET);
+        assertEquals(16, ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET);
         assertEquals(0, ShaderAbi.WORLD_LIGHT_HEADER_NODE_OFFSET_OFFSET);
         assertEquals(24, ShaderAbi.WORLD_LIGHT_HEADER_SUMMARY_OFFSET_OFFSET);
         assertEquals(40, ShaderAbi.WORLD_LIGHT_HEADER_SUMMARY_COUNT_OFFSET);

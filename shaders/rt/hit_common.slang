@@ -209,7 +209,6 @@ public PrimitiveRecord primeResolveSurfacePrimitive(
         SectionRecord section,
         PrimitiveRecord primary,
         PrimeSurfaceRelation relation,
-        float textureLodValue,
         float2 barycentrics,
         float3 localPosition,
         float3 geometricNormal) {
@@ -231,8 +230,7 @@ public PrimitiveRecord primeResolveSurfacePrimitive(
                             primary,
                             barycentrics,
                             localPosition,
-                            geometricNormal),
-                    textureLodValue) >= PRIME_CUTOUT_ALPHA_THRESHOLD;
+                            geometricNormal)) >= PRIME_CUTOUT_ALPHA_THRESHOLD;
     return overlayCovered
             ? primePrimitiveWithMaterialRecipe(primary, relation.control >> 8u)
             : relation.material;
@@ -309,8 +307,11 @@ public float primeRayConeTextureLod(
     }
     uint textureIndex = min(
             primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
-    int mipLevels = primeSceneTextureMipLevels(textureIndex);
-    if (!(rayCone.x > 0.0) || !(normalizedUvDensity > 0.0) || mipLevels <= 1) {
+    PrimeSceneTextureDimensions dimensions =
+            primeSceneTextureDimensions(textureIndex);
+    if (!(rayCone.x > 0.0)
+            || !(normalizedUvDensity > 0.0)
+            || dimensions.mipLevels <= 1) {
         return 0.0;
     }
 
@@ -318,9 +319,8 @@ public float primeRayConeTextureLod(
     // actual atlas extent turns it into texels per world unit without baking resource-pack size
     // into section meshes. Minecraft block atlases are square; max() remains conservative if a
     // backend exposes a non-square view.
-    int2 atlasExtent = primeSceneTextureExtent(textureIndex);
     float texelsPerWorldUnit = normalizedUvDensity
-            * float(max(atlasExtent.x, atlasExtent.y));
+            * float(max(dimensions.extent.x, dimensions.extent.y));
     float distanceFromCamera = length(hitPosition - primePush.cameraPosition);
     float incidence = max(abs(dot(
             normalize(geometricNormal), normalize(WorldRayDirection()))), 0.05);
@@ -331,5 +331,5 @@ public float primeRayConeTextureLod(
     // screen-space footprint; applying a fixed mip directly would make distant shimmer look like
     // detail and cause FSR's luminance-instability stage to erase it over time.
     float lod = log2(max(texelFootprint, 1.0e-8)) + rayCone.y;
-    return clamp(lod, 0.0, float(mipLevels - 1));
+    return clamp(lod, 0.0, float(dimensions.mipLevels - 1));
 }

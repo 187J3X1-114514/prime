@@ -156,7 +156,7 @@ void primeAppendWavefrontPath(uint queue, uint pathIndex) {
     uint commandWord = primeWavefrontQueueCommandWord(queue);
     uint entry;
     InterlockedAdd(primeWavefrontQueue[commandWord], 1u, entry);
-    uint capacity = primeWavefrontQueueCapacity();
+    uint capacity = primeWavefrontQueueCapacity(queue);
     if (entry < capacity) {
         primeWavefrontQueue[
                 primeWavefrontQueueWord(queue, entry)] = pathIndex;
@@ -196,7 +196,7 @@ struct PrimeSubgroupWavefrontContinuationAppender
                     firstEntry);
         }
         firstEntry = WaveReadLaneFirst(firstEntry);
-        uint capacity = primeWavefrontQueueCapacity();
+        uint capacity = primeWavefrontQueueCapacity(queue);
         bool overflow = activeCount > capacity
                 || firstEntry > capacity - min(activeCount, capacity);
         if (WaveIsFirstLane() && overflow) {

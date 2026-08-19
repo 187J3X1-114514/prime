@@ -18,6 +18,11 @@ void primeWavefrontShade<AreaNee, IndirectReuse, SharcTraining>(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
+    // The area stage consumes a SHARC hit and retires its record. The queued shade entry remains
+    // structurally valid, but must not query or integrate the same vertex a second time.
+    if (!primeWavefrontActive(record)) {
+        return;
+    }
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);

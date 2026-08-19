@@ -386,6 +386,13 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
+        PrimeClosureTraits opaqueTraits = primeOpaqueClosureTraits(state);
+        PrimeClosureTraits fastOpaqueTraits = primeOpaqueClosureTraits(
+                roughness, opticalControl, materialControl);
+        if (opaqueTraits.measureMask != fastOpaqueTraits.measureMask
+                || opaqueTraits.eventMask != fastOpaqueTraits.eventMask) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
         const float minimumLinearRoughness = 0.4;
         PrimeOpenPbrMaterial opaqueMaterial = primeOpaqueMaterial(
                 baseColor,
@@ -453,6 +460,21 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
+        PrimeCompiledClosure foliageClosure = primeCompileFoliageClosure(
+                baseColor,
+                outwardNormal,
+                roughness,
+                opticalControl,
+                materialControl,
+                viewDirection,
+                rayT,
+                stack);
+        PrimeClosureTraits fastFoliageTraits = primeFoliageClosureTraits(
+                roughness, opticalControl, materialControl);
+        if (foliageClosure.traits.measureMask != fastFoliageTraits.measureMask
+                || foliageClosure.traits.eventMask != fastFoliageTraits.eventMask) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
         const float minimumLinearRoughness = 0.4;
         primeAdapterCheckMinimumRoughness(
                 result.mask,
@@ -485,6 +507,19 @@ void primeAdapterProperties(
                 stack);
         PrimeClosureTraits transmissionTraits =
                 primeMinecraftTransmissionClosureTraits(state);
+        PrimeClosureTraits fastTransmissionTraits =
+                primeMinecraftTransmissionClosureTraits(
+                        outwardNormal,
+                        materialControl,
+                        roughness,
+                        opticalControl,
+                        viewDirection,
+                        stack,
+                        0u);
+        if (transmissionTraits.measureMask != fastTransmissionTraits.measureMask
+                || transmissionTraits.eventMask != fastTransmissionTraits.eventMask) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
         uint expectedMeasure = primeMinecraftTransmissionIsDiscrete(state)
                 ? PRIME_MEASURE_DISCRETE
                 : PRIME_MEASURE_SOLID_ANGLE;
@@ -891,6 +926,21 @@ void primeAdapterProperties(
                 stack,
                 adjacentBaseColor,
                 adjacentInterfaceControl);
+        PrimeClosureTraits boundaryTraits =
+                primeMinecraftTransmissionClosureTraits(state);
+        PrimeClosureTraits fastBoundaryTraits =
+                primeMinecraftTransmissionClosureTraits(
+                        outwardNormal,
+                        materialControl,
+                        roughness,
+                        opticalControl,
+                        viewDirection,
+                        stack,
+                        adjacentInterfaceControl);
+        if (boundaryTraits.measureMask != fastBoundaryTraits.measureMask
+                || boundaryTraits.eventMask != fastBoundaryTraits.eventMask) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
         PrimeTransmissiveBsdfSample sampled =
                 primeSampleMinecraftTransparentContinuation(
                         baseColor,
@@ -961,6 +1011,21 @@ void primeAdapterProperties(
                 stack,
                 adjacentBaseColor,
                 adjacentInterfaceControl);
+        PrimeClosureTraits airGapTraits =
+                primeMinecraftTransmissionClosureTraits(state);
+        PrimeClosureTraits fastAirGapTraits =
+                primeMinecraftTransmissionClosureTraits(
+                        outwardNormal,
+                        materialControl,
+                        roughness,
+                        opticalControl,
+                        viewDirection,
+                        stack,
+                        adjacentInterfaceControl);
+        if (airGapTraits.measureMask != fastAirGapTraits.measureMask
+                || airGapTraits.eventMask != fastAirGapTraits.eventMask) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
         PrimeTransmissiveBsdfSample sampled =
                 primeSampleMinecraftTransparentContinuation(
                         baseColor,

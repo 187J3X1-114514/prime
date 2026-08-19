@@ -196,38 +196,51 @@ void primeOfflineWavefrontArea(
         uint launchIndex,
         uint sourceQueue) {
     uint pathIndex = primeOfflineQueuedPath(sourceQueue, launchIndex);
-    PrimeOfflinePathRecord record = primeOfflinePaths[pathIndex];
-    uint areaControl = asuint(record.areaContributionAndValid.w);
+    uint areaControl = asuint(
+            primeOfflinePaths[pathIndex].areaContributionAndValid.w);
     if ((areaControl & PRIME_OFFLINE_AREA_VALID) != 0u) {
+        PrimeOfflineTransportRecord transport =
+                primeOfflinePaths[pathIndex].transport;
         PrimeOfflineAreaRequest request;
-        request.direction = record.areaDirectionAndDistance.xyz;
-        request.distance = record.areaDirectionAndDistance.w;
-        request.contribution = record.areaContributionAndValid.xyz;
+        request.direction =
+                primeOfflinePaths[pathIndex].areaDirectionAndDistance.xyz;
+        request.distance =
+                primeOfflinePaths[pathIndex].areaDirectionAndDistance.w;
+        request.contribution =
+                primeOfflinePaths[pathIndex].areaContributionAndValid.xyz;
         request.valid = true;
-        PrimeOpenPbrVolumeStack storedMedia = primeOfflineVolumeStack(record.transport);
-        request.startingMediumCount = primeOfflineAreaStartingMediumCount(record);
+        PrimeOpenPbrVolumeStack storedMedia = primeOfflineVolumeStack(transport);
+        request.startingMediumCount = (areaControl
+                        >> PRIME_OFFLINE_AREA_MEDIUM_SHIFT)
+                & PRIME_OFFLINE_AREA_MEDIUM_MASK;
         request.startingExtinction = request.startingMediumCount > 0u
                 ? storedMedia.values[request.startingMediumCount - 1u].extinction
                 : float3(0.0);
-        request.targetEmitter = record.areaTargetEmitter.xy;
+        request.targetEmitter = primeOfflinePaths[pathIndex].areaTargetEmitter.xy;
         PrimeShadowTrace shadow = primeTraceOfflineAreaShadow(
                 context,
-                record.transport.physicalOriginAndPreviousBsdfPdf.xyz,
-                record.transport.sourceAndPathControl.xy,
+                transport.physicalOriginAndPreviousBsdfPdf.xyz,
+                transport.sourceAndPathControl.xy,
                 request,
                 storedMedia);
         if (shadow.hitDistance >= PRIME_NRD_FP16_MAX) {
-            record.radianceAndPrimaryDistance.xyz +=
+            primeOfflinePaths[pathIndex].radianceAndPrimaryDistance.xyz +=
                     request.contribution * shadow.transmittance;
         }
     }
-    record = primeOfflineWithoutAreaRequest(record);
-    primeOfflinePaths[pathIndex] = record;
+    // Only validity and starting-medium depth are consumed. Retain the previous receiver normal;
+    // the cold request payload is overwritten before it can become valid again.
+    primeOfflinePaths[pathIndex].areaContributionAndValid.w = asfloat(
+            areaControl & (PRIME_OFFLINE_LIGHT_NORMAL_MASK
+                    << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT));
+    bool active = (asuint(primeOfflinePaths[pathIndex]
+                    .transport.rayDirectionAndControl.w)
+            & PRIME_OFFLINE_CONTROL_ACTIVE) != 0u;
     primeAppendOfflineContinuation(
             PrimeOfflineContinuationAppender(),
             sourceQueue ^ 1u,
             pathIndex,
-            primeOfflineIsActive(record));
+            active);
 }
 
 void primeOfflineWavefrontResolve(uint2 launchIndex) {

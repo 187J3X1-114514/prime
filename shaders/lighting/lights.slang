@@ -196,17 +196,10 @@ void primeUnpackLightNode(
         out uint emissionDirection,
         out uint childOrLeaf) {
     LightNode node = nodes[index];
-    float3 boundsMin = node.boundsMinPower.xyz;
-    float3 boundsMax = node.boundsMaxReserved.xyz;
-    uint packedCentroid = node.directionChildCentroidReserved.z;
-    float3 normalizedCentroid = float3(
-            float(packedCentroid & 0x3ffu),
-            float((packedCentroid >> 10u) & 0x3ffu),
-            float((packedCentroid >> 20u) & 0x3ffu)) / 1023.0;
-    centroid = lerp(boundsMin, boundsMax, normalizedCentroid);
-    power = node.boundsMinPower.w;
-    emissionDirection = node.directionChildCentroidReserved.x;
-    childOrLeaf = node.directionChildCentroidReserved.y;
+    centroid = node.centroidPower.xyz;
+    power = node.centroidPower.w;
+    emissionDirection = node.directionChildReserved.x;
+    childOrLeaf = node.directionChildReserved.y;
 }
 
 float2 primeLoadLightNodeMetrics(
@@ -319,11 +312,11 @@ LightTreePick primePickLightTree(
     float pdf = 1.0;
     [loop]
     for (uint depth = 0u; depth <= PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        uint childOrLeaf = nodes[nodeIndex].directionChildCentroidReserved.y;
+        uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
         if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
             uint leafIndex = childOrLeaf & PRIME_LIGHT_INDEX_MASK;
             LightLeaf leaf = leaves[leafIndex];
-            float totalPower = nodes[nodeIndex].boundsMinPower.w;
+            float totalPower = nodes[nodeIndex].centroidPower.w;
             if (!(totalPower > 0.0) || leaf.entryCount == 0u
                     || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
                 return primeInvalidLightTreePick();
@@ -408,7 +401,7 @@ float primeLightTreeSelectionPdf(
     [loop]
     for (uint level = 0u; level < PRIME_LIGHT_TREE_MAX_DEPTH; ++level) {
         if (level >= depth) break;
-        uint childOrLeaf = nodes[nodeIndex].directionChildCentroidReserved.y;
+        uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
         if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
             return 0.0;
         }
@@ -427,10 +420,10 @@ float primeLightTreeSelectionPdf(
         pdf *= branchProbability;
         nodeIndex = leftIndex + (right ? 1u : 0u);
     }
-    uint childOrLeaf = nodes[nodeIndex].directionChildCentroidReserved.y;
+    uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
     if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) == 0u) return 0.0;
     LightLeaf leaf = leaves[childOrLeaf & PRIME_LIGHT_INDEX_MASK];
-    float totalPower = nodes[nodeIndex].boundsMinPower.w;
+    float totalPower = nodes[nodeIndex].centroidPower.w;
     if (!(totalPower > 0.0) || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
         return 0.0;
     }

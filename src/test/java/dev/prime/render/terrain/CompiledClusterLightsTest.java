@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Test;
 final class CompiledClusterLightsTest {
     private static final int HEADER_WORDS = 12;
     private static final int NODE_DIRECTION_WORD =
-            ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET / Integer.BYTES;
+            ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET / Integer.BYTES;
     private static final int NODE_CHILD_WORD = NODE_DIRECTION_WORD + 1;
 
     @Test
     void relocationChangesOnlyTheFiveHeaderPointers() {
         int[] relative = validOneEmitterPayload();
-        long[] offsets = {48L, 96L, 104L, 128L, 224L};
+        long[] offsets = {48L, 80L, 88L, 112L, 208L};
         relative[44] = 0x1234_5678;
         CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                 relative,
@@ -77,7 +77,7 @@ final class CompiledClusterLightsTest {
                 new CompiledClusterLights.Summary(
                         1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F);
 
-        relative[52] = 256;
+        relative[48] = 256;
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -126,8 +126,8 @@ final class CompiledClusterLightsTest {
                         1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F));
 
         assertEquals(LightDirection.FULL, directional[21]);
-        assertEquals(104L, getLong(upgraded, 4));
-        assertEquals(128L, getLong(upgraded, 6));
+        assertEquals(88L, getLong(upgraded, 4));
+        assertEquals(112L, getLong(upgraded, 6));
         assertEquals(LightDirection.FULL, upgraded[HEADER_WORDS + NODE_DIRECTION_WORD]);
         assertArrayEquals(upgraded, lights.encodedWords());
     }
@@ -148,14 +148,14 @@ final class CompiledClusterLightsTest {
                 new CompiledClusterLights.Summary(
                         1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F));
 
-        assertEquals(PrimitivePacking.packUv(0.75F, 0.5F), upgraded[48]);
-        assertEquals(PrimitivePacking.packUv(0.875F, 0.5F), upgraded[49]);
-        assertEquals(PrimitivePacking.packUv(0.75F, 0.625F), upgraded[50]);
+        assertEquals(PrimitivePacking.packUv(0.75F, 0.5F), upgraded[44]);
+        assertEquals(PrimitivePacking.packUv(0.875F, 0.5F), upgraded[45]);
+        assertEquals(PrimitivePacking.packUv(0.75F, 0.625F), upgraded[46]);
         assertArrayEquals(upgraded, lights.encodedWords());
     }
 
     @Test
-    void encodedPayloadValidationRejectsNonfiniteNodeBounds() {
+    void encodedPayloadValidationRejectsNonfiniteNodeCentroid() {
         int[] relative = validOneEmitterPayload();
         relative[HEADER_WORDS] = Float.floatToRawIntBits(Float.NaN);
 
@@ -175,7 +175,7 @@ final class CompiledClusterLightsTest {
     }
 
     @Test
-    void versionTwelveF16NodesRebuildIntoExactF32Bounds() {
+    void versionTwelveF16NodesRebuildIntoF32ProposalCentroids() {
         int[] versionTwelve = validVersionTwelvePayload();
 
         int[] treeUpgraded = CompiledClusterLights.upgradeTreeLayout(
@@ -186,10 +186,46 @@ final class CompiledClusterLightsTest {
                 new CompiledClusterLights.Summary(
                         1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 1.0F));
 
-        assertEquals(96L, getLong(upgraded, 2));
-        assertEquals(1.0F, Float.intBitsToFloat(upgraded[16]), 0.0F);
-        assertEquals(1.0F, Float.intBitsToFloat(upgraded[17]), 0.0F);
-        assertEquals(0.0F, Float.intBitsToFloat(upgraded[18]), 0.0F);
+        assertEquals(80L, getLong(upgraded, 2));
+        assertEquals(1.0F / 3.0F, Float.intBitsToFloat(upgraded[12]), 0.0F);
+        assertEquals(1.0F / 3.0F, Float.intBitsToFloat(upgraded[13]), 0.0F);
+        assertEquals(0.0F, Float.intBitsToFloat(upgraded[14]), 0.0F);
+        assertArrayEquals(upgraded, lights.encodedWords());
+    }
+
+    @Test
+    void versionFourteenNodesCompactWithoutChangingTheirProposalCentroids() {
+        int[] versionFourteen = new int[824];
+        long[] offsets = {48L, 96L, 104L, 128L, 224L};
+        for (int pointer = 0; pointer < offsets.length; pointer++) {
+            putLong(versionFourteen, pointer * 2, offsets[pointer]);
+        }
+        versionFourteen[11] = 1;
+        versionFourteen[15] = Float.floatToRawIntBits(1.0F);
+        versionFourteen[16] = Float.floatToRawIntBits(1.0F);
+        versionFourteen[17] = Float.floatToRawIntBits(1.0F);
+        versionFourteen[18] = Float.floatToRawIntBits(1.0F);
+        versionFourteen[20] = LightDirection.FULL;
+        versionFourteen[21] = CpuLightTree.LEAF_FLAG;
+        versionFourteen[22] = 512 | 256 << 10 | 1023 << 20;
+        versionFourteen[24] = 0;
+        versionFourteen[25] = 1;
+        versionFourteen[26] = 0;
+        versionFourteen[27] = Float.floatToRawIntBits(1.0F);
+        versionFourteen[30] = Float.floatToRawIntBits(1.0F);
+        populateLegacyEmitter(versionFourteen, 32);
+        versionFourteen[47] = Float.floatToRawIntBits(1.0F);
+
+        int[] upgraded = CompiledClusterLights.compactTreeNodes(versionFourteen);
+        CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
+                upgraded,
+                new CompiledClusterLights.Summary(
+                        1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F));
+
+        assertEquals(80L, getLong(upgraded, 2));
+        assertEquals(512.0F / 1023.0F, Float.intBitsToFloat(upgraded[12]), 0.0F);
+        assertEquals(256.0F / 1023.0F, Float.intBitsToFloat(upgraded[13]), 0.0F);
+        assertEquals(1.0F, Float.intBitsToFloat(upgraded[14]), 0.0F);
         assertArrayEquals(upgraded, lights.encodedWords());
     }
 
@@ -215,28 +251,25 @@ final class CompiledClusterLightsTest {
     }
 
     private static int[] validOneEmitterPayload() {
-        int[] relative = new int[824];
-        long[] offsets = {48L, 96L, 104L, 128L, 224L};
+        int[] relative = new int[820];
+        long[] offsets = {48L, 80L, 88L, 112L, 208L};
         for (int pointer = 0; pointer < offsets.length; pointer++) {
             putLong(relative, pointer * 2, offsets[pointer]);
         }
         relative[11] = 1;
         relative[15] = Float.floatToRawIntBits(1.0F);
-        relative[16] = Float.floatToRawIntBits(1.0F);
-        relative[17] = Float.floatToRawIntBits(1.0F);
-        relative[18] = Float.floatToRawIntBits(1.0F);
         relative[HEADER_WORDS + NODE_DIRECTION_WORD] = LightDirection.FULL;
         relative[HEADER_WORDS + NODE_CHILD_WORD] = CpuLightTree.LEAF_FLAG;
-        relative[24] = 0;
-        relative[25] = 1;
-        relative[26] = 0;
-        relative[27] = Float.floatToRawIntBits(1.0F);
-        relative[30] = Float.floatToRawIntBits(1.0F);
-        relative[31] = 0;
-        populateLegacyEmitter(relative, 32);
-        relative[47] = Float.floatToRawIntBits(1.0F);
-        relative[56] = 0;
-        relative[57] = 0;
+        relative[20] = 0;
+        relative[21] = 1;
+        relative[22] = 0;
+        relative[23] = Float.floatToRawIntBits(1.0F);
+        relative[24] = Float.floatToRawIntBits(1.0F);
+        relative[25] = 0;
+        populateLegacyEmitter(relative, 28);
+        relative[43] = Float.floatToRawIntBits(1.0F);
+        relative[52] = 0;
+        relative[53] = 0;
         return relative;
     }
 

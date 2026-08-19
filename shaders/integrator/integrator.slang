@@ -300,42 +300,25 @@ PrimeClosureTraits primeSurfaceClosureTraits(
         float3 viewDirection,
         PrimeOpenPbrVolumeStack volumeStack) {
     if (primeMaterialIsTransmissive(surface.materialControl)) {
-        PrimeCompiledClosure closure = primeCompileMinecraftTransmissionClosure(
-                surface.baseColor,
-                primeSurfaceOpacity(surface),
+        return primeMinecraftTransmissionClosureTraits(
                 primeSurfaceOutwardShadingNormal(surface),
                 surface.materialControl,
                 surface.roughness,
                 surface.opticalControl,
                 viewDirection,
-                surface.t,
                 volumeStack,
-                surface.adjacentBaseColor,
                 surface.adjacentInterfaceControl);
-        return closure.traits;
     }
     if (primeMaterialIsFoliage(surface.materialControl)) {
-        PrimeCompiledClosure closure = primeCompileFoliageClosure(
-                surface.baseColor,
-                primeSurfaceOutwardShadingNormal(surface),
+        return primeFoliageClosureTraits(
                 surface.roughness,
                 surface.opticalControl,
-                surface.materialControl,
-                viewDirection,
-                surface.t,
-                volumeStack);
-        return closure.traits;
+                surface.materialControl);
     }
-    PrimeCompiledClosure closure = primeCompileOpaqueClosure(
-            surface.baseColor,
-            primeSurfaceOutwardShadingNormal(surface),
+    return primeOpaqueClosureTraits(
             surface.roughness,
             surface.opticalControl,
-            surface.materialControl,
-            viewDirection,
-            surface.t,
-            volumeStack);
-    return closure.traits;
+            surface.materialControl);
 }
 
 struct PrimeShadowTrace {

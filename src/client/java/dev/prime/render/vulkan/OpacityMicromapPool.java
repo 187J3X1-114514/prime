@@ -8,12 +8,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
 /** Render-thread-owned pool for immutable opacity-micromap block sets. */
 public final class OpacityMicromapPool implements AutoCloseable {
     private final VulkanContext context;
     private final ArrayList<Entry> entries = new ArrayList<>();
+    private final Map<Block, ArrayList<Entry>> entriesByBlock = new HashMap<>();
+    private final Map<OpacityMicromapData, PreparedContent> preparedBySource =
+            new WeakHashMap<>();
     private boolean closed;
 
     public OpacityMicromapPool(VulkanContext context) {
@@ -35,18 +39,34 @@ public final class OpacityMicromapPool implements AutoCloseable {
             return null;
         }
         source.requireValidTriangleIndices();
-        PreparedContent prepared = PreparedContent.from(source);
+        PreparedContent prepared = this.preparedBySource.computeIfAbsent(
+                source, PreparedContent::from);
         Entry entry = null;
         int[] blockRemap = null;
-        for (Entry candidate : this.entries) {
-            int[] candidateRemap = candidate.content.remap(prepared.content);
-            if (candidateRemap != null
-                    && (entry == null
-                            || candidate.content.blockCount()
-                                    < entry.content.blockCount())) {
-                entry = candidate;
-                blockRemap = candidateRemap;
+        ArrayList<Entry> candidates = null;
+        for (int index = 0; index < prepared.content.blockCount(); index++) {
+            ArrayList<Entry> indexed = this.entriesByBlock.get(
+                    prepared.content.block(index));
+            if (indexed == null) {
+                candidates = null;
+                break;
             }
+            if (candidates == null || indexed.size() < candidates.size()) {
+                candidates = indexed;
+            }
+        }
+        if (candidates != null) {
+            for (Entry candidate : candidates) {
+                if (candidate.content.containsAll(prepared.content)
+                        && (entry == null
+                                || candidate.content.blockCount()
+                                        < entry.content.blockCount())) {
+                    entry = candidate;
+                }
+            }
+        }
+        if (entry != null) {
+            blockRemap = entry.content.remap(prepared.content);
         }
         if (entry == null && prepared.content.blockCount() != 0) {
             OpacityMicromap.Shared shared = OpacityMicromap.Shared.create(
@@ -57,6 +77,10 @@ public final class OpacityMicromapPool implements AutoCloseable {
                     label);
             entry = new Entry(prepared.content, shared);
             this.entries.add(entry);
+            for (int index = 0; index < entry.content.blockCount(); index++) {
+                this.entriesByBlock.computeIfAbsent(
+                        entry.content.block(index), ignored -> new ArrayList<>()).add(entry);
+            }
             blockRemap = identityRemap(prepared.content.blockCount());
         }
         if (entry != null) {
@@ -94,16 +118,28 @@ public final class OpacityMicromapPool implements AutoCloseable {
         if (!this.entries.remove(entry)) {
             throw new IllegalStateException("Opacity micromap pool lost a live entry");
         }
+        for (int index = 0; index < entry.content.blockCount(); index++) {
+            Block block = entry.content.block(index);
+            ArrayList<Entry> indexed = this.entriesByBlock.get(block);
+            if (indexed == null || !indexed.remove(entry)) {
+                throw new IllegalStateException(
+                        "Opacity micromap pool lost a block index");
+            }
+            if (indexed.isEmpty()) {
+                this.entriesByBlock.remove(block);
+            }
+        }
         entry.shared.retireFromPool();
     }
 
     @Override
     public void close() {
         this.closed = true;
-        if (!this.entries.isEmpty()) {
+        if (!this.entries.isEmpty() || !this.entriesByBlock.isEmpty()) {
             throw new IllegalStateException(
                     "Opacity micromap pool closed with live references");
         }
+        this.preparedBySource.clear();
     }
 
     int entryCount() {
@@ -146,15 +182,18 @@ public final class OpacityMicromapPool implements AutoCloseable {
 
         static PreparedContent from(OpacityMicromapData source) {
             Block[] sourceBlocks = new Block[source.blockCount()];
+            byte[] packedBlocks = source.blocks();
+            int[] blockOffsets = source.blockOffsets();
+            int[] blockFormats = source.blockFormats();
+            int[] blockLevels = source.blockSubdivisionLevels();
             for (int index = 0; index < sourceBlocks.length; index++) {
-                int offset = source.blockOffsets()[index];
+                int offset = blockOffsets[index];
                 int size = OpacityMicromapData.blockByteSize(
-                        source.blockFormats()[index],
-                        source.blockSubdivisionLevels()[index]);
-                sourceBlocks[index] = new Block(
-                        source.blockFormats()[index],
-                        source.blockSubdivisionLevels()[index],
-                        Arrays.copyOfRange(source.blocks(), offset, offset + size));
+                        blockFormats[index], blockLevels[index]);
+                sourceBlocks[index] = Block.takeOwnership(
+                        blockFormats[index],
+                        blockLevels[index],
+                        Arrays.copyOfRange(packedBlocks, offset, offset + size));
             }
             Content content = Content.from(Arrays.asList(sourceBlocks));
             int[] sourceToCanonical = new int[sourceBlocks.length];
@@ -274,6 +313,15 @@ public final class OpacityMicromapPool implements AutoCloseable {
             return result;
         }
 
+        boolean containsAll(Content source) {
+            for (Block block : source.blocks) {
+                if (!this.indices.containsKey(block)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         byte[] packedBlocks() {
             int size = 0;
             for (Block block : this.blocks) {
@@ -323,6 +371,11 @@ public final class OpacityMicromapPool implements AutoCloseable {
         private final int hash;
 
         Block(int format, int subdivisionLevel, byte[] states) {
+            this(format, subdivisionLevel, states, true);
+        }
+
+        private Block(
+                int format, int subdivisionLevel, byte[] states, boolean copy) {
             int expected = OpacityMicromapData.blockByteSize(
                     format, subdivisionLevel);
             if (states.length != expected) {
@@ -331,9 +384,14 @@ public final class OpacityMicromapPool implements AutoCloseable {
             }
             this.format = format;
             this.subdivisionLevel = subdivisionLevel;
-            this.states = states.clone();
+            this.states = copy ? states.clone() : states;
             this.hash = 31 * (31 * format + subdivisionLevel)
                     + Arrays.hashCode(this.states);
+        }
+
+        static Block takeOwnership(
+                int format, int subdivisionLevel, byte[] states) {
+            return new Block(format, subdivisionLevel, states, false);
         }
 
         @Override

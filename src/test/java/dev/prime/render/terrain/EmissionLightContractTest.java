@@ -16,13 +16,12 @@ import org.junit.jupiter.api.Test;
 final class EmissionLightContractTest {
     private static final int LIGHT_NODE_WORDS = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
     private static final int LIGHT_NODE_POWER_WORD =
-            ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET / Integer.BYTES + 3;
-    private static final int LIGHT_NODE_MAX_WORD =
-            ShaderAbi.LIGHT_NODE_BOUNDS_MAX_RESERVED_OFFSET / Integer.BYTES;
+            ShaderAbi.LIGHT_NODE_CENTROID_POWER_OFFSET / Integer.BYTES + 3;
+    private static final int LIGHT_NODE_CENTROID_WORD =
+            ShaderAbi.LIGHT_NODE_CENTROID_POWER_OFFSET / Integer.BYTES;
     private static final int LIGHT_NODE_CONTROL_WORD =
-            ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET / Integer.BYTES;
+            ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET / Integer.BYTES;
     private static final int LIGHT_NODE_CHILD_WORD = LIGHT_NODE_CONTROL_WORD + 1;
-    private static final int LIGHT_NODE_CENTROID_WORD = LIGHT_NODE_CONTROL_WORD + 2;
 
     @Test
     void minecraftLightLevelUsesSquaredRadiusCalibration() {
@@ -296,14 +295,11 @@ final class EmissionLightContractTest {
 
         CpuLightTree.Result tree = CpuLightTree.buildOwned(leaves, 2);
         int[] nodes = tree.packNodes();
-        float minimumX = Float.intBitsToFloat(nodes[0]);
-        float maximumX = Float.intBitsToFloat(nodes[LIGHT_NODE_MAX_WORD]);
-        float normalizedCenterX = (nodes[LIGHT_NODE_CENTROID_WORD] & 0x3ff) / 1023.0F;
-        float centerX = minimumX + (maximumX - minimumX) * normalizedCenterX;
+        float centerX = Float.intBitsToFloat(nodes[LIGHT_NODE_CENTROID_WORD]);
 
-        assertEquals(0, nodes[LIGHT_NODE_MAX_WORD + 3]);
+        assertEquals(0, nodes[LIGHT_NODE_CONTROL_WORD + 2]);
         assertEquals(0, nodes[LIGHT_NODE_CONTROL_WORD + 3]);
-        assertEquals(7.5F, centerX, (maximumX - minimumX) / 1023.0F);
+        assertEquals(7.5F, centerX, 10.0F / 1023.0F);
     }
 
     @Test
@@ -435,17 +431,15 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void worldTreeRetainsF32BoundsBeyondFiniteF16RangeAfterOriginRebase() {
+    void worldTreeRetainsF32CentroidsBeyondFiniteF16RangeAfterOriginRebase() {
         CpuWorldLightTree.Result tree = CpuWorldLightTree.build(
                 worldLightInput(List.of(cluster(0, 1.0F)), 0, 1_000_000, 0));
         int[] packed = tree.pack();
 
         int nodeOffset = Math.toIntExact(tree.nodeByteOffset() / Integer.BYTES);
-        assertEquals(-1_000_000.0F, Float.intBitsToFloat(packed[nodeOffset + 1]), 0.0F);
-        assertEquals(
-                -999_999.0F,
-                Float.intBitsToFloat(packed[nodeOffset + LIGHT_NODE_MAX_WORD + 1]),
-                0.0F);
+        float centroidY = Float.intBitsToFloat(packed[nodeOffset + 1]);
+        assertTrue(Float.isFinite(centroidY));
+        assertTrue(centroidY >= -1_000_000.0F && centroidY <= -999_999.0F);
     }
 
     @Test

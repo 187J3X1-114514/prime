@@ -22,7 +22,7 @@ public final class CpuLightTree {
     private static final int SAH_CANDIDATE_COUNT = 3 * (SAH_BIN_COUNT - 1);
     // Bound the local SAOH concession before using estimated traversal depth as a tie-breaker.
     private static final double SAOH_DEPTH_QUALITY_BAND = 1.02;
-    private static final int WORDS_PER_NODE = 12;
+    private static final int WORDS_PER_NODE = 8;
     private static final int WORDS_PER_LEAF = 2;
     private static final int WORDS_PER_ENTRY = 2;
     private CpuLightTree() {
@@ -382,27 +382,14 @@ public final class CpuLightTree {
         return 2.0F * (x * y + y * z + z * x);
     }
 
-    private static int packCentroid(
-            float minX,
-            float minY,
-            float minZ,
-            float maxX,
-            float maxY,
-            float maxZ,
-            float centerX,
-            float centerY,
-            float centerZ) {
-        return packCentroidAxis(centerX, minX, maxX)
-                | packCentroidAxis(centerY, minY, maxY) << 10
-                | packCentroidAxis(centerZ, minZ, maxZ) << 20;
-    }
-
-    private static int packCentroidAxis(float center, float minimum, float maximum) {
+    private static float quantizedCentroidAxis(
+            float center, float minimum, float maximum) {
         if (!(maximum > minimum)) {
-            return 0;
+            return minimum;
         }
         float normalized = Math.max(0.0F, Math.min(1.0F, (center - minimum) / (maximum - minimum)));
-        return Math.round(normalized * 1023.0F);
+        int quantized = Math.round(normalized * 1023.0F);
+        return minimum + (maximum - minimum) * ((float) quantized / 1023.0F);
     }
 
     private static LightDirection.Bounds combineDirections(
@@ -507,16 +494,15 @@ public final class CpuLightTree {
         }
 
         private int packNode(int[] target, int cursor, int node) {
-            // Both tree levels share this ABI. World nodes may temporarily span distant resident
-            // clusters after an origin rebase, so bounds retain the complete finite f32 domain.
-            target[cursor++] = Float.floatToRawIntBits(this.nodes.minX[node]);
-            target[cursor++] = Float.floatToRawIntBits(this.nodes.minY[node]);
-            target[cursor++] = Float.floatToRawIntBits(this.nodes.minZ[node]);
+            // Preserve the former 10-bit proposal centroid exactly while dropping bounds that
+            // traversal never consumed after unpacking it.
+            target[cursor++] = Float.floatToRawIntBits(quantizedCentroidAxis(
+                    this.nodes.centerX[node], this.nodes.minX[node], this.nodes.maxX[node]));
+            target[cursor++] = Float.floatToRawIntBits(quantizedCentroidAxis(
+                    this.nodes.centerY[node], this.nodes.minY[node], this.nodes.maxY[node]));
+            target[cursor++] = Float.floatToRawIntBits(quantizedCentroidAxis(
+                    this.nodes.centerZ[node], this.nodes.minZ[node], this.nodes.maxZ[node]));
             target[cursor++] = Float.floatToRawIntBits(this.nodes.power[node]);
-            target[cursor++] = Float.floatToRawIntBits(this.nodes.maxX[node]);
-            target[cursor++] = Float.floatToRawIntBits(this.nodes.maxY[node]);
-            target[cursor++] = Float.floatToRawIntBits(this.nodes.maxZ[node]);
-            target[cursor++] = 0;
             target[cursor++] = LightDirection.pack(this.nodes.direction[node]);
             int childOrLeaf = this.nodes.firstChildOrLeaf[node];
             int secondChild = this.nodes.secondChild[node];
@@ -529,16 +515,7 @@ public final class CpuLightTree {
                 throw new IllegalStateException("Light tree siblings must be consecutive");
             }
             target[cursor++] = childOrLeaf;
-            target[cursor++] = packCentroid(
-                    this.nodes.minX[node],
-                    this.nodes.minY[node],
-                    this.nodes.minZ[node],
-                    this.nodes.maxX[node],
-                    this.nodes.maxY[node],
-                    this.nodes.maxZ[node],
-                    this.nodes.centerX[node],
-                    this.nodes.centerY[node],
-                    this.nodes.centerZ[node]);
+            target[cursor++] = 0;
             target[cursor++] = 0;
             return cursor;
         }

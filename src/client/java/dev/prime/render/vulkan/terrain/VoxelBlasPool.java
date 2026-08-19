@@ -18,13 +18,14 @@ final class VoxelBlasPool implements AutoCloseable {
 
     PreparedBlas acquire(CpuVoxelMesh mesh, Supplier<PreparedBlas> factory) {
         this.requireOpen();
-        Key key = new Key(mesh);
-        Entry existing = this.byContent.get(key);
+        Key lookup = Key.lookup(mesh);
+        Entry existing = this.byContent.get(lookup);
         if (existing != null) {
             existing.references++;
             return existing.blas;
         }
         PreparedBlas blas = factory.get();
+        Key key = lookup.snapshot();
         Entry created = new Entry(key, blas);
         created.references = 1;
         this.byContent.put(key, created);
@@ -127,28 +128,56 @@ final class VoxelBlasPool implements AutoCloseable {
         private final int hash;
 
         Key(CpuVoxelMesh mesh) {
-            this.positions = mesh.positions().clone();
-            this.primitives = mesh.primitiveRecords().clone();
+            this(mesh, true);
+        }
+
+        private Key(CpuVoxelMesh mesh, boolean snapshot) {
+            this.positions = snapshot ? mesh.positions().clone() : mesh.positions();
+            this.primitives = snapshot
+                    ? mesh.primitiveRecords().clone()
+                    : mesh.primitiveRecords();
             this.opaqueTriangles = mesh.opaqueTriangleCount();
             this.cutoutTriangles = mesh.cutoutTriangleCount();
             this.transmissiveTriangles = mesh.transmissiveTriangleCount();
             OpacityMicromapData micromap = mesh.opacityMicromap();
-            this.micromapBlocks = micromap.blocks().clone();
-            this.micromapOffsets = micromap.blockOffsets().clone();
-            this.micromapFormats = micromap.blockFormats().clone();
-            this.micromapLevels = micromap.blockSubdivisionLevels().clone();
-            this.micromapIndices = micromap.triangleIndices().clone();
-            int result = rawFloatHash(this.positions);
-            result = 31 * result + Arrays.hashCode(this.primitives);
-            result = 31 * result + this.opaqueTriangles;
-            result = 31 * result + this.cutoutTriangles;
-            result = 31 * result + this.transmissiveTriangles;
-            result = 31 * result + Arrays.hashCode(this.micromapBlocks);
-            result = 31 * result + Arrays.hashCode(this.micromapOffsets);
-            result = 31 * result + Arrays.hashCode(this.micromapFormats);
-            result = 31 * result + Arrays.hashCode(this.micromapLevels);
-            result = 31 * result + Arrays.hashCode(this.micromapIndices);
-            this.hash = result;
+            this.micromapBlocks = snapshot
+                    ? micromap.blocks().clone()
+                    : micromap.blocks();
+            this.micromapOffsets = snapshot
+                    ? micromap.blockOffsets().clone()
+                    : micromap.blockOffsets();
+            this.micromapFormats = snapshot
+                    ? micromap.blockFormats().clone()
+                    : micromap.blockFormats();
+            this.micromapLevels = snapshot
+                    ? micromap.blockSubdivisionLevels().clone()
+                    : micromap.blockSubdivisionLevels();
+            this.micromapIndices = snapshot
+                    ? micromap.triangleIndices().clone()
+                    : micromap.triangleIndices();
+            this.hash = mesh.gpuContentHash();
+        }
+
+        private Key(Key source) {
+            this.positions = source.positions.clone();
+            this.primitives = source.primitives.clone();
+            this.opaqueTriangles = source.opaqueTriangles;
+            this.cutoutTriangles = source.cutoutTriangles;
+            this.transmissiveTriangles = source.transmissiveTriangles;
+            this.micromapBlocks = source.micromapBlocks.clone();
+            this.micromapOffsets = source.micromapOffsets.clone();
+            this.micromapFormats = source.micromapFormats.clone();
+            this.micromapLevels = source.micromapLevels.clone();
+            this.micromapIndices = source.micromapIndices.clone();
+            this.hash = source.hash;
+        }
+
+        static Key lookup(CpuVoxelMesh mesh) {
+            return new Key(mesh, false);
+        }
+
+        Key snapshot() {
+            return new Key(this);
         }
 
         @Override
@@ -170,14 +199,6 @@ final class VoxelBlasPool implements AutoCloseable {
                             && Arrays.equals(this.micromapFormats, key.micromapFormats)
                             && Arrays.equals(this.micromapLevels, key.micromapLevels)
                             && Arrays.equals(this.micromapIndices, key.micromapIndices);
-        }
-
-        private static int rawFloatHash(float[] values) {
-            int result = 1;
-            for (float value : values) {
-                result = 31 * result + Float.floatToRawIntBits(value);
-            }
-            return result;
         }
 
         private static boolean rawFloatEquals(float[] first, float[] second) {

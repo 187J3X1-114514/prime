@@ -16,24 +16,25 @@ float4 primeSampleSceneTexture(uint index, float2 uv, float lod)
     return primeSceneTextures[NonUniformResourceIndex(index)].SampleLevel(uv, lod);
 }
 
-public int2 primeSceneTextureExtent(uint index)
-{
+public struct PrimeSceneTextureDimensions {
+    public int2 extent;
+    public int mipLevels;
+};
+
+public PrimeSceneTextureDimensions primeSceneTextureDimensions(uint index) {
     uint width;
     uint height;
     uint levels;
     primeSceneTextures[NonUniformResourceIndex(index)].GetDimensions(
             0, width, height, levels);
-    return int2(width, height);
+    PrimeSceneTextureDimensions result;
+    result.extent = int2(width, height);
+    result.mipLevels = int(levels);
+    return result;
 }
 
-public int primeSceneTextureMipLevels(uint index)
-{
-    uint width;
-    uint height;
-    uint levels;
-    primeSceneTextures[NonUniformResourceIndex(index)].GetDimensions(
-            0, width, height, levels);
-    return int(levels);
+public int2 primeSceneTextureExtent(uint index) {
+    return primeSceneTextureDimensions(index).extent;
 }
 
 float4 primeLoadSceneTexture(uint index, int2 texel)
@@ -353,8 +354,7 @@ public float3 primeEvaluateEmitterRadiance(
             atlasTint, emitterFlags, fallbackRadiance, uv, 0.0);
 }
 
-public float primeEvaluateOpacity(
-        PrimitiveRecord primitive, float2 uv, float textureLodValue) {
+public float primeEvaluateOpacity(PrimitiveRecord primitive, float2 uv) {
     uint textureIndex = min(
             primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
     int2 extent = primeSceneTextureExtent(textureIndex);

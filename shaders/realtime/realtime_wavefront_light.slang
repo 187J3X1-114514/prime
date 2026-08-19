@@ -108,6 +108,21 @@ void primeWavefrontLight<LightNee, IndirectReuse, SharcTraining>(
         return;
     }
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    if (!primeWavefrontTransparentBranch(control)) {
+        PrimeIndirectReuseResult reuse = indirectReuse.query(
+                context, path, surface, true);
+        if (reuse.hit) {
+            if (any(reuse.contribution > float3(0.0))) {
+                primeAccumulateDeferredDirectLight(
+                        context, pixel, control, reuse.contribution);
+            }
+            sharcTraining.finish(path);
+            record = primeWavefrontWithActive(record, false);
+            primeStoreWavefrontTransportRecord(recordIndex, record);
+            primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
+            return;
+        }
+    }
     float3 viewDirection = -path.rayDirection;
     PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
             surface, viewDirection, volumeStack);
@@ -122,12 +137,6 @@ void primeWavefrontLight<LightNee, IndirectReuse, SharcTraining>(
         bool guideEnabled = primeWavefrontGuideEnabled(control);
         bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
         if (guideEnabled && !hasGuide && !primeClosureIsDiscreteOnly(closureTraits)) {
-            return;
-        }
-    } else {
-        PrimeIndirectReuseResult reuse = indirectReuse.query(
-                context, path, surface, true);
-        if (reuse.hit) {
             return;
         }
     }

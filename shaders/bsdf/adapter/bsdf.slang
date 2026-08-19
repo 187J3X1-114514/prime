@@ -2,14 +2,57 @@
 #define PRIME_BSDF_SLANG
 
 import "bsdf/bsdf_common.slang";
+import "bsdf/compact/openpbr_material.slang";
+import "bsdf/compact/openpbr_common.slang";
+#if defined(PRIME_USE_LITE_BSDF)
+import "bsdf/lite/bsdf.slang";
+
+#define PrimeCompactOpaqueState PrimeLiteOpaqueState
+#define PrimeCompactOpaqueEvaluation PrimeLiteOpaqueEvaluation
+#define PrimeCompactOpaqueComponents PrimeLiteOpaqueComponents
+#define PrimeCompactOpaqueEnergy PrimeLiteOpaqueEnergy
+#define PrimeCompactTransmissionState PrimeLiteTransmissionState
+#define PrimeCompactTransmissionEvaluation PrimeLiteTransmissionEvaluation
+#define PrimeCompactFoliageState PrimeLiteFoliageState
+#define PrimeCompactFoliageEvaluation PrimeLiteFoliageEvaluation
+#define PrimeCompactFoliageComponents PrimeLiteFoliageComponents
+#define PrimeCompactFoliageEnergy PrimeLiteFoliageEnergy
+
+#define PRIME_COMPACT_OPAQUE_DIELECTRIC PRIME_LITE_OPAQUE_DIELECTRIC
+#define PRIME_COMPACT_OPAQUE_CONDUCTOR PRIME_LITE_OPAQUE_CONDUCTOR
+#define PRIME_COMPACT_OPAQUE_SUBSURFACE PRIME_LITE_OPAQUE_SUBSURFACE
+#define PRIME_COMPACT_OPAQUE_MIXED_SUBSURFACE PRIME_LITE_OPAQUE_MIXED_SUBSURFACE
+
+#define primeTransmissionGgxEnergy primeLiteEnergy
+#define primeOpenPbrMicrofacetEffectivelySmooth primeLiteMicrofacetEffectivelySmooth
+#define primeOpenPbrDielectricRefract primeLiteDielectricRefract
+#define primeCompactOpaqueSupports primeLiteOpaqueSupports
+#define primeCompactOpaqueStateInit primeLiteOpaqueStateInit
+#define primeCompactOpaqueEvaluate primeLiteOpaqueEvaluate
+#define primeCompactOpaqueEvaluateComponents primeLiteOpaqueEvaluateComponents
+#define primeCompactOpaqueSample primeLiteOpaqueSample
+#define primeCompactOpaqueSampleWithEonDiffuse primeLiteOpaqueSampleWithEonDiffuse
+#define primeCompactOpaqueEnergy primeLiteOpaqueEnergy
+#define primeCompactTransmissionSupports primeLiteTransmissionSupports
+#define primeCompactTransmissionStateInit primeLiteTransmissionStateInit
+#define primeCompactTransmissionInterfaceState primeLiteTransmissionInterfaceState
+#define primeCompactTransmissionEvaluate primeLiteTransmissionEvaluate
+#define primeCompactTransmissionSample primeLiteTransmissionSample
+#define primeCompactTransmissionEnergy primeLiteTransmissionEnergy
+#define primeCompactFoliageSupports primeLiteFoliageSupports
+#define primeCompactFoliageStateInit primeLiteFoliageStateInit
+#define primeCompactFoliageEvaluate primeLiteFoliageEvaluate
+#define primeCompactFoliageEvaluateComponents primeLiteFoliageEvaluateComponents
+#define primeCompactFoliageSample primeLiteFoliageSample
+#define primeCompactFoliageEnergy primeLiteFoliageEnergy
+#else
 import "bsdf/adapter/transmission_ggx_energy.slang";
 import "bsdf/compact/openpbr_foliage.slang";
-import "bsdf/compact/openpbr_material.slang";
 import "bsdf/compact/openpbr_opaque.slang";
 import "bsdf/compact/openpbr_transmission.slang";
-import "bsdf/compact/openpbr_common.slang";
 import "bsdf/compact/openpbr_fresnel.slang";
 import "bsdf/compact/openpbr_microfacet.slang";
+#endif
 import "core/numerical.slang";
 import "material/default_material.slang";
 import "material/material_translation.slang";
@@ -719,13 +762,18 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
     PrimeMinecraftMirrorSplit result;
     // The default Minecraft adapter keeps dielectric reflection achromatic. Retaining the color
     // term here makes the split remain correct if a future material decoder tints the interface.
-    float directionalReflectance = state.geometryThinWalled != 0u
+    float directionalReflectance =
+#if defined(PRIME_USE_LITE_BSDF)
+            primeLiteTransmissionDirectionalReflectance(state, localView);
+#else
+            state.geometryThinWalled != 0u
             ? primeOpenPbrMicrofacetDielectricMsCompensation(
                     primeTransmissionGgxEnergy(),
                     state.specularMicrofacet,
                     abs(localView.z),
                     state.specularFresnel.ior).z
             : state.transmissionMultipleScattering.z;
+#endif
     result.reflectance = directionalReflectance * state.specularFresnel.color;
     primeObserveUnit(observation, result.reflectance);
     if (!primeBsdfFinite(result.reflectance)

@@ -181,6 +181,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 - [透明渲染与实时重建](docs/透明渲染与实时重建.md)
 - [着色器属性测试与数值诊断](docs/着色器属性测试与数值诊断架构.md)
 - [OpenPBR 紧凑实现](docs/OpenPBR紧凑模块.md)
+- [LitePBR 轻量材质模型](docs/LitePBR.md)
 - [RoboCute BSDF 参考与透射契约](docs/BSDF透射折射率平方缺失调查报告.md)
 - [Slang 工具链与迁移记录](docs/Slang迁移计划.md)
 - [TODO](docs/TODO.md)

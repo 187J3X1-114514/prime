@@ -421,6 +421,36 @@ final class TracePipelinesContractTest {
     }
 
     @Test
+    void lightweightProgramsDoNotDeclareTheOpenPbrEnergyTable() throws IOException {
+        int energyBinding = ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY;
+        for (String suffix : List.of("", "_subgroup", "_ser")) {
+            for (String stage : List.of(
+                    "primary",
+                    "primary_light",
+                    "step",
+                    "light",
+                    "shade",
+                    "sharc_light",
+                    "sharc_shade",
+                    "transparent_shade",
+                    "transparent_resolve")) {
+                assertFalse(
+                        descriptorBindings(List.of(wavefrontShader(
+                                "realtime", "lightweight_" + stage, suffix)), 0)
+                                .contains(energyBinding),
+                        stage + suffix);
+            }
+            assertTrue(descriptorBindings(
+                    List.of(wavefrontShader("realtime", "shade", suffix)), 0)
+                    .contains(energyBinding));
+            assertTrue(descriptorBindings(
+                    List.of(wavefrontShader(
+                            "realtime", "transparent_shade", suffix)), 0)
+                    .contains(energyBinding));
+        }
+    }
+
+    @Test
     void serHeadPublishesWorkWithoutSubgroupCollectives() throws IOException {
         Set<Integer> head = parse(
                 wavefrontShader("realtime", "head", "_ser")).opcodes;

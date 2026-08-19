@@ -1,3 +1,4 @@
+#define PRIME_USE_LITE_BSDF 1
 #include "realtime/realtime_wavefront_shade.slang"
 #include "realtime/sharc_query_policy.slang"
 #include "realtime/sharc_training_policy.slang"

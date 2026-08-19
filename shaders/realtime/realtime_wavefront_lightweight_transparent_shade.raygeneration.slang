@@ -1,3 +1,4 @@
+#define PRIME_USE_LITE_BSDF 1
 #include "realtime/realtime_wavefront_transparent_shade.slang"
 
 [shader("raygeneration")]

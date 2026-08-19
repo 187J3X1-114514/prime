@@ -237,8 +237,11 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeRenderSettings settings = input.settings();
         boolean sharcChanged = this.sharcRequested != settings.sharcEnabled();
         this.sharcRequested = settings.sharcEnabled();
+        PostProcessingMode requestedMode = input.controls().rawOutput()
+                ? PostProcessingMode.DISABLED
+                : settings.postProcessing();
         ResolvedReconstruction requestedSelection = this.reconstructionRegistry.resolve(
-                settings.postProcessing(),
+                requestedMode,
                 settings.reconstructionQuality(),
                 width,
                 height);
@@ -306,8 +309,6 @@ final class RealtimeRenderer implements Destroyable {
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
                 input.controls().triangleDebug(),
-                input.controls().areaLightSamplingMode(),
-                input.controls().primaryLightDiagnosticView(),
                 settings.display(),
                 reconfigured);
         RealtimeSampleState.Plan sampleFrame = this.planSample(frameInput.sampleStateInput());

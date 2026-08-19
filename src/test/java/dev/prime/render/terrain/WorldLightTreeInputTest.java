@@ -4,9 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -101,37 +99,6 @@ final class WorldLightTreeInputTest {
         assertEquals(CpuLightTree.NO_INDEX, tree.lightPath(1));
     }
 
-    @Test
-    void flatProposalPacksActiveSectionsAndNormalizedMassesContiguously() {
-        CpuWorldLightTree.Result tree = CpuWorldLightTree.build(
-                WorldLightTreeInput.capture(
-                        List.of(cluster(1, 1.0F), emptyCluster(2), cluster(3, 3.0F)),
-                        0,
-                        0,
-                        0));
-        int[] words = tree.pack();
-        int summaryWord = Math.toIntExact(tree.summaryByteOffset() / Integer.BYTES);
-        int summaryStride = ShaderAbi.WORLD_LIGHT_SUMMARY_SIZE / Integer.BYTES;
-        int aliasWord = Math.toIntExact(tree.aliasByteOffset() / Integer.BYTES);
-
-        assertEquals(2, tree.summaryCount());
-        assertEquals(0, words[summaryWord + 9]);
-        assertEquals(2, words[summaryWord + summaryStride + 9]);
-        assertEquals(0.25F, Float.intBitsToFloat(words[summaryWord + 7]), 1.0E-6F);
-        assertEquals(
-                0.75F,
-                Float.intBitsToFloat(words[summaryWord + summaryStride + 7]),
-                1.0E-6F);
-        for (int index = 0; index < tree.summaryCount(); index++) {
-            float threshold = Float.intBitsToFloat(words[aliasWord + index * 2]);
-            int alias = words[aliasWord + index * 2 + 1];
-            assertTrue(threshold >= 0.0F && threshold <= 1.0F);
-            assertTrue(alias >= 0 && alias < tree.summaryCount());
-        }
-        assertEquals(tree.summaryByteOffset(), getLong(words, 6));
-        assertEquals(tree.aliasByteOffset(), getLong(words, 8));
-    }
-
     private static WorldLightTreeInput.Entry cluster(int index, float power) {
         return new WorldLightTreeInput.Entry(
                 index,
@@ -166,7 +133,4 @@ final class WorldLightTreeInputTest {
                         0.0F));
     }
 
-    private static long getLong(int[] words, int offset) {
-        return Integer.toUnsignedLong(words[offset]) | (long) words[offset + 1] << 32;
-    }
 }

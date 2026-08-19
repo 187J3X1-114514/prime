@@ -151,7 +151,6 @@ static const uint PRIME_LIGHT_PATH_TRAIL_MASK = 0x07ffffffu;
 static const uint PRIME_LIGHT_LEAF_MAX_ENTRIES = 8u;
 static const uint PRIME_LIGHT_CELL_SUBDIVISION = 16u;
 static const uint PRIME_LIGHT_CELL_COUNT = 256u;
-static const uint PRIME_AREA_RIS_CANDIDATE_COUNT = 4u;
 static const uint PRIME_EMITTER_TWO_SIDED = 1u;
 
 struct LightTreePick {
@@ -184,8 +183,7 @@ AreaLightSample primeInvalidAreaLightSample() {
 }
 
 LightNode* primeWorldLightNodes(uint64_t worldLightAddress) {
-    WorldLightHeader* header = (WorldLightHeader*)worldLightAddress;
-    return (LightNode*)(worldLightAddress + header[0].nodeOffset);
+    return (LightNode*)worldLightAddress;
 }
 
 void primeUnpackLightNode(
@@ -236,8 +234,7 @@ public float primeAreaLightFamilyImportance(
     if (worldLightAddress == uint64_t(0)) {
         return 0.0;
     }
-    WorldLightHeader header = ((WorldLightHeader*)worldLightAddress)[0];
-    if (header.summaryCount == 0u || !(header.totalPower > 0.0)) {
+    if (sections[0].worldLightLeafCount == 0u) {
         return 0.0;
     }
     float2 metrics = primeLoadLightNodeMetrics(
@@ -279,7 +276,7 @@ float2 primeEmitterMetrics(
             boundsMin,
             boundsMax,
             point,
-            emitter.normalProposalPdf.xyz,
+            emitter.normalPadding.xyz,
             boundsDistanceSquared,
             inverseDistance);
     if ((emitter.metadata.z & PRIME_EMITTER_TWO_SIDED) != 0u) {
@@ -289,7 +286,7 @@ float2 primeEmitterMetrics(
                         boundsMin,
                         boundsMax,
                         point,
-                        -emitter.normalProposalPdf.xyz,
+                        -emitter.normalPadding.xyz,
                         boundsDistanceSquared,
                         inverseDistance));
     }
@@ -604,7 +601,7 @@ AreaLightSample primeSampleAreaLightEmitter(
     float distance = sqrt(distanceSquared);
     float3 direction = toLight / distance;
     float lightCosine = primeEmitterCosine(
-            emitters[emitterIndex].normalProposalPdf.xyz,
+            emitters[emitterIndex].normalPadding.xyz,
             emitters[emitterIndex].metadata.z,
             direction);
     if (!(lightCosine > 0.0)) {
@@ -704,239 +701,6 @@ public AreaLightSample primeSampleAreaLight(
             positionSample);
 }
 
-struct PrimeRisSelection {
-    uint candidateIndex;
-    float effectivePdf;
-    uint valid;
-};
-
-struct PrimeAliasPick {
-    uint index;
-    uint valid;
-};
-
-PrimeAliasPick primePickLightAlias(
-        LightAliasEntry* entries,
-        uint count,
-        float seed) {
-    PrimeAliasPick result;
-    result.index = 0u;
-    result.valid = 0u;
-    if (count == 0u) {
-        return result;
-    }
-    float scaled = min(seed, asfloat(0x3f7fffffu)) * float(count);
-    uint bucket = min(uint(scaled), count - 1u);
-    LightAliasEntry entry = entries[bucket];
-    uint index = frac(scaled) < entry.aliasProbability
-            ? bucket
-            : entry.aliasIndex;
-    if (index >= count) {
-        return result;
-    }
-    result.index = index;
-    result.valid = 1u;
-    return result;
-}
-
-PrimeRisSelection primeSelectRis4(
-        float proposalPdfs[PRIME_AREA_RIS_CANDIDATE_COUNT],
-        float distances[PRIME_AREA_RIS_CANDIDATE_COUNT],
-        float powers[PRIME_AREA_RIS_CANDIDATE_COUNT],
-        float sampleValue) {
-    PrimeRisSelection result;
-    result.candidateIndex = 0u;
-    result.effectivePdf = 0.0;
-    result.valid = 0u;
-
-    float maximumPower = 0.0;
-    float minimumDistance = asfloat(0x7f7fffffu);
-    float minimumProposalPdf = asfloat(0x7f7fffffu);
-    [[unroll]]
-    for (uint candidateIndex = 0u;
-            candidateIndex < PRIME_AREA_RIS_CANDIDATE_COUNT;
-            ++candidateIndex) {
-        float proposalPdf = proposalPdfs[candidateIndex];
-        float distance = distances[candidateIndex];
-        float power = powers[candidateIndex];
-        if (!(proposalPdf > 0.0) || !(distance > 0.0) || !(power > 0.0)) {
-            return result;
-        }
-        maximumPower = max(maximumPower, power);
-        minimumDistance = min(minimumDistance, distance);
-        minimumProposalPdf = min(minimumProposalPdf, proposalPdf);
-    }
-
-    float targets[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float scaledWeights[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float scaledWeightSum = 0.0;
-    [[unroll]]
-    for (uint candidateIndex = 0u;
-            candidateIndex < PRIME_AREA_RIS_CANDIDATE_COUNT;
-            ++candidateIndex) {
-        float target = (powers[candidateIndex] / maximumPower)
-                * (minimumDistance / distances[candidateIndex]);
-        float scaledWeight = primeRisScaledWeightValue(
-                target,
-                minimumProposalPdf,
-                proposalPdfs[candidateIndex]);
-        targets[candidateIndex] = target;
-        scaledWeights[candidateIndex] = scaledWeight;
-        scaledWeightSum += scaledWeight;
-    }
-    if (!(scaledWeightSum > 0.0)) {
-        return result;
-    }
-
-    uint selectedIndex = primeRisSelectIndex(
-            float4(
-                    scaledWeights[0],
-                    scaledWeights[1],
-                    scaledWeights[2],
-                    scaledWeights[3]),
-            sampleValue);
-    float effectivePdf = primeRisEffectivePdfValue(
-            1.0,
-            targets[selectedIndex],
-            minimumProposalPdf,
-            scaledWeightSum,
-            PRIME_AREA_RIS_CANDIDATE_COUNT);
-    if (!(effectivePdf > 0.0)) {
-        return result;
-    }
-    result.candidateIndex = selectedIndex;
-    result.effectivePdf = effectivePdf;
-    result.valid = 1u;
-    return result;
-}
-
-public AreaLightSample primeSampleAreaLightWideRis4x4(
-        inout PrimeNumericalDiagnostics diagnostics,
-        float3 surfacePosition,
-        uint packedReceiverNormal,
-        float4 selectionSample,
-        float3 positionSample) {
-    float3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
-    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
-    uint64_t worldLightAddress = sections[0].worldLightAddress;
-    if (worldLightAddress == uint64_t(0)) {
-        return primeInvalidAreaLightSample();
-    }
-    WorldLightHeader header = ((WorldLightHeader*)worldLightAddress)[0];
-    if (header.summaryCount == 0u || !(header.totalPower > 0.0)) {
-        return primeInvalidAreaLightSample();
-    }
-    WorldLightSummary* summaries = (WorldLightSummary*)(
-            worldLightAddress + header.summaryOffset);
-    LightAliasEntry* worldAliases = (LightAliasEntry*)(
-            worldLightAddress + header.aliasOffset);
-
-    uint summaryIndices[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float worldProposalPdfs[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float worldDistances[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float worldPowers[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float worldSeedBase = 0.25 * frac(selectionSample.x * 4.0);
-    [[unroll]]
-    for (uint candidateIndex = 0u;
-            candidateIndex < PRIME_AREA_RIS_CANDIDATE_COUNT;
-            ++candidateIndex) {
-        PrimeAliasPick pick = primePickLightAlias(
-                worldAliases,
-                header.summaryCount,
-                worldSeedBase + 0.25 * float(candidateIndex));
-        if (pick.valid == 0u) {
-            return primeInvalidAreaLightSample();
-        }
-        WorldLightSummary summary = summaries[pick.index];
-        float2 metrics = primeLightBoundsMetrics(
-                summary.boundsMinPower.xyz,
-                summary.boundsMaxProposalPdf.xyz,
-                summary.boundsMinPower.w,
-                surfacePosition,
-                receiverNormal,
-                summary.directionSectionReserved.x);
-        summaryIndices[candidateIndex] = pick.index;
-        worldProposalPdfs[candidateIndex] = summary.boundsMaxProposalPdf.w;
-        worldDistances[candidateIndex] = metrics.x;
-        worldPowers[candidateIndex] = metrics.y;
-    }
-    PrimeRisSelection worldSelection = primeSelectRis4(
-            worldProposalPdfs,
-            worldDistances,
-            worldPowers,
-            selectionSample.y);
-    if (worldSelection.valid == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-
-    WorldLightSummary selectedSummary =
-            summaries[summaryIndices[worldSelection.candidateIndex]];
-    uint sectionIndex = selectedSummary.directionSectionReserved.y;
-    uint64_t sectionLightAddress = sections[sectionIndex].lightAddress;
-    if (sectionLightAddress == uint64_t(0)) {
-        return primeInvalidAreaLightSample();
-    }
-    SectionLightHeader sectionHeader = ((SectionLightHeader*)sectionLightAddress)[0];
-    if (sectionHeader.emitterCount == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-    LightEmitter* emitters = (LightEmitter*)sectionHeader.emitterAddress;
-    LightAliasEntry* emitterAliases = (LightAliasEntry*)(
-            sectionHeader.emitterAddress
-                    - uint64_t(sectionHeader.emitterCount)
-                            * uint64_t(PRIME_LIGHT_ALIAS_ENTRY_SIZE));
-    float3 localSurfacePosition = surfacePosition - sections[sectionIndex].translation;
-
-    uint emitterIndices[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float sectionProposalPdfs[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float emitterDistances[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float emitterPowers[PRIME_AREA_RIS_CANDIDATE_COUNT];
-    float sectionSeedBase = 0.25 * frac(selectionSample.z * 4.0);
-    [[unroll]]
-    for (uint candidateIndex = 0u;
-            candidateIndex < PRIME_AREA_RIS_CANDIDATE_COUNT;
-            ++candidateIndex) {
-        PrimeAliasPick pick = primePickLightAlias(
-                emitterAliases,
-                sectionHeader.emitterCount,
-                sectionSeedBase + 0.25 * float(candidateIndex));
-        if (pick.valid == 0u) {
-            return primeInvalidAreaLightSample();
-        }
-        LightEmitter emitter = emitters[pick.index];
-        float2 metrics = primeEmitterMetrics(
-                emitter,
-                emitter.edgeTwoPower.w,
-                localSurfacePosition,
-                receiverNormal);
-        emitterIndices[candidateIndex] = pick.index;
-        sectionProposalPdfs[candidateIndex] = emitter.normalProposalPdf.w;
-        emitterDistances[candidateIndex] = metrics.x;
-        emitterPowers[candidateIndex] = metrics.y;
-    }
-    PrimeRisSelection sectionSelection = primeSelectRis4(
-            sectionProposalPdfs,
-            emitterDistances,
-            emitterPowers,
-            selectionSample.w);
-    if (sectionSelection.valid == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-
-    float effectiveEmitterPdf = primeProductOver(
-            worldSelection.effectivePdf,
-            sectionSelection.effectivePdf,
-            1.0);
-    return primeSampleAreaLightEmitter(
-            diagnostics,
-            surfacePosition,
-            sectionIndex,
-            emitterIndices[sectionSelection.candidateIndex],
-            effectiveEmitterPdf,
-            positionSample.x,
-            positionSample.yz);
-}
-
 public float3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
     if (areaSample.sectionIndex == PRIME_NO_LIGHT_INDEX
             || areaSample.emitterIndex == PRIME_NO_LIGHT_INDEX) {
@@ -985,7 +749,7 @@ public LightEvaluation primeEvaluateAreaLight(
     LightEmitter* emitters = (LightEmitter*)sectionBuffer[0].emitterAddress;
     float4 emitterCornerArea = emitters[emitterIndex].cornerArea;
     float lightCosine = primeEmitterCosine(
-            emitters[emitterIndex].normalProposalPdf.xyz,
+            emitters[emitterIndex].normalPadding.xyz,
             emitters[emitterIndex].metadata.z,
             rayDirection);
     if (!(lightCosine > 0.0) || !(emitterCornerArea.w > 0.0)) {

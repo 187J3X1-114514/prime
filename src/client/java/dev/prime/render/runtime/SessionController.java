@@ -1,7 +1,5 @@
 package dev.prime.render.runtime;
 
-import dev.prime.render.AreaLightSamplingMode;
-import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
@@ -44,12 +42,8 @@ public final class SessionController {
         this.controls = this.controls.withRendererDiagnostics(value);
     }
 
-    public void setAreaLightSamplingMode(AreaLightSamplingMode value) {
-        this.controls = this.controls.withAreaLightSamplingMode(value);
-    }
-
-    public void setPrimaryLightDiagnosticView(PrimaryLightDiagnosticView value) {
-        this.controls = this.controls.withPrimaryLightDiagnosticView(value);
+    public void setRawOutput(boolean value) {
+        this.controls = this.controls.withRawOutput(value);
     }
 
     public void setNrdDebugView(NrdDiagnostics.Mode value) {

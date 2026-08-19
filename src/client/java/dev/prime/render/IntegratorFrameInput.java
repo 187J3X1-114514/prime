@@ -27,9 +27,7 @@ public record IntegratorFrameInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean rawNumericalDiagnostic,
-        boolean triangleDebug,
-        AreaLightSamplingMode areaLightSamplingMode,
-        PrimaryLightDiagnosticView primaryLightDiagnosticView) {
+        boolean triangleDebug) {
     public IntegratorFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
@@ -37,8 +35,6 @@ public record IntegratorFrameInput(
         Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
-        Objects.requireNonNull(areaLightSamplingMode, "areaLightSamplingMode");
-        Objects.requireNonNull(primaryLightDiagnosticView, "primaryLightDiagnosticView");
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
                     "Integrator extent must be positive");
@@ -66,9 +62,7 @@ public record IntegratorFrameInput(
                 astronomy.settings(),
                 material.seamlessGlass(),
                 material.airGap(),
-                material.vanillaPbrPresets(),
-                areaLightSamplingMode,
-                primaryLightDiagnosticView);
+                material.vanillaPbrPresets());
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(
                 scatterCount,

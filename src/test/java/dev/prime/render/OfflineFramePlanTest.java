@@ -35,9 +35,6 @@ final class OfflineFramePlanTest {
         assertFalse(first.integrator().shInput());
         assertFalse(first.integrator().rawNumericalDiagnostic());
         assertFalse(first.integrator().triangleDebug());
-        assertEquals(
-                PrimaryLightDiagnosticView.OFF,
-                first.integrator().primaryLightDiagnosticView());
         first.requireSceneRevision(input.sceneRevision());
         assertThrows(
                 IllegalStateException.class,

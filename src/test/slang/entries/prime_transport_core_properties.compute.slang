@@ -206,18 +206,8 @@ void primeCheckRoulette(
             || primeTransparentPrimaryReflectionOnly(true, false, false)) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
-    uint standaloneFlags = PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE;
-    uint standaloneAreaOnlyFlags = PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE
-            | PRIME_PATH_PREVIOUS_NO_SUN_NEE;
-    if (!primePreviousSunNeeEnabled(standaloneFlags)
-            || primePreviousSunNeeEnabled(standaloneAreaOnlyFlags)
-            || !primeStandaloneAreaHitSuppressed(
-                    true, false, standaloneFlags)
-            || primeStandaloneAreaHitSuppressed(
-                    false, false, standaloneFlags)
-            || primeStandaloneAreaHitSuppressed(
-                    true, true, standaloneFlags)
-            || primeStandaloneAreaHitSuppressed(true, false, 0u)) {
+    if (!primePreviousSunNeeEnabled(0u)
+            || primePreviousSunNeeEnabled(PRIME_PATH_PREVIOUS_NO_SUN_NEE)) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
     if (survival > 0.0) {
@@ -774,102 +764,6 @@ void primeCheckPointLightNodeMetric(
     result.third = float4(receiverNormal, 0.0);
 }
 
-void primeCheckLightBoundsMetric(
-        inout PrimeTransportResult result,
-        float4 boundsMinPower,
-        float3 boundsMax,
-        float3 point,
-        float3 receiverNormal)
-{
-    float2 metrics = primeLightBoundsMetrics(
-            boundsMinPower.xyz,
-            boundsMax,
-            boundsMinPower.w,
-            point,
-            receiverNormal,
-            PRIME_LIGHT_DIRECTION_MODE_FULL << 30u);
-    float3 closest = clamp(point, boundsMinPower.xyz, boundsMax);
-    float3 delta = point - closest;
-    float expectedDistanceSquared = dot(delta, delta);
-    if (expectedDistanceSquared == 0.0) {
-        float3 extent = boundsMax - boundsMinPower.xyz;
-        expectedDistanceSquared = dot(extent, extent);
-    }
-    float minimumPower = boundsMinPower.w * PRIME_LIGHT_RECEIVER_COSINE_FLOOR;
-    primeTransportClassify(result.mask, float3(metrics, expectedDistanceSquared));
-    if (!primeTestClose(metrics.x, expectedDistanceSquared, 2.0e-6, 2.0e-6)
-            || metrics.y + 2.0e-6 * boundsMinPower.w < minimumPower
-            || metrics.y > boundsMinPower.w * (1.0 + 2.0e-6)) {
-        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
-    }
-    result.first = float4(metrics, expectedDistanceSquared, minimumPower);
-    result.second = boundsMinPower;
-    result.third = float4(boundsMax, 0.0);
-}
-
-void primeCheckRisPdf(
-        inout PrimeTransportResult result,
-        float4 proposalPdfs,
-        float4 targets,
-        float conditionalPdf,
-        float sampleValue)
-{
-    float minimumProposalPdf = min(
-            min(proposalPdfs.x, proposalPdfs.y),
-            min(proposalPdfs.z, proposalPdfs.w));
-    float4 scaledWeights = float4(
-            primeRisScaledWeightValue(
-                    targets.x, minimumProposalPdf, proposalPdfs.x),
-            primeRisScaledWeightValue(
-                    targets.y, minimumProposalPdf, proposalPdfs.y),
-            primeRisScaledWeightValue(
-                    targets.z, minimumProposalPdf, proposalPdfs.z),
-            primeRisScaledWeightValue(
-                    targets.w, minimumProposalPdf, proposalPdfs.w));
-    float scaledWeightSum = scaledWeights.x + scaledWeights.y
-            + scaledWeights.z + scaledWeights.w;
-    uint selectedIndex = primeRisSelectIndex(scaledWeights, sampleValue);
-    float effectivePdf = primeRisEffectivePdfValue(
-            conditionalPdf,
-            targets[selectedIndex],
-            minimumProposalPdf,
-            scaledWeightSum,
-            4u);
-    float selectionProbability = scaledWeights[selectedIndex] / scaledWeightSum;
-    float expectedRatio = 1.0
-            / (4.0 * proposalPdfs[selectedIndex] * conditionalPdf);
-    float actualRatio = selectionProbability / effectivePdf;
-
-    float4 scaledTargets = targets * 0.25;
-    float scaledSum = scaledWeightSum * 0.25;
-    float rescaledEffectivePdf = primeRisEffectivePdfValue(
-            conditionalPdf,
-            scaledTargets[selectedIndex],
-            minimumProposalPdf,
-            scaledSum,
-            4u);
-    primeTransportClassify(
-            result.mask,
-            float3(effectivePdf, selectionProbability, actualRatio));
-    if (!(effectivePdf > 0.0)
-            || selectionProbability < 0.0
-            || selectionProbability > 1.0
-            || selectedIndex > 3u
-            || !primeTestClose(actualRatio, expectedRatio, 2.0e-6, 8.0e-6)
-            || !primeTestClose(
-                    effectivePdf, rescaledEffectivePdf, 2.0e-6, 8.0e-6)) {
-        result.mask |= PRIME_TEST_FAILURE_PDF;
-    }
-    result.first = float4(
-            effectivePdf,
-            selectionProbability,
-            actualRatio,
-            expectedRatio);
-    result.second = float4(scaledWeights.xyz, scaledWeightSum);
-    result.third = float4(
-            asfloat(selectedIndex), minimumProposalPdf, conditionalPdf, sampleValue);
-}
-
 [numthreads(64, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -948,12 +842,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     } else if (kind == 17) {
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
     } else if (kind == 18) {
-        primeCheckRisPdf(
-                result, first, second, third.x, third.y);
-    } else if (kind == 19) {
-        primeCheckLightBoundsMetric(
-                result, first, second.xyz, third.xyz, fourth.xyz);
-    } else if (kind == 20) {
         primeCheckLightFamilyProbability(
                 result, max(first.x, 0.0), max(first.y, 0.0));
     } else {

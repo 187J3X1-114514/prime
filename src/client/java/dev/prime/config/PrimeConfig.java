@@ -217,6 +217,11 @@ public final class PrimeConfig {
                                 postProcessingId,
                                 PostProcessingMode.DEFAULT.id());
                         rewriteNeeded = true;
+                    } else if (parsed == PostProcessingMode.DISABLED) {
+                        PrimeInfo.LOGGER.info(
+                                "Migrating persistent Prime raw output to the session diagnostic; using {}",
+                                PostProcessingMode.DEFAULT.id());
+                        rewriteNeeded = true;
                     } else {
                         postProcessingMode = parsed;
                     }

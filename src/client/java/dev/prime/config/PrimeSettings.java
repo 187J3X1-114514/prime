@@ -70,6 +70,10 @@ public record PrimeSettings(
 
     public PrimeSettings {
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
+        if (postProcessingMode == PostProcessingMode.DISABLED) {
+            throw new IllegalArgumentException(
+                    "Raw output is a non-persistent session diagnostic");
+        }
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
         astronomy = Objects.requireNonNull(astronomy, "astronomy");

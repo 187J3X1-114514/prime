@@ -42,8 +42,7 @@ static const uint PRIME_WAVEFRONT_ETA_SCALE_MASK = 0xffffu;
 static const uint PRIME_WAVEFRONT_PATH_FLAGS_SHIFT = 24u;
 static const uint PRIME_WAVEFRONT_PATH_FLAGS_MASK =
         PRIME_PATH_PREVIOUS_DISCRETE
-        | PRIME_PATH_PREVIOUS_NO_SUN_NEE
-        | PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE;
+        | PRIME_PATH_PREVIOUS_NO_SUN_NEE;
 static const uint PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT = 8u;
 static const uint PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT = 16u;
 // Bits 18..31 are the complete current material-flag domain. Extending material flags beyond

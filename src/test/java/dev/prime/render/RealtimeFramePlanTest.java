@@ -41,9 +41,6 @@ final class RealtimeFramePlanTest {
             assertEquals(input.transparentGuideMode(), plan.integrator().transparentGuideMode());
             assertEquals(PACKED_RAY_CONE, plan.integrator().packedRayCone());
             assertEquals(input.scatterCount(), plan.integrator().scatterCount());
-            assertEquals(
-                    input.primaryLightDiagnosticView(),
-                    plan.integrator().primaryLightDiagnosticView());
             assertEquals(7, plan.integrator().jitterPhase());
             assertEquals(JITTER, plan.jitter());
             assertTrue(plan.reconstructionReset());
@@ -79,8 +76,6 @@ final class RealtimeFramePlanTest {
                 firstInput.material(),
                 firstInput.shInput(),
                 firstInput.triangleDebug(),
-                firstInput.areaLightSamplingMode(),
-                firstInput.primaryLightDiagnosticView(),
                 firstInput.display(),
                 false);
         RealtimeSampleState.Plan second =
@@ -189,8 +184,6 @@ final class RealtimeFramePlanTest {
                 new MaterialSettings.Snapshot(90, 17L),
                 true,
                 false,
-                AreaLightSamplingMode.DEFAULT,
-                PrimaryLightDiagnosticView.SQUARED_SAMPLE,
                 new DisplaySettings.Snapshot(0, 50),
                 false);
     }

@@ -3,13 +3,11 @@ package dev.prime.client;
 import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
 import dev.prime.mixin.MinecraftAccessor;
-import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.fsr.FsrDebugView;
@@ -29,17 +27,13 @@ import net.minecraft.network.chat.Component;
 /** Builds Prime's live controls shown in Minecraft's Video Settings screen. */
 public final class PrimeVideoOptions {
     private static final List<PostProcessingMode> POST_PROCESSING_MODES =
-            List.of(PostProcessingMode.values());
+            List.of(PostProcessingMode.NRD_FSR, PostProcessingMode.DLSS_RR);
     private static final List<ReconstructionQualityMode> QUALITY_MODES =
             List.of(ReconstructionQualityMode.values());
     private static final List<DlssRrDebugView> RR_DEBUG_VIEWS = List.of(DlssRrDebugView.values());
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
             List.of(NrdDiagnostics.Mode.values());
-    private static final List<AreaLightSamplingMode> AREA_LIGHT_SAMPLING_MODES =
-            List.of(AreaLightSamplingMode.values());
-    private static final List<PrimaryLightDiagnosticView> PRIMARY_LIGHT_DIAGNOSTIC_VIEWS =
-            List.of(PrimaryLightDiagnosticView.values());
 
     private PrimeVideoOptions() {
     }
@@ -158,38 +152,14 @@ public final class PrimeVideoOptions {
                 runtime::setRendererDiagnostics);
     }
 
-    public static OptionInstance<AreaLightSamplingMode> areaLightSamplingMode() {
+    public static OptionInstance<Boolean> rawOutput() {
         PrimeRuntime runtime = PrimeRuntime.instance();
-        return new OptionInstance<>(
-                "prime.options.debug.area_light_sampling",
+        return OptionInstance.createBoolean(
+                "prime.options.debug.raw_output",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.area_light_sampling.tooltip")),
-                (caption, mode) -> Component.translatable(
-                        "prime.options.debug.area_light_sampling." + mode.id()),
-                new OptionInstance.Enum<>(
-                        AREA_LIGHT_SAMPLING_MODES,
-                        Codec.STRING.xmap(
-                                AreaLightSamplingMode::fromId,
-                                AreaLightSamplingMode::id)),
-                runtime.areaLightSamplingMode(),
-                runtime::setAreaLightSamplingMode);
-    }
-
-    public static OptionInstance<PrimaryLightDiagnosticView> primaryLightDiagnosticView() {
-        PrimeRuntime runtime = PrimeRuntime.instance();
-        return new OptionInstance<>(
-                "prime.options.debug.primary_light_view",
-                OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.primary_light_view.tooltip")),
-                (caption, mode) -> Component.translatable(
-                        "prime.options.debug.primary_light_view." + mode.id()),
-                new OptionInstance.Enum<>(
-                        PRIMARY_LIGHT_DIAGNOSTIC_VIEWS,
-                        Codec.STRING.xmap(
-                                PrimaryLightDiagnosticView::fromId,
-                                PrimaryLightDiagnosticView::id)),
-                runtime.primaryLightDiagnosticView(),
-                runtime::setPrimaryLightDiagnosticView);
+                        "prime.options.debug.raw_output.tooltip")),
+                runtime.rawOutput(),
+                runtime::setRawOutput);
     }
 
     public static OptionInstance<ReconstructionQualityMode> qualityMode() {

@@ -375,8 +375,8 @@ public final class CompiledClusterLights {
         return minimum + (maximum - minimum) * ((float) quantized / 1023.0F);
     }
 
-    /** Adds the v14 flat emitter alias table without rebuilding the existing local light tree. */
-    static int[] addEmitterAliasTable(int[] oldWords, int emitterCount) {
+    /** Removes the v14-v15 flat emitter proposal while preserving the compact light tree. */
+    static int[] removeEmitterAliasTable(int[] oldWords, int emitterCount) {
         Objects.requireNonNull(oldWords, "oldWords");
         if (emitterCount <= 0 || oldWords.length < HEADER_WORDS) {
             throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
@@ -387,7 +387,9 @@ public final class CompiledClusterLights {
         long entryEnd = Math.addExact(
                 entryStart,
                 Math.multiplyExact((long) emitterCount, ShaderAbi.LIGHT_LEAF_ENTRY_SIZE));
-        long expectedOldEmitter = alignUp(entryEnd, 16L);
+        long legacyAliasBytes = Math.multiplyExact((long) emitterCount, 8L);
+        long expectedOldEmitter = alignUp(
+                Math.addExact(entryEnd, legacyAliasBytes), 16L);
         long oldEmitterEnd = Math.addExact(
                 oldEmitterStart,
                 Math.multiplyExact((long) emitterCount, ShaderAbi.LIGHT_EMITTER_SIZE));
@@ -398,16 +400,15 @@ public final class CompiledClusterLights {
             throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
         }
 
-        long aliasBytes = Math.multiplyExact(
-                (long) emitterCount, ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE);
-        long newEmitterStart = alignUp(Math.addExact(entryEnd, aliasBytes), 16L);
-        long shift = newEmitterStart - oldEmitterStart;
-        long newCellStart = Math.addExact(oldCellStart, shift);
+        long newEmitterStart = alignUp(entryEnd, 16L);
+        long reduction = oldEmitterStart - newEmitterStart;
+        long newCellStart = oldCellStart - reduction;
         int[] upgraded = new int[Math.toIntExact(
-                Math.addExact(byteSize, shift) / Integer.BYTES)];
+                (byteSize - reduction) / Integer.BYTES)];
+        int entryEndWord = Math.toIntExact(entryEnd / Integer.BYTES);
         int oldEmitterWord = Math.toIntExact(oldEmitterStart / Integer.BYTES);
         int newEmitterWord = Math.toIntExact(newEmitterStart / Integer.BYTES);
-        System.arraycopy(oldWords, 0, upgraded, 0, oldEmitterWord);
+        System.arraycopy(oldWords, 0, upgraded, 0, entryEndWord);
         System.arraycopy(
                 oldWords,
                 oldEmitterWord,
@@ -418,21 +419,10 @@ public final class CompiledClusterLights {
         putLong(upgraded, 8, newCellStart);
 
         int emitterWords = ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES;
-        int powerWord = ShaderAbi.LIGHT_EMITTER_EDGE_TWO_POWER_OFFSET / Integer.BYTES + 3;
-        int proposalMassWord =
-                ShaderAbi.LIGHT_EMITTER_NORMAL_PROPOSAL_PDF_OFFSET / Integer.BYTES + 3;
-        float[] powers = new float[emitterCount];
+        int paddingWord =
+                ShaderAbi.LIGHT_EMITTER_NORMAL_PADDING_OFFSET / Integer.BYTES + 3;
         for (int emitter = 0; emitter < emitterCount; emitter++) {
-            powers[emitter] = Float.intBitsToFloat(
-                    oldWords[oldEmitterWord + emitter * emitterWords + powerWord]);
-        }
-        PowerAliasTable alias = PowerAliasTable.build(powers);
-        int aliasWord = newEmitterWord
-                - emitterCount * (ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE / Integer.BYTES);
-        alias.packInto(upgraded, aliasWord);
-        for (int emitter = 0; emitter < emitterCount; emitter++) {
-            upgraded[newEmitterWord + emitter * emitterWords + proposalMassWord] =
-                    Float.floatToRawIntBits(alias.probabilityMass(emitter));
+            upgraded[newEmitterWord + emitter * emitterWords + paddingWord] = 0;
         }
         return upgraded;
     }
@@ -522,12 +512,9 @@ public final class CompiledClusterLights {
         long entryCount = emitterCount;
         long expectedEmitter = alignUp(
                 Math.addExact(
-                        Math.addExact(
-                                entryStart,
-                                Math.multiplyExact(
-                                        entryCount, ShaderAbi.LIGHT_LEAF_ENTRY_SIZE)),
+                        entryStart,
                         Math.multiplyExact(
-                                (long) emitterCount, ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE)),
+                                entryCount, ShaderAbi.LIGHT_LEAF_ENTRY_SIZE)),
                 16L);
         long expectedCells = Math.addExact(
                 emitterStart,
@@ -647,40 +634,11 @@ public final class CompiledClusterLights {
         int metadataWord =
                 ShaderAbi.LIGHT_EMITTER_METADATA_OFFSET / Integer.BYTES;
         int emitterWord = Math.toIntExact(emitterStart / Integer.BYTES);
-        int aliasWords = ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE / Integer.BYTES;
-        int aliasWord = emitterWord - emitterCount * aliasWords;
-        double[] exactProposalMasses = new double[emitterCount];
-        double inverseEmitterCount = 1.0 / emitterCount;
-        for (int bucket = 0; bucket < emitterCount; bucket++) {
-            int alias = aliasWord + bucket * aliasWords;
-            float aliasProbability = Float.intBitsToFloat(words[alias]);
-            int aliasIndex = words[alias + 1];
-            if (!(aliasProbability >= 0.0F && aliasProbability <= 1.0F)
-                    || !Float.isFinite(aliasProbability)
-                    || aliasIndex < 0
-                    || aliasIndex >= emitterCount) {
-                throw new IllegalArgumentException("Compiled light alias table is invalid");
-            }
-            exactProposalMasses[bucket] += aliasProbability * inverseEmitterCount;
-            exactProposalMasses[aliasIndex] +=
-                    (1.0 - aliasProbability) * inverseEmitterCount;
-        }
-        int proposalMassWord =
-                ShaderAbi.LIGHT_EMITTER_NORMAL_PROPOSAL_PDF_OFFSET / Integer.BYTES + 3;
-        double proposalMassSum = 0.0;
         for (int emitter = 0; emitter < emitterCount; emitter++) {
             int metadata = emitterWord + emitter * emitterWords + metadataWord;
             long firstCell = Integer.toUnsignedLong(words[metadata]);
             int path = words[metadata + 1];
-            float proposalMass = Float.intBitsToFloat(
-                    words[emitterWord + emitter * emitterWords + proposalMassWord]);
-            float exactProposalMass = (float) exactProposalMasses[emitter];
-            proposalMassSum += proposalMass;
-            if (!(proposalMass > 0.0F)
-                    || !Float.isFinite(proposalMass)
-                    || Float.floatToRawIntBits(proposalMass)
-                            != Float.floatToRawIntBits(exactProposalMass)
-                    || firstCell % EmissionDistribution.CELL_COUNT != 0L
+            if (firstCell % EmissionDistribution.CELL_COUNT != 0L
                     || firstCell / EmissionDistribution.CELL_COUNT
                             >= distributionCount
                     || !pathContainsEmitter(
@@ -697,10 +655,6 @@ public final class CompiledClusterLights {
                 throw new IllegalArgumentException(
                         "Compiled light emitter references invalid tree or distribution data");
             }
-        }
-        if (Math.abs(proposalMassSum - 1.0) > 2.0E-6) {
-            throw new IllegalArgumentException(
-                    "Compiled light alias proposal is not normalized");
         }
     }
 

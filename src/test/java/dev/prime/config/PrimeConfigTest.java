@@ -232,6 +232,10 @@ final class PrimeConfigTest {
         assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.DEFAULT);
         assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.fromId(null));
         assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.fromId("future_backend"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeSettings.defaults()
+                        .withPostProcessingMode(PostProcessingMode.DISABLED));
         assertEquals(ReconstructionQualityMode.PERFORMANCE, ReconstructionQualityMode.DEFAULT);
         assertEquals(
                 ReconstructionQualityMode.PERFORMANCE,

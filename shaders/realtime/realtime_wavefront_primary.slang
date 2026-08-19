@@ -205,11 +205,6 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                             guideEnabled,
                             hasGuide));
         }
-        if (continuation
-                && areaNee.enabled()
-                && !discreteOnlyInterface) {
-            branchPath.flags |= areaNee.primaryPathFlags();
-        }
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;
             continuation = branchPath.bounce < maximumBounces;

@@ -9,9 +9,6 @@ public static const uint PRIME_PATH_PREVIOUS_DISCRETE = 1u;
 // The previous realtime vertex deliberately omitted Sun NEE. A later sun-disk hit therefore has no
 // competing light technique and must retain unit weight.
 public static const uint PRIME_PATH_PREVIOUS_NO_SUN_NEE = 2u;
-// A standalone Area estimator owns the non-discrete direct-emitter term by itself. The realtime
-// multi-candidate RIS proposal is not reverse-queried.
-public static const uint PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE = 8u;
 public static const uint PRIME_SUN_FAMILY_PROBABILITY_STEPS = 15u;
 public static const uint PRIME_SUN_FAMILY_MINIMUM_MIXED_CODE = 2u;
 public static const uint PRIME_SUN_FAMILY_MAXIMUM_MIXED_CODE = 13u;
@@ -71,15 +68,6 @@ public uint primeWavefrontSurfaceSunProbability(uint packedHitKind) {
 
 public bool primePreviousSunNeeEnabled(uint pathFlags) {
     return (pathFlags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u;
-}
-
-public bool primeStandaloneAreaHitSuppressed(
-        bool previousUsedAreaNee,
-        bool previousCannotUseMis,
-        uint pathFlags) {
-    return previousUsedAreaNee
-            && !previousCannotUseMis
-            && (pathFlags & PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE) != 0u;
 }
 
 // A transparent path that still shares its reconstruction observation may use roulette only after

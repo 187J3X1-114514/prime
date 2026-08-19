@@ -1,7 +1,5 @@
 package dev.prime.render.runtime;
 
-import dev.prime.render.AreaLightSamplingMode;
-import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
@@ -12,18 +10,13 @@ public record SessionControls(
         boolean screenshotRequested,
         boolean triangleDebug,
         boolean rendererDiagnostics,
-        AreaLightSamplingMode areaLightSamplingMode,
-        PrimaryLightDiagnosticView primaryLightDiagnosticView,
+        boolean rawOutput,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
         DlssRrDebugView rrDebugView,
         boolean rrDebugFullscreen) {
     public SessionControls {
-        areaLightSamplingMode = Objects.requireNonNull(
-                areaLightSamplingMode, "areaLightSamplingMode");
         nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
-        primaryLightDiagnosticView = Objects.requireNonNull(
-                primaryLightDiagnosticView, "primaryLightDiagnosticView");
         fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
         rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
     }
@@ -33,8 +26,7 @@ public record SessionControls(
                 false,
                 false,
                 false,
-                AreaLightSamplingMode.DEFAULT,
-                PrimaryLightDiagnosticView.OFF,
+                false,
                 NrdDiagnostics.Mode.OFF,
                 FsrDebugView.OFF,
                 DlssRrDebugView.OFF,
@@ -48,8 +40,7 @@ public record SessionControls(
                         value,
                         this.triangleDebug,
                         this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -63,8 +54,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         value,
                         this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -78,39 +68,20 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         value,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,
                         this.rrDebugFullscreen);
     }
 
-    public SessionControls withAreaLightSamplingMode(AreaLightSamplingMode value) {
-        Objects.requireNonNull(value, "value");
-        return value == this.areaLightSamplingMode
+    public SessionControls withRawOutput(boolean value) {
+        return value == this.rawOutput
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
-                        value,
-                        this.primaryLightDiagnosticView,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
-    }
-
-    public SessionControls withPrimaryLightDiagnosticView(PrimaryLightDiagnosticView value) {
-        Objects.requireNonNull(value, "value");
-        return value == this.primaryLightDiagnosticView
-                ? this
-                : new SessionControls(
-                        this.screenshotRequested,
-                        this.triangleDebug,
-                        this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
                         value,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -126,8 +97,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         value,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -142,8 +112,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         this.nrdDebugView,
                         value,
                         this.rrDebugView,
@@ -158,8 +127,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         value,
@@ -173,8 +141,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
-                        this.areaLightSamplingMode,
-                        this.primaryLightDiagnosticView,
+                        this.rawOutput,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,

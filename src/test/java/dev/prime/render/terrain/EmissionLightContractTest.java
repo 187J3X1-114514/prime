@@ -309,21 +309,17 @@ final class EmissionLightContractTest {
         int[] packed = tree.pack();
 
         assertEquals(1, tree.nodeCount());
-        assertEquals(ShaderAbi.WORLD_LIGHT_HEADER_SIZE, tree.nodeByteOffset());
+        assertEquals(ShaderAbi.LIGHT_NODE_SIZE, tree.leafByteOffset());
         assertEquals(
-                ShaderAbi.WORLD_LIGHT_HEADER_SIZE + ShaderAbi.LIGHT_NODE_SIZE,
-                tree.leafByteOffset());
-        assertEquals(
-                ShaderAbi.WORLD_LIGHT_HEADER_SIZE
-                        + ShaderAbi.LIGHT_NODE_SIZE
+                ShaderAbi.LIGHT_NODE_SIZE
                         + ShaderAbi.LIGHT_LEAF_SIZE,
                 tree.entryByteOffset());
-        assertEquals(tree.nodeByteOffset(), getLong(packed, 0));
-        assertEquals(tree.leafByteOffset(), getLong(packed, 2));
-        assertEquals(tree.entryByteOffset(), getLong(packed, 4));
-        assertEquals(tree.summaryByteOffset(), getLong(packed, 6));
-        assertEquals(tree.aliasByteOffset(), getLong(packed, 8));
-        assertEquals(1, tree.summaryCount());
+        assertEquals(
+                (ShaderAbi.LIGHT_NODE_SIZE
+                                + ShaderAbi.LIGHT_LEAF_SIZE
+                                + ShaderAbi.LIGHT_LEAF_ENTRY_SIZE)
+                        / Integer.BYTES,
+                packed.length);
     }
 
     @Test
@@ -360,9 +356,7 @@ final class EmissionLightContractTest {
         assertTrue(initial.nodeCount() <= 2 * clusters.size() - 1);
         assertEquals(
                 36.0F,
-                Float.intBitsToFloat(initial.pack()[
-                        Math.toIntExact(initial.nodeByteOffset() / Integer.BYTES)
-                                + LIGHT_NODE_POWER_WORD]),
+                Float.intBitsToFloat(initial.pack()[LIGHT_NODE_POWER_WORD]),
                 1.0E-6F);
 
         clusters.remove(0);
@@ -372,15 +366,11 @@ final class EmissionLightContractTest {
         assertTrue(rebuilt.nodeCount() <= 2 * clusters.size() - 1);
         assertEquals(
                 35.0F,
-                Float.intBitsToFloat(rebuilt.pack()[
-                        Math.toIntExact(rebuilt.nodeByteOffset() / Integer.BYTES)
-                                + LIGHT_NODE_POWER_WORD]),
+                Float.intBitsToFloat(rebuilt.pack()[LIGHT_NODE_POWER_WORD]),
                 1.0E-6F);
         for (int node = 0; node < rebuilt.nodeCount(); node++) {
             assertTrue(Float.intBitsToFloat(
-                            rebuilt.pack()[Math.toIntExact(
-                                            rebuilt.nodeByteOffset() / Integer.BYTES)
-                                    + node * LIGHT_NODE_WORDS
+                            rebuilt.pack()[node * LIGHT_NODE_WORDS
                                     + LIGHT_NODE_POWER_WORD])
                     > 0.0F);
         }
@@ -436,8 +426,7 @@ final class EmissionLightContractTest {
                 worldLightInput(List.of(cluster(0, 1.0F)), 0, 1_000_000, 0));
         int[] packed = tree.pack();
 
-        int nodeOffset = Math.toIntExact(tree.nodeByteOffset() / Integer.BYTES);
-        float centroidY = Float.intBitsToFloat(packed[nodeOffset + 1]);
+        float centroidY = Float.intBitsToFloat(packed[1]);
         assertTrue(Float.isFinite(centroidY));
         assertTrue(centroidY >= -1_000_000.0F && centroidY <= -999_999.0F);
     }
@@ -452,8 +441,7 @@ final class EmissionLightContractTest {
 
         assertEquals(
                 (float) ((long) Integer.MIN_VALUE - Integer.MAX_VALUE),
-                Float.intBitsToFloat(tree.pack()[
-                        Math.toIntExact(tree.nodeByteOffset() / Integer.BYTES)]),
+                Float.intBitsToFloat(tree.pack()[0]),
                 0.0F);
     }
 
@@ -478,7 +466,7 @@ final class EmissionLightContractTest {
 
     private static void assertWorldLeafMapping(CpuWorldLightTree.Result tree, int clusterCount) {
         int[] packed = tree.pack();
-        int nodeOffset = Math.toIntExact(tree.nodeByteOffset() / Integer.BYTES);
+        int nodeOffset = 0;
         int leafOffset = Math.toIntExact(tree.leafByteOffset() / Integer.BYTES);
         int entryOffset = Math.toIntExact(tree.entryByteOffset() / Integer.BYTES);
         for (int clusterIndex = 0; clusterIndex < clusterCount; clusterIndex++) {
@@ -513,10 +501,6 @@ final class EmissionLightContractTest {
             node = firstChild + (packedPath >>> level & 1);
         }
         return node;
-    }
-
-    private static long getLong(int[] words, int offset) {
-        return Integer.toUnsignedLong(words[offset]) | (long) words[offset + 1] << 32;
     }
 
     private static void assertLeafContains(

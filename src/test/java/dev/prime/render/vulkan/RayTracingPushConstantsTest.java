@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
@@ -12,7 +11,6 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
@@ -53,9 +51,7 @@ final class RayTracingPushConstantsTest {
                         input.astronomy().settings(),
                         input.material().seamlessGlass(),
                         input.material().airGap(),
-                        input.material().vanillaPbrPresets(),
-                        input.areaLightSamplingMode(),
-                        input.primaryLightDiagnosticView()),
+                        input.material().vanillaPbrPresets()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
                 IntegratorSettings.packSampleEpoch(input.sampleEpoch(), input.triangleDebug()),
@@ -93,9 +89,7 @@ final class RayTracingPushConstantsTest {
                         valid.material(),
                         valid.shInput(),
                         valid.rawNumericalDiagnostic(),
-                        valid.triangleDebug(),
-                        valid.areaLightSamplingMode(),
-                        valid.primaryLightDiagnosticView()));
+                        valid.triangleDebug()));
     }
 
     private static Fixture input(int sampleIndex) {
@@ -136,9 +130,7 @@ final class RayTracingPushConstantsTest {
                 material,
                 true,
                 true,
-                true,
-                AreaLightSamplingMode.DEFAULT,
-                PrimaryLightDiagnosticView.SQUARED_SAMPLE);
+                true);
         return new Fixture(input, scene);
     }
 

@@ -708,35 +708,18 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    AreaLightSample area;
-    uint samplingMode = primeAreaLightSamplingMode();
-    if (samplingMode == PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_WIDE_RIS_4X4) {
-        area = primeSampleAreaLightWideRis4x4(
-                context.diagnostics,
-                surface.position,
-                primeAreaLightReceiverNormal(surface, viewDirection),
-                primeSobolSample4D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
-                primeSobolSample3D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                        PRIME_SAMPLE_DIMENSION_SECONDARY));
-    } else {
-        area = primeSampleAreaLight(
-                context.diagnostics,
-                surface.position,
-                primeAreaLightReceiverNormal(surface, viewDirection),
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                        PRIME_SAMPLE_DIMENSION_SECONDARY));
-    }
+    AreaLightSample area = primeSampleAreaLight(
+            context.diagnostics,
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_SECONDARY));
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -913,7 +896,6 @@ PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
 
 interface IPrimeSecondaryAreaNee {
     bool enabled();
-    uint primaryPathFlags();
     void markSecondaryPath(
             inout PathState path,
             IntegratorRecord integrator,
@@ -975,7 +957,6 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
 
 struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return true; }
-    uint primaryPathFlags() { return 0u; }
     void markSecondaryPath(
             inout PathState path,
             IntegratorRecord integrator,
@@ -1024,12 +1005,6 @@ struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
 
 struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return true; }
-    uint primaryPathFlags() {
-        return primeAreaLightSamplingMode()
-                        != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE
-                ? PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE
-                : 0u;
-    }
     void markSecondaryPath(
             inout PathState path,
             IntegratorRecord integrator,
@@ -1072,7 +1047,6 @@ struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
 
 struct PrimeNoSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return false; }
-    uint primaryPathFlags() { return 0u; }
     void markSecondaryPath(
             inout PathState path,
             IntegratorRecord integrator,
@@ -1214,14 +1188,6 @@ float3 primeEvaluateLocalHitEmission(
     // transport vertex actually had a competing Area NEE technique.
     bool evaluateAreaPdf = previousUsedAreaNee
             && !primePreviousCannotUseMis(path);
-    if (primeStandaloneAreaHitSuppressed(
-            previousUsedAreaNee,
-            primePreviousCannotUseMis(path),
-            path.flags)) {
-        // A standalone estimator owns this non-discrete emitter term. Its paired BSDF hit is
-        // suppressed instead of querying a different or unavailable reverse proposal.
-        return float3(0.0);
-    }
     LightEvaluation hitAreaLight = primeEvaluateAreaLight(
             context.diagnostics,
             surface,
@@ -1943,10 +1909,6 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
                     hasGuide))) {
         return false;
     }
-    if (areaNee.enabled()
-            && primarySurfaceReplacement) {
-        path.flags |= areaNee.primaryPathFlags();
-    }
     if (areaNee.enabled() && supportsSolidAngle
             && !primarySurfaceReplacement) {
         areaNee.markSecondaryPath(
@@ -2193,12 +2155,6 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     discreteOnlyInterface,
                     surfaceLinearRoughness)) {
         return false;
-    }
-    if (areaNee.enabled()
-            && supportsSolidAngle
-            && denoiserState.hasPrimarySurface
-            && path.bounce == denoiserState.primaryBounce) {
-        path.flags |= areaNee.primaryPathFlags();
     }
     if (areaNee.enabled()
             && supportsSolidAngle

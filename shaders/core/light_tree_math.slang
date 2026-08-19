@@ -236,8 +236,7 @@ public float2 primeLightNodeMetrics(
         float3 point,
         float3 receiverNormal,
         uint packedEmissionDirection) {
-    // A sharp centroid proposal preserves important-light selection. Primary realtime NEE uses
-    // independent world and section reservoirs to recover detail without a spatial kernel.
+    // A sharp centroid proposal preserves important-light selection in both tree levels.
     float3 delta = centroid - point;
     float distanceSquared = dot(delta, delta);
     float angularImportance = 1.0;
@@ -252,42 +251,6 @@ public float2 primeLightNodeMetrics(
     float weightedPower = max(power, 0.0)
             * (PRIME_LIGHT_RECEIVER_COSINE_FLOOR
                     + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * angularImportance);
-    return float2(distanceSquared, weightedPower);
-}
-
-public float2 primeLightBoundsMetrics(
-        float3 boundsMin,
-        float3 boundsMax,
-        float power,
-        float3 point,
-        float3 receiverNormal,
-        uint packedEmissionDirection) {
-    float3 closest = clamp(point, boundsMin, boundsMax);
-    float3 delta = point - closest;
-    float distanceSquared = dot(delta, delta);
-    float inverseDistance = distanceSquared > 0.0 ? rsqrt(distanceSquared) : 0.0;
-    float receiverBound = primeLightReceiverCosineBoundWithInverse(
-            boundsMin,
-            boundsMax,
-            point,
-            receiverNormal,
-            distanceSquared,
-            inverseDistance);
-    float emitterBound = primeLightEmitterCosineBoundWithInverse(
-            boundsMin,
-            boundsMax,
-            point,
-            distanceSquared,
-            inverseDistance,
-            packedEmissionDirection);
-    float angularImportance = clamp(receiverBound * emitterBound, 0.0, 1.0);
-    float weightedPower = max(power, 0.0)
-            * (PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-                    + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * angularImportance);
-    if (distanceSquared == 0.0) {
-        float3 extent = boundsMax - boundsMin;
-        distanceSquared = dot(extent, extent);
-    }
     return float2(distanceSquared, weightedPower);
 }
 

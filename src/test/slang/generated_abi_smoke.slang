@@ -15,10 +15,7 @@ import "prime_abi_types.slang";
 [[vk::binding(12, 0)]] StructuredBuffer<NrdMotionPushConstants> nrdMotionRecords;
 [[vk::binding(13, 0)]] StructuredBuffer<SharcFrameConstants> sharcFrameRecords;
 [[vk::binding(14, 0)]] RWStructuredBuffer<uint> outputValues;
-[[vk::binding(15, 0)]] StructuredBuffer<WorldLightHeader> worldLightHeaders;
-[[vk::binding(16, 0)]] StructuredBuffer<WorldLightSummary> worldLightSummaries;
-[[vk::binding(17, 0)]] StructuredBuffer<LightAliasEntry> lightAliasEntries;
-[[vk::binding(18, 0)]] StructuredBuffer<SunShadowQueryConstants> sunShadowQueries;
+[[vk::binding(15, 0)]] StructuredBuffer<SunShadowQueryConstants> sunShadowQueries;
 
 [[vk::push_constant]] ConstantBuffer<PrimePushConstants> primePush;
 
@@ -33,9 +30,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     value ^= uint(((SectionRecord*)primePush.sectionTableAddress)[index]
             .surfaceRelationAddress);
     value ^= lightNodes[index].directionChildReserved.z;
-    value ^= worldLightHeaders[index].summaryCount;
-    value ^= worldLightSummaries[index].directionSectionReserved.y;
-    value ^= lightAliasEntries[index].aliasIndex;
     value ^= lightLeaves[index].entryCount;
     value ^= asuint(lightLeafEntries[index].power);
     value ^= lightEmitters[index].metadata.w;

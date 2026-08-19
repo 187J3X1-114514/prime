@@ -135,23 +135,6 @@ void primeWriteRealtimeOutput(
                     + sampleResult.reflectionSpecularRadiance;
         }
     }
-    uint primaryLightDiagnosticView = primePrimaryLightDiagnosticView();
-    if (primaryLightDiagnosticView != 0u) {
-        float3 primaryLightSample = sampleResult.guides.primaryAreaDiffuse
-                + sampleResult.guides.primaryAreaSpecular;
-        if (primaryLightDiagnosticView == 2u) {
-            float3 boundedSample = min(
-                    primaryLightSample, float3(sqrt(PRIME_NRD_FP16_MAX)));
-            primaryLightSample = boundedSample * boundedSample;
-        }
-        noisyDiffuse = primaryLightSample;
-        noisySpecular = float3(0.0);
-        sampleResult.reflectionDiffuseRadiance = float3(0.0);
-        sampleResult.reflectionSpecularRadiance = float3(0.0);
-        sampleResult.radiance.unshadowedSun = float3(0.0);
-        sampleResult.radiance.sunVisibility = 0.0;
-        sampleResult.radiance.stable = float3(0.0);
-    }
     bool hasPrimarySurface = nrdGuides.primaryHitKind == PRIME_HIT_SURFACE;
     float primaryDistance = primeNrdSanitizePrimaryDistance(
             usesTransmissionAnchor

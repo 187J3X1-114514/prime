@@ -67,12 +67,6 @@ final class TracePipelinesContractTest {
         assertEquals(258, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(12, RealtimeLightweightRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(9, RealtimeLightweightRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(49, RealtimeLightweightRayTracingPipeline.dispatchCount(12));
-        assertEquals(5, RealtimeLightweightRayTracingPipeline.dispatchCount(1));
-        assertEquals(257, RealtimeLightweightRayTracingPipeline.dispatchCount(64));
-
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(4, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
         assertEquals(25, OfflineRayTracingPipeline.dispatchCount(12));
@@ -127,71 +121,6 @@ final class TracePipelinesContractTest {
             assertEquals(realtime.module(group), sharc.module(group));
             assertEquals(realtime.control(group), sharc.control(group));
         }
-    }
-
-    @Test
-    void lightweightScheduleSpecializesTransportAndTransparentResolve() {
-        RaygenSchedule full = RealtimeWavefrontGroups.standardSchedule(".rgen.spv");
-        RaygenSchedule lightweight =
-                RealtimeLightweightWavefrontGroups.standardSchedule(".rgen.spv");
-        assertEquals(9, lightweight.moduleCount());
-        assertEquals(12, lightweight.groupCount());
-        assertEquals(full.moduleResource(0), lightweight.moduleResource(0));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_primary_light.rgen.spv",
-                lightweight.moduleResource(3));
-        assertFalse(full.moduleResource(4).equals(lightweight.moduleResource(3)));
-        assertEquals(full.moduleResource(8), lightweight.moduleResource(7));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_transparent_resolve.rgen.spv",
-                lightweight.moduleResource(8));
-        assertFalse(full.moduleResource(9).equals(lightweight.moduleResource(8)));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_step.rgen.spv",
-                lightweight.moduleResource(1));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_primary.rgen.spv",
-                lightweight.moduleResource(2));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_light.rgen.spv",
-                lightweight.moduleResource(4));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_shade.rgen.spv",
-                lightweight.moduleResource(5));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_transparent_shade.rgen.spv",
-                lightweight.moduleResource(6));
-        assertTrue(java.util.stream.IntStream.range(0, lightweight.moduleCount())
-                .mapToObj(lightweight::moduleResource)
-                .noneMatch(resource -> resource.contains("primary_area")));
-        assertEquals(List.of(0, 1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8),
-                java.util.stream.IntStream
-                        .range(0, lightweight.groupCount())
-                        .map(lightweight::module)
-                        .boxed()
-                        .toList());
-
-        RaygenSchedule sharc =
-                RealtimeLightweightWavefrontGroups.sharcSchedule(".rgen.spv");
-        assertEquals(lightweight.moduleCount(), sharc.moduleCount());
-        assertEquals(lightweight.groupCount(), sharc.groupCount());
-        for (int module = 0; module < lightweight.moduleCount(); module++) {
-            if (module != 4 && module != 5) {
-                assertEquals(lightweight.moduleResource(module), sharc.moduleResource(module));
-            }
-        }
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_sharc_light.rgen.spv",
-                sharc.moduleResource(4));
-        assertEquals(
-                "/prime/shaders/realtime_wavefront_lightweight_sharc_shade.rgen.spv",
-                sharc.moduleResource(5));
-        assertEquals(List.of(0, 1, 257, 0, 0, 4, 2, 258, 2, 258, 3, 5),
-                java.util.stream.IntStream
-                        .range(0, lightweight.groupCount())
-                        .map(lightweight::control)
-                        .boxed()
-                        .toList());
     }
 
     @Test
@@ -283,21 +212,9 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "step", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
-                    Set.of(tracePayload, shadowPayload),
-                    payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_step", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
                     Set.of(),
                     payloadShapes(
                             wavefrontShader("realtime", "primary", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(),
-                    payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_primary", suffix),
                             STORAGE_RAY_PAYLOAD));
             for (String stage : List.of("primary_area", "primary_sun")) {
                 assertEquals(
@@ -306,12 +223,6 @@ final class TracePipelinesContractTest {
                                 wavefrontShader("realtime", stage, suffix),
                                 STORAGE_RAY_PAYLOAD));
             }
-            assertEquals(
-                    Set.of(shadowPayload),
-                    payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_primary_light", suffix),
-                            STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(),
                     payloadShapes(
@@ -337,30 +248,12 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(),
                     payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_transparent_resolve", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(),
-                    payloadShapes(
                             wavefrontShader("realtime", "shade", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(),
                     payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_shade", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(),
-                    payloadShapes(
                             wavefrontShader("realtime", "transparent_shade", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(),
-                    payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_transparent_shade", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(shadowPayload),
@@ -372,81 +265,6 @@ final class TracePipelinesContractTest {
                     payloadShapes(
                             wavefrontShader("realtime", "light", suffix),
                             STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(shadowPayload),
-                    payloadShapes(
-                            wavefrontShader(
-                                    "realtime", "lightweight_light", suffix),
-                            STORAGE_RAY_PAYLOAD));
-        }
-    }
-
-    @Test
-    void lightweightProgramsAddAliasAreaNeeWithoutAddingPasses()
-            throws IOException {
-        assertEquals(
-                2,
-                parse(wavefrontShader("realtime", "light", ""))
-                        .opcodeCount(OP_TRACE_RAY_KHR));
-        assertEquals(
-                2,
-                parse(wavefrontShader("realtime", "lightweight_light", ""))
-                        .opcodeCount(OP_TRACE_RAY_KHR));
-        assertEquals(
-                3,
-                parse(wavefrontShader("realtime", "step", ""))
-                        .opcodeCount(OP_TRACE_RAY_KHR));
-        assertEquals(
-                3,
-                parse(wavefrontShader("realtime", "lightweight_step", ""))
-                        .opcodeCount(OP_TRACE_RAY_KHR));
-        assertEquals(
-                2,
-                parse(wavefrontShader(
-                                "realtime", "lightweight_primary_light", ""))
-                        .opcodeCount(OP_TRACE_RAY_KHR));
-        assertEquals(12, RealtimeLightweightWavefrontGroups.standardSchedule(".rgen.spv")
-                .groupCount());
-    }
-
-    @Test
-    void lightweightTransparentResolveDoesNotTraceGuideProbes() throws IOException {
-        assertTrue(parse(wavefrontShader("realtime", "transparent_resolve", ""))
-                .opcodeCount(OP_TRACE_RAY_KHR) > 0);
-        assertEquals(
-                0,
-                parse(wavefrontShader(
-                                "realtime", "lightweight_transparent_resolve", ""))
-                        .opcodeCount(OP_TRACE_RAY_KHR));
-    }
-
-    @Test
-    void lightweightProgramsDoNotDeclareTheOpenPbrEnergyTable() throws IOException {
-        int energyBinding = ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY;
-        for (String suffix : List.of("", "_subgroup", "_ser")) {
-            for (String stage : List.of(
-                    "primary",
-                    "primary_light",
-                    "step",
-                    "light",
-                    "shade",
-                    "sharc_light",
-                    "sharc_shade",
-                    "transparent_shade",
-                    "transparent_resolve")) {
-                assertFalse(
-                        descriptorBindings(List.of(wavefrontShader(
-                                "realtime", "lightweight_" + stage, suffix)), 0)
-                                .contains(energyBinding),
-                        stage + suffix);
-            }
-            assertTrue(descriptorBindings(
-                    List.of(wavefrontShader("realtime", "shade", suffix)), 0)
-                    .contains(energyBinding));
-            assertTrue(descriptorBindings(
-                    List.of(wavefrontShader(
-                            "realtime", "transparent_shade", suffix)), 0)
-                    .contains(energyBinding));
         }
     }
 

@@ -10,7 +10,6 @@ import java.util.Objects;
 public record RendererSettings(
         boolean pathTracingEnabled,
         boolean sharcEnabled,
-        RealtimeIntegratorMode integratorMode,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -35,7 +34,7 @@ public record RendererSettings(
             DisplaySettings.Snapshot display,
             long revision) {
         this(
-                pathTracingEnabled, sharcEnabled, RealtimeIntegratorMode.DEFAULT,
+                pathTracingEnabled, sharcEnabled,
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
@@ -57,7 +56,7 @@ public record RendererSettings(
             int scatterCount,
             long revision) {
         this(
-                pathTracingEnabled, sharcEnabled, RealtimeIntegratorMode.DEFAULT,
+                pathTracingEnabled, sharcEnabled,
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
@@ -66,7 +65,6 @@ public record RendererSettings(
     }
 
     public RendererSettings {
-        integratorMode = Objects.requireNonNull(integratorMode, "integratorMode");
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");

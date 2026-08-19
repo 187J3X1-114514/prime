@@ -8,7 +8,6 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.RealtimeRenderSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.post.PostProcessingMode;
@@ -40,7 +39,6 @@ final class RendererSettingsMappingTest {
         RendererSettings mapped = PrimeConfig.rendererSettings(source, 42L);
 
         assertFalse(mapped.pathTracingEnabled());
-        assertEquals(RealtimeIntegratorMode.DEFAULT, mapped.integratorMode());
         assertEquals(
                 PostProcessingMode.NRD_FSR,
                 RealtimeRenderSettings.capture(mapped).postProcessing());

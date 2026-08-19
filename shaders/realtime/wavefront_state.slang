@@ -287,6 +287,17 @@ PrimeWavefrontTransportRecord primeWavefrontWithQueuedPsrControl(
     return record;
 }
 
+PrimeWavefrontTransportRecord primeWavefrontWithGuideProbeFallback(
+        PrimeWavefrontTransportRecord record,
+        bool fallback) {
+    if (fallback) {
+        record.sourceAndPathControl.w |= PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK;
+    } else {
+        record.sourceAndPathControl.w &= ~PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK;
+    }
+    return record;
+}
+
 uint4 primePackWavefrontPsrState(PrimeQueuedPsrState state) {
     float3 firstDirection = state.firstDirectionLength.xyz;
     if (!(dot(firstDirection, firstDirection) > 0.0)) {
@@ -671,6 +682,7 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         bool diffusePath,
         uint guideBounce,
         bool primaryReflectionOnly,
+        bool guideProbeFallback,
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
@@ -704,6 +716,8 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
     }
     record.transport.rayDirectionAndDenoiserControl.w = asfloat(control);
     record = primeWavefrontWithQueuedPsrState(record, psrState);
+    record.transport = primeWavefrontWithGuideProbeFallback(
+            record.transport, guideProbeFallback);
     return record;
 }
 
@@ -718,6 +732,7 @@ PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
         uint guideBounce,
         bool directionalGuide,
         uint previousDenoiserControl,
+        bool guideProbeFallback,
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
@@ -745,6 +760,7 @@ PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
             & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK)
             << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT;
     record.rayDirectionAndDenoiserControl.w = asfloat(control);
+    record = primeWavefrontWithGuideProbeFallback(record, guideProbeFallback);
     return record;
 }
 

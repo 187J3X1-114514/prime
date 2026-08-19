@@ -12,8 +12,8 @@ public static const uint PRIME_PATH_PREVIOUS_NO_SUN_NEE = 2u;
 // The previous realtime vertex sampled one member of the Sun/Area family mixture. Reverse MIS
 // must use the same family probability as the forward one-sample estimator.
 public static const uint PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE = 4u;
-// A standalone Area estimator owns the non-discrete direct-emitter term by itself. This covers both
-// multi-candidate RIS and the lightweight power-alias proposal, whose density is not reverse-queried.
+// A standalone Area estimator owns the non-discrete direct-emitter term by itself. The realtime
+// multi-candidate RIS proposal is not reverse-queried.
 public static const uint PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE = 8u;
 public static const float PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY = 0.5;
 
@@ -30,27 +30,19 @@ public bool primeStandaloneAreaHitSuppressed(
             && (pathFlags & PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE) != 0u;
 }
 
-public float primeLightweightAreaFamilyProbabilityValue(
-        bool areaAvailable, bool sunDiskVisible) {
-    if (!areaAvailable) {
-        return 0.0;
-    }
-    return sunDiskVisible ? PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY : 1.0;
+// A transparent path that still shares its reconstruction observation may use roulette only after
+// it captures a stable solid-angle guide. Once it diverges, an independent probe owns the guide and
+// removes this transport lifetime constraint.
+public bool primeTransparentTransportOwnsGuide(
+        bool permanentOwner, bool independentProbeFallback) {
+    return permanentOwner || !independentProbeFallback;
 }
 
-public uint primeLightweightSecondaryNeeFlags(float areaProbability) {
-    if (!(areaProbability > 0.0)) {
-        return 0u;
-    }
-    return PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE
-            | (areaProbability < 1.0
-                    ? PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE
-                    : PRIME_PATH_PREVIOUS_NO_SUN_NEE);
+public bool primeTransparentPrimaryReflectionOnly(
+        bool discreteOnly, bool hasTransmission, bool hasReflection) {
+    return discreteOnly && !hasTransmission && hasReflection;
 }
 
-// A probe-free transparent path owns its reconstruction observation. Roulette may start only
-// after that path has captured a stable solid-angle guide; modes with independent probes do not
-// need this transport lifetime constraint.
 public bool primeTransparentRouletteBlocked(
         bool pathOwnsGuide, bool guideEnabled, bool hasGuide) {
     return pathOwnsGuide && guideEnabled && !hasGuide;

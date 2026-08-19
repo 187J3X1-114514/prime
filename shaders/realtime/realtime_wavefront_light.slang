@@ -78,47 +78,6 @@ struct PrimeSunOnlyWavefrontLightNee : IPrimeWavefrontLightNee {
     }
 };
 
-struct PrimeLightweightWavefrontLightNee : IPrimeWavefrontLightNee {
-    float3 estimate(
-            inout PrimeIntegratorContext context,
-            IntegratorRecord integrator,
-            SurfaceInteraction surface,
-            float3 viewDirection,
-            PrimePreparedSampleBase preparedSample,
-            PrimeOpenPbrVolumeStack volumeStack) {
-        float areaProbability =
-                primeLightweightAreaLightFamilyProbability(integrator);
-        float familySample = primeSobolSample1D(
-                preparedSample,
-                PRIME_SAMPLE_EFFECT_DIRECT_LIGHT_FAMILY,
-                PRIME_SAMPLE_DIMENSION_PRIMARY);
-        if (areaProbability > 0.0 && familySample < areaProbability) {
-            return primeEstimateStandaloneDirectAreaLight(
-                    context,
-                    surface,
-                    viewDirection,
-                    preparedSample,
-                    volumeStack,
-                    areaProbability);
-        }
-        float sunProbability = 1.0 - areaProbability;
-        if (!(sunProbability > 0.0)) {
-            return float3(0.0);
-        }
-        return primeEstimateDirectSun(
-                context,
-                integrator,
-                surface,
-                viewDirection,
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
-                volumeStack,
-                sunProbability);
-    }
-};
-
 void primeWavefrontLight<LightNee, IndirectReuse, SharcTraining>(
         LightNee lightNee,
         IndirectReuse indirectReuse,

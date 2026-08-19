@@ -157,12 +157,10 @@ fixes:
 - At most two non-air transparent regions can be nested reliably. Deeper nesting, open models, and
   boundaries without a meaningful inside and outside do not guarantee correct absorption or
   refraction.
-- Realtime transparent lighting keeps fixed transmission and reflection slots at the first
-  interface and straight shadow filtering. Full mode retains both conditional primary branches
-  and then uses bounded single-branch sampling. Lightweight keeps the same conditional primary
-  transmission/reflection split, forces refraction only at later transparent interfaces except at
-  TIR, and removes independent transparent guide probes. Its branches defer RR until the first stable
-  anchor is captured. Neither mode fully solves arbitrary refractive chains.
+- Realtime transparent lighting keeps conditional transmission and reflection slots at the first
+  interface, straight shadow filtering, and bounded single-branch sampling afterward. A radiance
+  branch supplies its guide while discrete events agree; the first divergence, motion, or invalid
+  state falls back to an independent probe. This does not fully solve arbitrary refractive chains.
 - Shadow rays connecting a surface to a light do not refract at transparent interfaces. They only
   accumulate absorption along the original direction.
 - Volumetric sun shadows approximate visibility from one sun direction; they do not represent sky
@@ -224,7 +222,6 @@ The technical documents are currently written in Chinese.
 - [Transparency and realtime reconstruction](docs/透明渲染与实时重建.md)
 - [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)
 - [Compact OpenPBR implementation](docs/OpenPBR紧凑模块.md)
-- [LitePBR lightweight material model](docs/LitePBR.md)
 - [RoboCute BSDF reference and transmission contract](docs/BSDF透射折射率平方缺失调查报告.md)
 - [Slang toolchain and migration record](docs/Slang迁移计划.md)
 - [TODO](docs/TODO.md)

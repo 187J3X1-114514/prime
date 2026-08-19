@@ -1135,24 +1135,6 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
 					'realtime_wavefront_sharc_light':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_lightweight_step':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
-					'realtime_wavefront_lightweight_primary':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_lightweight_primary_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_lightweight_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_lightweight_transparent_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_lightweight_transparent_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_lightweight_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_lightweight_sharc_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_lightweight_sharc_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'offline_wavefront_head':
 							[compile: ['', '_subgroup', '_ser'], alias: [:]],
 					'offline_wavefront_step':

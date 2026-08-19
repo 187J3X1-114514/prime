@@ -5,6 +5,7 @@
 #define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #include "core/prime_test_abi.slang"
 import "core/numerical.slang";
+import "integrator/transparent_guide_coincidence.slang";
 
 bool primeUsesAirGap() {
     return true;
@@ -1069,6 +1070,45 @@ void primeAdapterProperties(
         PrimeOpenPbrVolumeStack expectedStack = expected.eventFlags == 0u
                 ? stack
                 : reference.volumeStack;
+        if (primeClosureIsDiscreteOnly(transmissionTraits)) {
+            PrimeTransmissiveBsdfSample canonical =
+                    primeSampleMinecraftTransparentContinuationFromState(
+                            state,
+                            baseColor,
+                            opacity,
+                            materialControl,
+                            outwardNormal,
+                            viewDirection,
+                            stack);
+            bool reusable = primeTransparentGuideContinuationReusable(
+                    result.first,
+                    sampled.volumeStack,
+                    canonical.bsdfSample,
+                    canonical.volumeStack);
+            bool transportValid = result.first.eventFlags != 0u;
+            bool guideValid = canonical.bsdfSample.eventFlags != 0u;
+            uint guideEventMask = PRIME_BSDF_EVENT_REFLECTION
+                    | PRIME_BSDF_EVENT_TRANSMISSION
+                    | PRIME_BSDF_EVENT_DISCRETE;
+            bool expectedReusable = !transportValid || !guideValid
+                    ? transportValid == guideValid
+                    : (result.first.eventFlags & guideEventMask)
+                                    == (canonical.bsdfSample.eventFlags
+                                            & guideEventMask)
+                            && (result.first.eventFlags
+                                    & PRIME_BSDF_EVENT_DISCRETE) != 0u
+                            && sampled.volumeStack.count
+                                    == canonical.volumeStack.count;
+            if (reusable != expectedReusable
+                    || (result.first.eventFlags != 0u
+                            && !primeTransparentGuideContinuationReusable(
+                                    result.first,
+                                    sampled.volumeStack,
+                                    result.first,
+                                    sampled.volumeStack))) {
+                result.mask |= PRIME_TEST_FAILURE_STATE;
+            }
+        }
         if (!primeAdapterSameSample(result.first, expected)
                 || !primeAdapterSameStack(sampled.volumeStack, expectedStack)
                 || !primeAdapterSameSample(

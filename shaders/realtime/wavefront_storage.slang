@@ -62,6 +62,9 @@ static const uint PRIME_WAVEFRONT_SHARC_EVENT_SHIFT = 6u;
 static const uint PRIME_WAVEFRONT_LOW_DIAGNOSTIC_MASK = 0xffffffu;
 static const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 static const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
+// Transparent full-mode paths use the otherwise-unused top path-control bit to request the old
+// independent probe only after transport can no longer prove that it follows the canonical guide.
+static const uint PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK = 0x80000000u;
 static const uint PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT = 16u;
 static const uint PRIME_WAVEFRONT_LIGHT_NORMAL_MASK = 0xffffu;
 static const uint PRIME_WAVEFRONT_PRIMARY_MOTION = 1u;
@@ -164,6 +167,10 @@ bool primeWavefrontGuideEnabled(uint control) {
 
 bool primeWavefrontDirectionalGuide(uint control) {
     return (control & PRIME_WAVEFRONT_DIRECTIONAL_GUIDE) != 0u;
+}
+
+bool primeWavefrontGuideProbeFallback(uint pathControl) {
+    return (pathControl & PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK) != 0u;
 }
 
 bool primeWavefrontPixelTransparent(uint2 pixel) {

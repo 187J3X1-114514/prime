@@ -142,23 +142,6 @@ public LightSample primeSampleSun(
     return result;
 }
 
-// The secondary lightweight sampler may spend its sole shadow ray on a block light only after the
-// complete solar disk is below the atmospheric horizon. Testing the disk's maximum vertical
-// direction keeps the forward family choice and reverse sun-hit contract identical at twilight.
-public bool primeSunDiskHasVisibleDirection(IntegratorRecord integrator) {
-    float centerY = clamp(integrator.sunDirectionIntensity.y, -1.0, 1.0);
-    float cosineRadius = primeSunCosAngularRadius();
-    float maximumY = centerY >= cosineRadius
-            ? 1.0
-            : centerY * cosineRadius
-                    + sqrt(max(1.0 - centerY * centerY, 0.0))
-                            * sin(ATM_SUN_ANGULAR_RADIUS_RADIANS);
-    maximumY = clamp(maximumY, -1.0, 1.0);
-    float horizontal = sqrt(max(1.0 - maximumY * maximumY, 0.0));
-    return primeAtmosphereDistantDirectionVisible(
-            float3(horizontal, maximumY, 0.0));
-}
-
 public static const uint PRIME_NO_LIGHT_INDEX = 0xffffffffu;
 static const uint PRIME_LIGHT_LEAF_FLAG = 0x80000000u;
 static const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
@@ -735,74 +718,6 @@ PrimeAliasPick primePickLightAlias(
     result.index = index;
     result.valid = 1u;
     return result;
-}
-
-public bool primePowerAliasAreaLightAvailable() {
-    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
-    uint64_t worldLightAddress = sections[0].worldLightAddress;
-    if (worldLightAddress == uint64_t(0)) {
-        return false;
-    }
-    WorldLightHeader header = ((WorldLightHeader*)worldLightAddress)[0];
-    return header.summaryCount > 0u && header.totalPower > 0.0;
-}
-
-// One power-weighted section pick and one power-weighted emitter pick provide full support without
-// touching either light tree. The stored proposal masses are the exact distributions represented
-// by the f32 Walker thresholds and therefore form the forward PDF directly.
-public AreaLightSample primeSampleAreaLightPowerAlias(
-        inout PrimeNumericalDiagnostics diagnostics,
-        float3 surfacePosition,
-        float3 selectionSample,
-        float2 positionSample) {
-    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
-    uint64_t worldLightAddress = sections[0].worldLightAddress;
-    if (worldLightAddress == uint64_t(0)) {
-        return primeInvalidAreaLightSample();
-    }
-    WorldLightHeader header = ((WorldLightHeader*)worldLightAddress)[0];
-    if (header.summaryCount == 0u || !(header.totalPower > 0.0)) {
-        return primeInvalidAreaLightSample();
-    }
-    WorldLightSummary* summaries = (WorldLightSummary*)(
-            worldLightAddress + header.summaryOffset);
-    LightAliasEntry* worldAliases = (LightAliasEntry*)(
-            worldLightAddress + header.aliasOffset);
-    PrimeAliasPick worldPick = primePickLightAlias(
-            worldAliases, header.summaryCount, selectionSample.x);
-    if (worldPick.valid == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-    WorldLightSummary summary = summaries[worldPick.index];
-    uint sectionIndex = summary.directionSectionReserved.y;
-    uint64_t sectionLightAddress = sections[sectionIndex].lightAddress;
-    if (sectionLightAddress == uint64_t(0)) {
-        return primeInvalidAreaLightSample();
-    }
-    SectionLightHeader sectionHeader = ((SectionLightHeader*)sectionLightAddress)[0];
-    if (sectionHeader.emitterCount == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-    LightEmitter* emitters = (LightEmitter*)sectionHeader.emitterAddress;
-    LightAliasEntry* emitterAliases = (LightAliasEntry*)(
-            sectionHeader.emitterAddress
-                    - uint64_t(sectionHeader.emitterCount)
-                            * uint64_t(PRIME_LIGHT_ALIAS_ENTRY_SIZE));
-    PrimeAliasPick emitterPick = primePickLightAlias(
-            emitterAliases, sectionHeader.emitterCount, selectionSample.y);
-    if (emitterPick.valid == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-    float emitterSelectionPdf = summary.boundsMaxProposalPdf.w
-            * emitters[emitterPick.index].normalProposalPdf.w;
-    return primeSampleAreaLightEmitter(
-            diagnostics,
-            surfacePosition,
-            sectionIndex,
-            emitterPick.index,
-            emitterSelectionPdf,
-            selectionSample.z,
-            positionSample);
 }
 
 PrimeRisSelection primeSelectRis4(

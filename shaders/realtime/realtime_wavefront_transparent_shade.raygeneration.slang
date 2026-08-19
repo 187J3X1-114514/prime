@@ -11,7 +11,6 @@ void main()
     }
     primeWavefrontTransparentShade(
             PrimeStagedSecondaryAreaNee(),
-            PrimeCompleteTransparentContinuation(),
             context,
             launchIndex,
             sourceQueue);

@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.HdrOutput;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -18,10 +17,9 @@ import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
     @Test
-    void restoreDefaultsIncludesStandaloneRendererAndSchedulingSettings() {
+    void restoreDefaultsIncludesStandaloneSchedulingSettings() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
         PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
-        PrimeConfig.setIntegratorMode(RealtimeIntegratorMode.LIGHTWEIGHT_WAVEFRONT);
         PrimeConfig.setHdrEnabled(true);
         PrimeConfig.setReferenceWhiteNits(400);
 
@@ -31,10 +29,6 @@ final class PrimeConfigTest {
         assertEquals(
                 ScatterSettings.DEFAULT_COUNT,
                 PrimeConfig.rendererSettings().scatterCount());
-        assertEquals(RealtimeIntegratorMode.DEFAULT, PrimeConfig.integratorMode());
-        assertEquals(
-                RealtimeIntegratorMode.DEFAULT,
-                PrimeConfig.rendererSettings().integratorMode());
         assertEquals(
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 PrimeConfig.terrainWorkerPercentage());
@@ -246,24 +240,11 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void realtimeRendererIdsAreStableAndUnknownValuesUseTheFullRenderer() {
-        assertEquals(
-                RealtimeIntegratorMode.FULL_WAVEFRONT,
-                RealtimeIntegratorMode.fromId("wavefront"));
-        assertEquals(
-                RealtimeIntegratorMode.LIGHTWEIGHT_WAVEFRONT,
-                RealtimeIntegratorMode.fromId("lightweight_wavefront"));
-        assertEquals(
-                RealtimeIntegratorMode.DEFAULT,
-                RealtimeIntegratorMode.fromId("future_renderer"));
-    }
-
-    @Test
     void onlyRemovedIntegratorPropertiesAreRecognizedForRewrite() {
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyIntegratorProperties(properties));
         properties.setProperty("renderer.integrator_mode", "lightweight_wavefront");
-        assertFalse(PrimeConfig.hasLegacyIntegratorProperties(properties));
+        assertTrue(PrimeConfig.hasLegacyIntegratorProperties(properties));
         properties.setProperty("renderer.integrator", "performance");
         assertTrue(PrimeConfig.hasLegacyIntegratorProperties(properties));
         properties.clear();
@@ -293,7 +274,7 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertFalse(serialized.contains("renderer.integrator="));
-        assertTrue(serialized.contains("renderer.integrator_mode=wavefront\n"));
+        assertFalse(serialized.contains("renderer.integrator_mode="));
         assertFalse(serialized.contains("renderer.performance_maximum_bounces"));
         assertFalse(serialized.contains("renderer.lightweight_maximum_bounces"));
         assertTrue(serialized.contains(

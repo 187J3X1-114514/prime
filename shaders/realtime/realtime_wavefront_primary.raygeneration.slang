@@ -10,7 +10,6 @@ void main()
     }
     primeWavefrontPrimary(
             PrimeStagedSecondaryAreaNee(),
-            PrimeCompleteTransparentContinuation(),
             context,
             launchIndex);
 }

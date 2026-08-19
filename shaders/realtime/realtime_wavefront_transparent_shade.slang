@@ -1,13 +1,11 @@
 #include "realtime/realtime_wavefront_common.slang"
 
-void primeWavefrontTransparentShade<AreaNee, Continuation>(
+void primeWavefrontTransparentShade<AreaNee>(
         AreaNee areaNee,
-        Continuation continuationPolicy,
         inout PrimeIntegratorContext context,
         uint launchIndex,
         uint sourceQueue)
     where AreaNee : IPrimeSecondaryAreaNee
-    where Continuation : IPrimeTransparentContinuation
 {
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE, launchIndex);
@@ -52,10 +50,11 @@ void primeWavefrontTransparentShade<AreaNee, Continuation>(
                     & PRIME_WAVEFRONT_BYTE_MASK;
     bool directionalGuide = primeWavefrontDirectionalGuide(control);
     bool hadDirectionalGuide = directionalGuide;
+    bool guideProbeFallback = primeWavefrontGuideProbeFallback(
+            record.sourceAndPathControl.w);
     bool continuation = primeIntegrateTransparentWavefrontSurface(
             PrimeStagedSecondarySunNee(),
             areaNee,
-            continuationPolicy,
             context,
             path,
             integrator,
@@ -66,6 +65,7 @@ void primeWavefrontTransparentShade<AreaNee, Continuation>(
             diffusePath,
             guideBounce,
             directionalGuide,
+            guideProbeFallback,
             surface,
             transmissionBranch,
             guideEnabled,
@@ -82,6 +82,7 @@ void primeWavefrontTransparentShade<AreaNee, Continuation>(
             guideBounce,
             directionalGuide,
             control,
+            guideProbeFallback,
             continuation);
     primeStoreWavefrontTransportRecord(recordIndex, updatedRecord);
     if (continuation && guideEnabled && !hasGuide) {

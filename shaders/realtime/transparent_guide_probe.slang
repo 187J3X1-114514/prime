@@ -12,24 +12,14 @@ struct PrimeTransparentGuideProbeResult {
     float4 reflectionPreviousVirtualPosition;
     bool reflectionDirectionalGuide;
     bool reflectionHasMotion;
-    bool primaryReflectionOnly;
 };
 
 static const uint PRIME_GUIDE_PROBE_TRANSMISSION = 0u;
 static const uint PRIME_GUIDE_PROBE_REFLECTION = 1u;
-
-bool primeGuideProbePrimaryIsReflectionOnly(
-        PrimeTransmissiveBsdfSplit paths) {
-    BsdfSample transmission = paths.transmission.bsdfSample;
-    BsdfSample reflection = paths.reflection.bsdfSample;
-    return !primeHasScatter(transmission)
-            && primeHasScatter(reflection)
-            && (reflection.eventFlags
-                    & (PRIME_BSDF_EVENT_REFLECTION
-                            | PRIME_BSDF_EVENT_DISCRETE))
-                    == (PRIME_BSDF_EVENT_REFLECTION
-                            | PRIME_BSDF_EVENT_DISCRETE);
-}
+static const uint PRIME_GUIDE_PROBE_TRANSMISSION_MASK =
+        1u << PRIME_GUIDE_PROBE_TRANSMISSION;
+static const uint PRIME_GUIDE_PROBE_REFLECTION_MASK =
+        1u << PRIME_GUIDE_PROBE_REFLECTION;
 
 PrimeTransparentGuideProbeResult primeEmptyTransparentGuideProbeResult() {
     PrimeTransparentGuideProbeResult result;
@@ -42,7 +32,6 @@ PrimeTransparentGuideProbeResult primeEmptyTransparentGuideProbeResult() {
     result.reflectionPreviousVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
     result.reflectionDirectionalGuide = false;
     result.reflectionHasMotion = false;
-    result.primaryReflectionOnly = false;
     return result;
 }
 
@@ -478,7 +467,8 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
         PathState cameraPath,
         SurfaceInteraction primarySurface,
         PrimeOpenPbrVolumeStack volumeStack,
-        uint maximumBounces) {
+        uint maximumBounces,
+        uint probeMask) {
     PrimeTransparentGuideProbeResult result =
             primeEmptyTransparentGuideProbeResult();
     if (primarySurface.hitKind != PRIME_HIT_SURFACE
@@ -513,26 +503,26 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
                     volumeStack,
                     primarySurface.adjacentBaseColor,
                     primarySurface.adjacentInterfaceControl);
-    PrimeClosureTraits primaryClosure = primeSurfaceClosureTraits(
-            primarySurface, viewDirection, volumeStack);
-    result.primaryReflectionOnly = primeClosureIsDiscreteOnly(primaryClosure)
-            && primeGuideProbePrimaryIsReflectionOnly(primarySample.paths);
-    primeTraceDiscreteGuideProbe(
-            context,
-            PRIME_GUIDE_PROBE_TRANSMISSION,
-            primarySurface,
-            primarySample.paths.transmission,
-            initialThroughput,
-            maximumBounces,
-            result);
-    primeTraceDiscreteGuideProbe(
-            context,
-            PRIME_GUIDE_PROBE_REFLECTION,
-            primarySurface,
-            primarySample.paths.reflection,
-            initialThroughput,
-            maximumBounces,
-            result);
+    if ((probeMask & PRIME_GUIDE_PROBE_TRANSMISSION_MASK) != 0u) {
+        primeTraceDiscreteGuideProbe(
+                context,
+                PRIME_GUIDE_PROBE_TRANSMISSION,
+                primarySurface,
+                primarySample.paths.transmission,
+                initialThroughput,
+                maximumBounces,
+                result);
+    }
+    if ((probeMask & PRIME_GUIDE_PROBE_REFLECTION_MASK) != 0u) {
+        primeTraceDiscreteGuideProbe(
+                context,
+                PRIME_GUIDE_PROBE_REFLECTION,
+                primarySurface,
+                primarySample.paths.reflection,
+                initialThroughput,
+                maximumBounces,
+                result);
+    }
     // Reconstruction probes are deliberately outside the transport diagnostic domain.
     context.diagnostics = savedDiagnostics;
     return result;

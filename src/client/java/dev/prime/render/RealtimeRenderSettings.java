@@ -7,7 +7,6 @@ import java.util.Objects;
 /** Immutable settings consumed only by the interactive renderer. */
 public record RealtimeRenderSettings(
         boolean sharcEnabled,
-        RealtimeIntegratorMode integratorMode,
         PostProcessingMode postProcessing,
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
@@ -15,7 +14,6 @@ public record RealtimeRenderSettings(
         DisplaySettings.Snapshot display,
         int scatterCount) {
     public RealtimeRenderSettings {
-        Objects.requireNonNull(integratorMode, "integratorMode");
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
         Objects.requireNonNull(lighting, "lighting");
@@ -28,7 +26,6 @@ public record RealtimeRenderSettings(
         Objects.requireNonNull(settings, "settings");
         return new RealtimeRenderSettings(
                 settings.sharcEnabled(),
-                settings.integratorMode(),
                 settings.postProcessingMode(),
                 settings.reconstructionQuality(),
                 settings.lighting(),

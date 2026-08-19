@@ -1,10 +1,12 @@
 #include "core/prime_test_abi.slang"
 import "bsdf/compact/openpbr_common.slang";
+import "bsdf/bsdf_common.slang";
 import "core/color_space.slang";
 import "core/light_tree_math.slang";
 import "core/transport_math.slang";
 import "core/packed_geometry.slang";
 import "integrator/path_contract.slang";
+import "integrator/transparent_guide_coincidence.slang";
 import "material/transparent_material.slang";
 import "realtime/wavefront_medium.slang";
 
@@ -154,32 +156,28 @@ void primeCheckRoulette(
     if (!primeTransparentRouletteBlocked(true, true, false)
             || primeTransparentRouletteBlocked(false, true, false)
             || primeTransparentRouletteBlocked(true, false, false)
-            || primeTransparentRouletteBlocked(true, true, true)) {
+            || primeTransparentRouletteBlocked(true, true, true)
+            || !primeTransparentTransportOwnsGuide(false, false)
+            || !primeTransparentTransportOwnsGuide(true, true)
+            || primeTransparentTransportOwnsGuide(false, true)
+            || !primeTransparentPrimaryReflectionOnly(true, false, true)
+            || primeTransparentPrimaryReflectionOnly(false, false, true)
+            || primeTransparentPrimaryReflectionOnly(true, true, true)
+            || primeTransparentPrimaryReflectionOnly(true, false, false)) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
-    float noAreaProbability =
-            primeLightweightAreaFamilyProbabilityValue(false, false);
-    float dayAreaProbability =
-            primeLightweightAreaFamilyProbabilityValue(true, true);
-    float nightAreaProbability =
-            primeLightweightAreaFamilyProbabilityValue(true, false);
-    uint dayFlags = primeLightweightSecondaryNeeFlags(dayAreaProbability);
-    uint nightFlags = primeLightweightSecondaryNeeFlags(nightAreaProbability);
-    if (noAreaProbability != 0.0
-            || dayAreaProbability != PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY
-            || nightAreaProbability != 1.0
-            || primeLightweightSecondaryNeeFlags(noAreaProbability) != 0u
-            || (dayFlags & PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE) == 0u
-            || (dayFlags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) == 0u
-            || (dayFlags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) != 0u
-            || (nightFlags & PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE) == 0u
-            || (nightFlags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) != 0u
-            || (nightFlags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u
-            || !primePreviousSunNeeEnabled(dayFlags)
-            || primePreviousSunNeeEnabled(nightFlags)
-            || !primeStandaloneAreaHitSuppressed(true, false, dayFlags)
-            || primeStandaloneAreaHitSuppressed(false, false, dayFlags)
-            || primeStandaloneAreaHitSuppressed(true, true, dayFlags)
+    uint standaloneMixedFlags = PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE
+            | PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
+    uint standaloneAreaOnlyFlags = PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE
+            | PRIME_PATH_PREVIOUS_NO_SUN_NEE;
+    if (!primePreviousSunNeeEnabled(standaloneMixedFlags)
+            || primePreviousSunNeeEnabled(standaloneAreaOnlyFlags)
+            || !primeStandaloneAreaHitSuppressed(
+                    true, false, standaloneMixedFlags)
+            || primeStandaloneAreaHitSuppressed(
+                    false, false, standaloneMixedFlags)
+            || primeStandaloneAreaHitSuppressed(
+                    true, true, standaloneMixedFlags)
             || primeStandaloneAreaHitSuppressed(true, false, 0u)) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
@@ -193,6 +191,46 @@ void primeCheckRoulette(
     }
     bool survives = sampleValue < survival;
     if (survives != (sampleValue < primeRussianRouletteSurvival(throughput, etaScale))) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    BsdfSample transport;
+    transport.direction = float3(0.0, 0.0, 1.0);
+    transport.response = float3(0.25, 0.5, 0.75);
+    transport.pdf = 0.25;
+    transport.relativeEta = 1.5;
+    transport.eventFlags = PRIME_BSDF_EVENT_TRANSMISSION
+            | PRIME_BSDF_EVENT_DISCRETE;
+    BsdfSample guide = transport;
+    guide.direction = float3(1.0, 0.0, 0.0);
+    guide.response = float3(1.0);
+    guide.pdf = 1.0;
+    guide.relativeEta = 2.0;
+    PrimeOpenPbrVolumeStack transportStack;
+    PrimeOpenPbrVolumeStack guideStack;
+    transportStack.count = 0u;
+    guideStack.count = 0u;
+    bool ignoresContinuousState = primeTransparentGuideContinuationReusable(
+            transport, transportStack, guide, guideStack);
+    guide.eventFlags = PRIME_BSDF_EVENT_REFLECTION
+            | PRIME_BSDF_EVENT_DISCRETE;
+    bool rejectsDifferentEvent = !primeTransparentGuideContinuationReusable(
+            transport, transportStack, guide, guideStack);
+    guide.eventFlags = transport.eventFlags;
+    guideStack.count = 1u;
+    bool rejectsDifferentTransition = !primeTransparentGuideContinuationReusable(
+            transport, transportStack, guide, guideStack);
+    guideStack.count = 0u;
+    BsdfSample invalid = guide;
+    invalid.eventFlags = 0u;
+    bool matchesTermination = primeTransparentGuideContinuationReusable(
+            invalid, transportStack, invalid, guideStack);
+    bool rejectsOneSidedTermination = !primeTransparentGuideContinuationReusable(
+            transport, transportStack, invalid, guideStack);
+    if (!ignoresContinuousState
+            || !rejectsDifferentEvent
+            || !rejectsDifferentTransition
+            || !matchesTermination
+            || !rejectsOneSidedTermination) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
     result.first = float4(throughput, survival);

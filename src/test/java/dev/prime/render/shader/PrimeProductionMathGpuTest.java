@@ -61,7 +61,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 20;
+        int kinds = 21;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -783,6 +783,31 @@ final class PrimeProductionMathGpuTest {
                             receiverNormal[0],
                             receiverNormal[1],
                             receiverNormal[2],
+                            0.0F);
+                } else if (kind == 20) {
+                    float sunImportance = positiveFloat(random, -20, 20);
+                    float areaImportance = positiveFloat(random, -20, 20);
+                    if (local == 0) {
+                        sunImportance = 0.0F;
+                        areaImportance = 0.0F;
+                    } else if (local == 1) {
+                        sunImportance = 1.0F;
+                        areaImportance = 0.0F;
+                    } else if (local == 2) {
+                        sunImportance = 0.0F;
+                        areaImportance = 1.0F;
+                    } else if (local == 3) {
+                        sunImportance = 1.0F;
+                        areaImportance = 1.0F;
+                    }
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            sunImportance,
+                            areaImportance,
+                            0.0F,
                             0.0F);
                 } else {
                     putVec4(

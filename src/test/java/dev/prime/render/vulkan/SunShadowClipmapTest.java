@@ -7,10 +7,53 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.SunDirection;
+import dev.prime.render.shader.ShaderAbi;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class SunShadowClipmapTest {
+    @Test
+    void queryConstantsPublishTheExactActiveDirectionBankAndBasis() {
+        SunDirection direction = new SunDirection(0.6F, 0.8F, 0.0F);
+        ByteBuffer constants = ByteBuffer.allocateDirect(
+                        ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE)
+                .order(ByteOrder.nativeOrder());
+
+        SunShadowClipmap.writeQueryConstants(constants, direction, 1, true);
+
+        assertEquals(0.6F, constants.getFloat(
+                ShaderAbi.SUN_SHADOW_QUERY_DIRECTION_TO_SUN_OFFSET));
+        assertEquals(0.8F, constants.getFloat(
+                ShaderAbi.SUN_SHADOW_QUERY_DIRECTION_TO_SUN_OFFSET
+                        + Float.BYTES));
+        assertEquals(0.0F, constants.getFloat(
+                ShaderAbi.SUN_SHADOW_QUERY_DIRECTION_TO_SUN_OFFSET
+                        + 2 * Float.BYTES));
+        assertEquals(1, constants.getInt(ShaderAbi.SUN_SHADOW_QUERY_BANK_OFFSET));
+        assertEquals(1, constants.getInt(ShaderAbi.SUN_SHADOW_QUERY_VALID_OFFSET));
+        assertEquals(0, constants.getInt(ShaderAbi.SUN_SHADOW_QUERY_RESERVED_OFFSET));
+
+        int uOffset = ShaderAbi.SUN_SHADOW_QUERY_BASIS_U_OFFSET;
+        int vOffset = ShaderAbi.SUN_SHADOW_QUERY_BASIS_V_OFFSET;
+        float ux = constants.getFloat(uOffset);
+        float uy = constants.getFloat(uOffset + Float.BYTES);
+        float uz = constants.getFloat(uOffset + 2 * Float.BYTES);
+        float vx = constants.getFloat(vOffset);
+        float vy = constants.getFloat(vOffset + Float.BYTES);
+        float vz = constants.getFloat(vOffset + 2 * Float.BYTES);
+        assertEquals(1.0F, ux * ux + uy * uy + uz * uz, 1.0e-6F);
+        assertEquals(1.0F, vx * vx + vy * vy + vz * vz, 1.0e-6F);
+        assertEquals(0.0F, ux * vx + uy * vy + uz * vz, 1.0e-6F);
+        assertEquals(0.0F, ux * direction.x()
+                + uy * direction.y()
+                + uz * direction.z(), 1.0e-6F);
+        assertEquals(0.0F, vx * direction.x()
+                + vy * direction.y()
+                + vz * direction.z(), 1.0e-6F);
+    }
+
     @Test
     void twoToOneCascadesCoverOneKilometreWithAFarGuard() {
         assertEquals(0.5F, SunShadowClipmap.texelSize(0));

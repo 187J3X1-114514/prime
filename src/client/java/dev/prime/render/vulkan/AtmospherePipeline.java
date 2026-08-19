@@ -42,8 +42,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
  * <p>The transmittance and multiple-scattering tables depend only on the immutable atmosphere
  * model and are generated once. The sky table changes with eye altitude and sun elevation;
  * aerial perspective also changes with the relative camera projection and complete sun direction.
- * No mutable uniform buffer is shared with an in-flight frame: per-dispatch data travels through
- * push constants.
+ * Atmosphere dispatch data travels through push constants. A separately synchronized 48-byte
+ * uniform publishes the active directional-shadow bank and basis to later transport dispatches.
  */
 public final class AtmospherePipeline implements Destroyable {
     public static final float AERIAL_MAX_DISTANCE_KM = ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM;
@@ -94,6 +94,7 @@ public final class AtmospherePipeline implements Destroyable {
     private final VulkanImage aerialTransmittance;
     private final SunShadowClipmap sunShadow;
     private final VulkanImage[] sunShadowHierarchies;
+    private final VulkanBuffer sunShadowQuery;
     private final VulkanBuffer phaseLut;
     private final long descriptorSetLayout;
     private final long descriptorPool;
@@ -125,6 +126,7 @@ public final class AtmospherePipeline implements Destroyable {
         VulkanImage[] sunShadowHierarchies =
                 new VulkanImage[SUN_SHADOW_HIERARCHY_COUNT];
         SunShadowClipmap newSunShadow = null;
+        VulkanBuffer newSunShadowQuery = null;
         VulkanBuffer newPhaseLut = null;
         long newDescriptorSetLayout = 0L;
         long newDescriptorPool = 0L;
@@ -163,6 +165,12 @@ public final class AtmospherePipeline implements Destroyable {
                         "Prime sun shadow hierarchy cascade " + cascade);
             }
             newSunShadow = new SunShadowClipmap(context);
+            newSunShadowQuery = context.createBuffer(
+                    ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE,
+                    VK12.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false,
+                    "Prime sun-shadow query constants");
             newPhaseLut = createPhaseLut(context);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
@@ -194,6 +202,7 @@ public final class AtmospherePipeline implements Destroyable {
             this.aerialTransmittance = images[6];
             this.sunShadow = newSunShadow;
             this.sunShadowHierarchies = sunShadowHierarchies;
+            this.sunShadowQuery = newSunShadowQuery;
             this.phaseLut = newPhaseLut;
             this.descriptorSetLayout = newDescriptorSetLayout;
             this.descriptorPool = newDescriptorPool;
@@ -246,6 +255,9 @@ public final class AtmospherePipeline implements Destroyable {
             }
             if (newPhaseLut != null) {
                 newPhaseLut.destroy();
+            }
+            if (newSunShadowQuery != null) {
+                newSunShadowQuery.destroy();
             }
             if (newSunShadow != null) {
                 newSunShadow.destroy();
@@ -303,6 +315,10 @@ public final class AtmospherePipeline implements Destroyable {
         return this.sunShadow.depth(bank, cascade);
     }
 
+    VulkanBuffer sunShadowQuery() {
+        return this.sunShadowQuery;
+    }
+
     public long prepare(
             VkCommandBuffer commandBuffer,
             SunShadowPipeline pipeline,
@@ -329,6 +345,7 @@ public final class AtmospherePipeline implements Destroyable {
                     input,
                     scene,
                     forceCompleteSunShadow);
+            updateSunShadowQuery(commandBuffer);
             eyeRadiusKm = AtmosphereCoordinates.eyeRadiusKm(camera.y());
             eyeRadiusBits = Float.floatToIntBits(eyeRadiusKm);
             sunElevationBits = Float.floatToIntBits(sunDirection.y());
@@ -508,6 +525,7 @@ public final class AtmospherePipeline implements Destroyable {
             VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
             this.aerialTransmittance.destroy();
             this.aerialRadiance.destroy();
+            this.sunShadowQuery.destroy();
             this.sunShadow.destroy();
             for (int index = this.sunShadowHierarchies.length - 1;
                     index >= 0;
@@ -548,6 +566,32 @@ public final class AtmospherePipeline implements Destroyable {
                         pushConstants);
             }
             VK12.vkCmdDispatch(commandBuffer, groupsX, groupsY, groupsZ);
+        }
+    }
+
+    private void updateSunShadowQuery(VkCommandBuffer commandBuffer) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VulkanSync.bufferBarrier(
+                    commandBuffer,
+                    stack,
+                    this.sunShadowQuery,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_READ_BIT,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+            ByteBuffer constants = stack.calloc(ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE)
+                    .order(ByteOrder.nativeOrder());
+            this.sunShadow.writeQueryConstants(constants);
+            VK12.vkCmdUpdateBuffer(
+                    commandBuffer, this.sunShadowQuery.handle(), 0L, constants);
+            VulkanSync.bufferBarrier(
+                    commandBuffer,
+                    stack,
+                    this.sunShadowQuery,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
         }
     }
 

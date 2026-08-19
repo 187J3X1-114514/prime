@@ -75,6 +75,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def push = schema.structs.pushConstants
 		def nrdMotionPush = schema.structs.nrdMotionPushConstants
 		def sharcFrame = schema.structs.sharcFrameConstants
+		def sunShadowQuery = schema.structs.sunShadowQueryConstants
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
@@ -95,6 +96,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| surfaceInteraction.size != 96 || wavefrontSurfaceRecord.size != 96
 				|| push.size != 128
 				|| nrdMotionPush.size != 208 || sharcFrame.size != 112
+				|| sunShadowQuery.size != 48
 				|| schema.sceneTextureCount != 64) {
 			throw new GradleException(
 					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
@@ -271,6 +273,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('PushConstants', push)
 		validateStruct('NrdMotionPushConstants', nrdMotionPush)
 		validateStruct('SharcFrameConstants', sharcFrame)
+		validateStruct('SunShadowQueryConstants', sunShadowQuery)
 
 		def constantName = { String value ->
 			value.replaceAll('([a-z0-9])([A-Z])', '$1_$2').toUpperCase(java.util.Locale.ROOT)
@@ -295,7 +298,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			WAVEFRONT_SURFACE: wavefrontSurfaceRecord,
 			PUSH: push,
 			NRD_MOTION_PUSH: nrdMotionPush,
-			SHARC_FRAME: sharcFrame
+			SHARC_FRAME: sharcFrame,
+			SUN_SHADOW_QUERY: sunShadowQuery
 		].each { prefix, definition ->
 			definition.fields.each { field ->
 				javaOffsets.append("    public static final int ${prefix}_${constantName(field.name)}_OFFSET = ${field.offset};\n")
@@ -354,6 +358,7 @@ public final class ShaderAbi {
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
     public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
     public static final int SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
+    public static final int SUN_SHADOW_QUERY_CONSTANT_SIZE = ${sunShadowQuery.size};
     public static final int DESCRIPTOR_TLAS = ${schema.sharedDescriptors.tlas};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.sharedDescriptors.blockAtlas};
     public static final int DESCRIPTOR_STABLE_RADIANCE = ${schema.realtimeDescriptors.stableRadiance};
@@ -404,6 +409,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_7 = ${schema.sharedDescriptors.sunShadowDepth7};
     public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_8 = ${schema.sharedDescriptors.sunShadowDepth8};
     public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_9 = ${schema.sharedDescriptors.sunShadowDepth9};
+    public static final int DESCRIPTOR_SUN_SHADOW_QUERY = ${schema.sharedDescriptors.sunShadowQuery};
     public static final int SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
@@ -550,6 +556,7 @@ static const uint PRIME_SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
 static const uint PRIME_PUSH_CONSTANT_SIZE = ${push.size};
 static const uint PRIME_NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
 static const uint PRIME_SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
+static const uint PRIME_SUN_SHADOW_QUERY_CONSTANT_SIZE = ${sunShadowQuery.size};
 static const uint PRIME_SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
 static const uint PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
 static const uint PRIME_PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
@@ -710,6 +717,11 @@ public struct SharcFrameConstants
 ${slangStructFields(sharcFrame)}
 };
 
+public struct SunShadowQueryConstants
+{
+${slangStructFields(sunShadowQuery)}
+};
+
 """.replace('static const ', 'public static const ')
 		new File(slangDir, 'prime_abi.slang').text = """\
 #language slang 2026
@@ -718,6 +730,9 @@ module "prime_abi.slang";
 import "prime_abi_types.slang";
 
 public [[vk::push_constant]] ConstantBuffer<PrimePushConstants> primePush;
+
+[[vk::binding(${schema.sharedDescriptors.sunShadowQuery}, 0)]]
+public ConstantBuffer<SunShadowQueryConstants> primeSunShadowQuery;
 
 [[vk::binding(${schema.sharedDescriptors.tlas}, 0)]]
 public RaytracingAccelerationStructure primeScene;
@@ -1732,7 +1747,8 @@ abstract class VerifyGeneratedSlangAbi extends DefaultTask {
 				tracePayload: 'TracePayload',
 				surfaceInteraction: 'SurfaceInteraction',
 				nrdMotionPushConstants: 'NrdMotionPushConstants',
-				sharcFrameConstants: 'SharcFrameConstants'
+				sharcFrameConstants: 'SharcFrameConstants',
+				sunShadowQueryConstants: 'SunShadowQueryConstants'
 		]
 		def missing = []
 		structNames.each { schemaName, slangName ->

@@ -302,6 +302,7 @@ void primeWavefrontPrimary<AreaNee>(
                 denoiserState,
                 result,
                 surface,
+                0u,
                 recordIndex);
         continuation = continuation && path.bounce < maximumBounces;
         PrimeWavefrontPathRecord updated = primeMakeWavefrontRecord(

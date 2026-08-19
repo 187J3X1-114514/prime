@@ -110,6 +110,43 @@ final class SunShadowClipmap implements Destroyable {
         return state.banks[state.activeBank].valid;
     }
 
+    void writeQueryConstants(ByteBuffer target) {
+        State state = this.pending ? this.candidate : this.committed;
+        Bank active = state.banks[state.activeBank];
+        writeQueryConstants(target, active.direction, state.activeBank, active.valid);
+    }
+
+    static void writeQueryConstants(
+            ByteBuffer target,
+            SunDirection direction,
+            int bank,
+            boolean valid) {
+        if (target.capacity() < ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE) {
+            throw new IllegalArgumentException(
+                    "Sun-shadow query constant buffer is too small");
+        }
+        if (bank < 0 || bank >= BANK_COUNT) {
+            throw new IllegalArgumentException("Invalid sun-shadow query bank");
+        }
+        Basis basis = basis(direction);
+        int directionOffset = ShaderAbi.SUN_SHADOW_QUERY_DIRECTION_TO_SUN_OFFSET;
+        target.order(ByteOrder.nativeOrder())
+                .putFloat(directionOffset, direction.x())
+                .putFloat(directionOffset + Float.BYTES, direction.y())
+                .putFloat(directionOffset + 2 * Float.BYTES, direction.z())
+                .putInt(ShaderAbi.SUN_SHADOW_QUERY_BANK_OFFSET, bank);
+        int basisUOffset = ShaderAbi.SUN_SHADOW_QUERY_BASIS_U_OFFSET;
+        target.putFloat(basisUOffset, basis.ux)
+                .putFloat(basisUOffset + Float.BYTES, basis.uy)
+                .putFloat(basisUOffset + 2 * Float.BYTES, basis.uz)
+                .putInt(ShaderAbi.SUN_SHADOW_QUERY_VALID_OFFSET, valid ? 1 : 0);
+        int basisVOffset = ShaderAbi.SUN_SHADOW_QUERY_BASIS_V_OFFSET;
+        target.putFloat(basisVOffset, basis.vx)
+                .putFloat(basisVOffset + Float.BYTES, basis.vy)
+                .putFloat(basisVOffset + 2 * Float.BYTES, basis.vz)
+                .putInt(ShaderAbi.SUN_SHADOW_QUERY_RESERVED_OFFSET, 0);
+    }
+
     /**
      * Records all cache work for one frame and leaves a candidate CPU state pending until submit.
      */
@@ -239,7 +276,7 @@ final class SunShadowClipmap implements Destroyable {
         }
 
         if (wrote) {
-            rayWriteToComputeRead(commandBuffer);
+            rayWriteToShaderRead(commandBuffer);
             this.candidate.contentVersion++;
             this.pending = true;
         }
@@ -743,7 +780,7 @@ final class SunShadowClipmap implements Destroyable {
         }
     }
 
-    private void rayWriteToComputeRead(VkCommandBuffer commandBuffer) {
+    private void rayWriteToShaderRead(VkCommandBuffer commandBuffer) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers =
                     VkImageMemoryBarrier2.calloc(this.depths.length, stack);
@@ -754,7 +791,7 @@ final class SunShadowClipmap implements Destroyable {
                                 KHRRayTracingPipeline
                                         .VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
                         .srcAccessMask(VK12.VK_ACCESS_SHADER_WRITE_BIT)
-                        .dstStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+                        .dstStageMask(COMPUTE_AND_RAY_STAGES)
                         .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT)
                         .oldLayout(VK12.VK_IMAGE_LAYOUT_GENERAL)
                         .newLayout(VK12.VK_IMAGE_LAYOUT_GENERAL)

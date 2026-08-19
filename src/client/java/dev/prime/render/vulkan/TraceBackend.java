@@ -11,6 +11,7 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.VK12;
+import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
@@ -26,7 +27,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * offline, atmosphere and sun-shadow programs only borrow its descriptor set.
  */
 public final class TraceBackend implements Destroyable {
-    private static final int BINDING_COUNT = 21;
+    private static final int BINDING_COUNT = 22;
     private static final int STARMAP_UPLOAD = 1;
     private static final int BSDF_LOOKUP_UPLOAD = 1 << 1;
     private static final int ALL_RT_STAGES =
@@ -266,6 +267,11 @@ public final class TraceBackend implements Destroyable {
                     .descriptorCount(1)
                     .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         }
+        bindings.get(cursor)
+                .binding(ShaderAbi.DESCRIPTOR_SUN_SHADOW_QUERY)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         VkDescriptorSetLayoutCreateInfo createInfo =
                 VkDescriptorSetLayoutCreateInfo.calloc(stack)
                         .sType$Default()
@@ -333,6 +339,7 @@ public final class TraceBackend implements Destroyable {
         private final long transmittanceHigh;
         private final long aerialRadiance;
         private final long aerialTransmittance;
+        private final long sunShadowQuery;
         private final long[] sunShadowDepths;
         private boolean destroyed;
 
@@ -362,6 +369,7 @@ public final class TraceBackend implements Destroyable {
             this.transmittanceHigh = atmosphere.transmittanceHigh().view();
             this.aerialRadiance = atmosphere.aerialRadiance().view();
             this.aerialTransmittance = atmosphere.aerialTransmittance().view();
+            this.sunShadowQuery = atmosphere.sunShadowQuery().handle();
             this.sunShadowDepths = sunShadowDepths.clone();
         }
 
@@ -378,7 +386,7 @@ public final class TraceBackend implements Destroyable {
                 BsdfLookupTable bsdfLookup,
                 StarmapTexture starmap) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
+                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0)
                         .type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
                         .descriptorCount(1);
@@ -389,6 +397,9 @@ public final class TraceBackend implements Destroyable {
                 sizes.get(2)
                         .type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                         .descriptorCount(ShaderAbi.SCENE_TEXTURE_COUNT + 4);
+                sizes.get(3)
+                        .type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                        .descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -480,6 +491,12 @@ public final class TraceBackend implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
+                    VkDescriptorBufferInfo.Buffer queryInfo =
+                            VkDescriptorBufferInfo.calloc(1, stack);
+                    queryInfo.get(0)
+                                    .buffer(atmosphere.sunShadowQuery().handle())
+                                    .offset(0L)
+                                    .range(ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE);
                     VkWriteDescriptorSet.Buffer writes =
                             VkWriteDescriptorSet.calloc(BINDING_COUNT, stack);
                     int write = 0;
@@ -542,6 +559,14 @@ public final class TraceBackend implements Destroyable {
                                 .pImageInfo(VkDescriptorImageInfo.create(
                                         infos.get(shadowStart + index).address(), 1));
                     }
+                    writes.get(write)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_SUN_SHADOW_QUERY)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                            .pBufferInfo(VkDescriptorBufferInfo.create(
+                                    queryInfo.get(0).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new SceneBindings(
                             context,
@@ -580,7 +605,8 @@ public final class TraceBackend implements Destroyable {
                     || this.transmittanceLow != atmosphere.transmittanceLow().view()
                     || this.transmittanceHigh != atmosphere.transmittanceHigh().view()
                     || this.aerialRadiance != atmosphere.aerialRadiance().view()
-                    || this.aerialTransmittance != atmosphere.aerialTransmittance().view()) {
+                    || this.aerialTransmittance != atmosphere.aerialTransmittance().view()
+                    || this.sunShadowQuery != atmosphere.sunShadowQuery().handle()) {
                 return false;
             }
             for (int bank = 0; bank < SunShadowClipmap.BANK_COUNT; bank++) {

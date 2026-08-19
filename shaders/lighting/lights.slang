@@ -226,6 +226,32 @@ float2 primeLoadLightNodeMetrics(
             emissionDirection);
 }
 
+// The root proxy estimates incident irradiance from the same power, direction and receiver-normal
+// quantities used by tree traversal. It deliberately excludes visibility; that belongs to the
+// optional second-stage hierarchy hint and must not add another ray here.
+public float primeAreaLightFamilyImportance(
+        float3 surfacePosition, uint packedReceiverNormal) {
+    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
+    uint64_t worldLightAddress = sections[0].worldLightAddress;
+    if (worldLightAddress == uint64_t(0)) {
+        return 0.0;
+    }
+    WorldLightHeader header = ((WorldLightHeader*)worldLightAddress)[0];
+    if (header.summaryCount == 0u || !(header.totalPower > 0.0)) {
+        return 0.0;
+    }
+    float2 metrics = primeLoadLightNodeMetrics(
+            primeWorldLightNodes(worldLightAddress),
+            0u,
+            surfacePosition,
+            primeUnpackLightReceiverNormal(packedReceiverNormal));
+    // Emitter power is area*pi*radiance. Its directional point approximation therefore converts
+    // back to receiver irradiance with 1/(pi*r^2). The tiny denominator guard only covers an exact
+    // aggregate-centroid coincidence; the probability clamp bounds its effect.
+    return metrics.y * primeBlockLightRadianceMultiplier()
+            / (PRIME_LIGHT_PI * max(metrics.x, 1.0e-12));
+}
+
 float2 primeEmitterMetrics(
         LightEmitter emitter,
         float power,

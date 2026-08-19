@@ -69,6 +69,7 @@ void primeWavefrontTransparentShade<AreaNee>(
             surface,
             transmissionBranch,
             guideEnabled,
+            primeLoadWavefrontSunFamilyProbability(recordIndex),
             recordIndex);
     continuation = continuation && path.bounce < primeMaximumBounces();
     PrimeWavefrontTransportRecord updatedRecord =

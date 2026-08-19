@@ -18,6 +18,7 @@ import "prime_abi_types.slang";
 [[vk::binding(15, 0)]] StructuredBuffer<WorldLightHeader> worldLightHeaders;
 [[vk::binding(16, 0)]] StructuredBuffer<WorldLightSummary> worldLightSummaries;
 [[vk::binding(17, 0)]] StructuredBuffer<LightAliasEntry> lightAliasEntries;
+[[vk::binding(18, 0)]] StructuredBuffer<SunShadowQueryConstants> sunShadowQueries;
 
 [[vk::push_constant]] ConstantBuffer<PrimePushConstants> primePush;
 
@@ -46,6 +47,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     value ^= surfaceInteractions[index].adjacentInterfaceControl;
     value ^= asuint(nrdMotionRecords[index].currentJitterPixels.y);
     value ^= sharcFrameRecords[index].flags;
+    value ^= sunShadowQueries[index].valid;
     value ^= asuint(primePush.inverseViewProjection[3][3]);
     value ^= primePush.path.w;
     outputValues[index] = value;

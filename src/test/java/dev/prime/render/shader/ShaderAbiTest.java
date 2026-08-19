@@ -39,6 +39,12 @@ final class ShaderAbiTest {
         assertEquals(76, ShaderAbi.SURFACE_MOTION_ZFLAGS_OFFSET);
         assertEquals(128, ShaderAbi.PUSH_CONSTANT_SIZE);
         assertEquals(112, ShaderAbi.SHARC_FRAME_CONSTANT_SIZE);
+        assertEquals(48, ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE);
+        assertEquals(0, ShaderAbi.SUN_SHADOW_QUERY_DIRECTION_TO_SUN_OFFSET);
+        assertEquals(12, ShaderAbi.SUN_SHADOW_QUERY_BANK_OFFSET);
+        assertEquals(16, ShaderAbi.SUN_SHADOW_QUERY_BASIS_U_OFFSET);
+        assertEquals(28, ShaderAbi.SUN_SHADOW_QUERY_VALID_OFFSET);
+        assertEquals(32, ShaderAbi.SUN_SHADOW_QUERY_BASIS_V_OFFSET);
         assertEquals(0, ShaderAbi.DESCRIPTOR_TLAS);
         assertEquals(2, ShaderAbi.DESCRIPTOR_BLOCK_ATLAS);
         assertEquals(3, ShaderAbi.DESCRIPTOR_STABLE_RADIANCE);
@@ -65,6 +71,7 @@ final class ShaderAbiTest {
         assertEquals(38, ShaderAbi.DESCRIPTOR_SHARC_FRAME);
         assertEquals(38, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_0);
         assertEquals(47, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_9);
+        assertEquals(48, ShaderAbi.DESCRIPTOR_SUN_SHADOW_QUERY);
         assertEquals(112, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         assertEquals(208, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);

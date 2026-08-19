@@ -287,6 +287,59 @@ uint primeAreaLightReceiverNormal(
             primeSurfaceShadingNormal(surface, viewDirection));
 }
 
+float3 primeSunDiskUpperDirection(float3 sunDirection) {
+    float3 tangent = float3(0.0, 1.0, 0.0)
+            - sunDirection * sunDirection.y;
+    float tangentLengthSquared = dot(tangent, tangent);
+    tangent = tangentLengthSquared > 0.0
+            ? tangent * rsqrt(tangentLengthSquared)
+            : float3(1.0, 0.0, 0.0);
+    return sunDirection * cos(ATM_SUN_ANGULAR_RADIUS_RADIANS)
+            + tangent * sin(ATM_SUN_ANGULAR_RADIUS_RADIANS);
+}
+
+float2 primeSecondaryLightFamilyImportance(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        float3 viewDirection) {
+    float3 sunDirection = integrator.sunDirectionIntensity.xyz;
+    float3 upperDirection = primeSunDiskUpperDirection(sunDirection);
+    uint packedReceiverNormal = primeAreaLightReceiverNormal(
+            surface, viewDirection);
+    float sunImportance = 0.0;
+    if (primeAtmosphereDistantDirectionVisible(upperDirection)
+            && integrator.sunDirectionIntensity.w > 0.0) {
+        float3 representativeDirection =
+                primeAtmosphereDistantDirectionVisible(sunDirection)
+                ? sunDirection
+                : upperDirection;
+        float3 transmittance = primeAtmosphereSunTransmittance(
+                surface.position, representativeDirection);
+        float3 receiverNormal = primeUnpackLightReceiverNormal(
+                packedReceiverNormal);
+        float receiverCosine = primeLightReceiverCosineEstimate(
+                sunDirection, receiverNormal);
+        float angularImportance = PRIME_LIGHT_RECEIVER_COSINE_FLOOR
+                + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * receiverCosine;
+        sunImportance = integrator.sunDirectionIntensity.w
+                * max(transmittance.x, max(transmittance.y, transmittance.z))
+                * angularImportance;
+    }
+    float areaImportance = primeAreaLightFamilyImportance(
+            surface.position, packedReceiverNormal);
+    return float2(sunImportance, areaImportance);
+}
+
+float primeSecondarySunFamilyProbability(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        float3 viewDirection) {
+    float2 importance = primeSecondaryLightFamilyImportance(
+            integrator, surface, viewDirection);
+    return primeQuantizedSunFamilyProbability(
+            importance.x, importance.y);
+}
+
 float primeSurfaceOpacity(SurfaceInteraction surface) {
     return clamp(surface.opacity, 0.0, 1.0);
 }
@@ -861,7 +914,12 @@ PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
 interface IPrimeSecondaryAreaNee {
     bool enabled();
     uint primaryPathFlags();
-    uint secondaryPathFlags(IntegratorRecord integrator);
+    void markSecondaryPath(
+            inout PathState path,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            uint storedSunProbability);
 
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
@@ -918,7 +976,12 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
 struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return true; }
     uint primaryPathFlags() { return 0u; }
-    uint secondaryPathFlags(IntegratorRecord integrator) { return 0u; }
+    void markSecondaryPath(
+            inout PathState path,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            uint storedSunProbability) {}
 
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
@@ -967,8 +1030,17 @@ struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
                 ? PRIME_PATH_PREVIOUS_STANDALONE_AREA_NEE
                 : 0u;
     }
-    uint secondaryPathFlags(IntegratorRecord integrator) {
-        return PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
+    void markSecondaryPath(
+            inout PathState path,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            uint storedSunProbability) {
+        path.sourceReserved = storedSunProbability != 0u
+                ? storedSunProbability
+                : primeStoredSunFamilyProbability(
+                        primeSecondarySunFamilyProbability(
+                                integrator, surface, viewDirection));
     }
 
     PrimeDirectLightingSplit estimatePrimary(
@@ -1001,7 +1073,12 @@ struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
 struct PrimeNoSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return false; }
     uint primaryPathFlags() { return 0u; }
-    uint secondaryPathFlags(IntegratorRecord integrator) { return 0u; }
+    void markSecondaryPath(
+            inout PathState path,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            uint storedSunProbability) {}
 
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
@@ -1106,9 +1183,9 @@ float3 primeEvaluateEnvironmentContribution(
             integrator, path.physicalOrigin, path.rayDirection);
     LightEvaluation sun = primeEvaluateSun(
             integrator, path.physicalOrigin, path.rayDirection);
-    if ((path.flags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) != 0u) {
+    if (primeHasStoredLightFamilyProbability(path.sourceReserved)) {
         sun.pdf = primeLightFamilyPdfValue(
-                sun.pdf, PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+                sun.pdf, primeSunFamilyProbabilityFromStored(path.sourceReserved));
     }
     bool previousUsedSunNee = primePreviousSunNeeEnabled(path.flags);
     float sunWeight = primePreviousCannotUseMis(path) || !previousUsedSunNee
@@ -1152,9 +1229,9 @@ float3 primeEvaluateLocalHitEmission(
             path.rayDirection,
             path.previousLightNormal,
             evaluateAreaPdf);
-    if ((path.flags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) != 0u) {
+    if (primeHasStoredLightFamilyProbability(path.sourceReserved)) {
         hitAreaLight.pdf = primeLightFamilyPdfValue(
-                hitAreaLight.pdf, PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+                hitAreaLight.pdf, primeAreaFamilyProbabilityFromStored(path.sourceReserved));
     }
     float hitAreaWeight = primeAreaHitMisWeightValue(
             previousUsedAreaNee,
@@ -1629,6 +1706,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         SurfaceInteraction surface,
         bool transmissionBranch,
         bool guideEnabled,
+        uint storedSunProbability,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
@@ -1871,7 +1949,12 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     }
     if (areaNee.enabled() && supportsSolidAngle
             && !primarySurfaceReplacement) {
-        path.flags |= areaNee.secondaryPathFlags(integrator);
+        areaNee.markSecondaryPath(
+                path,
+                integrator,
+                surface,
+                viewDirection,
+                storedSunProbability);
     }
     path.bounce++;
     return true;
@@ -1902,6 +1985,7 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
         inout PrimeDenoiserState denoiserState,
         inout PrimeIntegrationResult result,
         SurfaceInteraction surface,
+        uint storedSunProbability,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
@@ -2120,7 +2204,12 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
             && supportsSolidAngle
             && denoiserState.hasPrimarySurface
             && path.bounce != denoiserState.primaryBounce) {
-        path.flags |= areaNee.secondaryPathFlags(integrator);
+        areaNee.markSecondaryPath(
+                path,
+                integrator,
+                surface,
+                viewDirection,
+                storedSunProbability);
     }
     path.bounce++;
     return true;

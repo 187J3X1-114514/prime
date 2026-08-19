@@ -240,6 +240,17 @@
         { "name": "trainingWidth", "type": "uint", "offset": 104 },
         { "name": "trainingHeight", "type": "uint", "offset": 108 }
       ]
+    },
+    "sunShadowQueryConstants": {
+      "size": 48,
+      "fields": [
+        { "name": "directionToSun", "type": "vec3", "offset": 0 },
+        { "name": "bank", "type": "uint", "offset": 12 },
+        { "name": "basisU", "type": "vec3", "offset": 16 },
+        { "name": "valid", "type": "uint", "offset": 28 },
+        { "name": "basisV", "type": "vec3", "offset": 32 },
+        { "name": "reserved", "type": "uint", "offset": 44 }
+      ]
     }
   },
   "sharedDescriptors": {
@@ -263,7 +274,8 @@
     "sunShadowDepth6": 44,
     "sunShadowDepth7": 45,
     "sunShadowDepth8": 46,
-    "sunShadowDepth9": 47
+    "sunShadowDepth9": 47,
+    "sunShadowQuery": 48
   },
   "realtimeDescriptors": {
     "stableRadiance": 3,

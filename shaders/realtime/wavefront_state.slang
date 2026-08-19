@@ -73,6 +73,23 @@ uint primeWavefrontSurfaceWord(uint pathIndex) {
             + pathIndex * (PRIME_WAVEFRONT_SURFACE_RECORD_SIZE / 4u);
 }
 
+// The physical surface record owns these high bits between Light and Shade; SurfaceInteraction
+// continues to expose only the low-byte hit kind.
+void primeStoreWavefrontSunFamilyProbability(
+        uint pathIndex,
+        uint storedProbability) {
+    uint word = primeWavefrontSurfaceWord(pathIndex)
+            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
+    primeWavefrontQueue[word] = primePackWavefrontSurfaceSunProbability(
+            primeWavefrontQueue[word], storedProbability);
+}
+
+uint primeLoadWavefrontSunFamilyProbability(uint pathIndex) {
+    uint word = primeWavefrontSurfaceWord(pathIndex)
+            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
+    return primeWavefrontSurfaceSunProbability(primeWavefrontQueue[word]);
+}
+
 void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
     uint base = primeWavefrontSurfaceWord(pathIndex);
     primeStoreWavefrontSurfaceLane(base, 0u, uint4(
@@ -115,7 +132,7 @@ SurfaceInteraction primeLoadWavefrontSurface(uint pathIndex) {
     surface.geometricNormal = float3(
             asfloat(lane.y), asfloat(lane.z), asfloat(lane.w));
     lane = primeLoadWavefrontSurfaceLane(base, 1u);
-    surface.hitKind = lane.x;
+    surface.hitKind = lane.x & PRIME_HIT_KIND_MASK;
     surface.materialControl = lane.y;
     surface.sectionIndex = lane.z;
     surface.emitterIndex = lane.w;

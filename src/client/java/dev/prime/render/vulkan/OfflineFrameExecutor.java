@@ -7,10 +7,7 @@ import dev.prime.render.OfflineFramePlan;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkImageCopy;
 
 /** Device side effects for one already-planned native offline sample. */
 public final class OfflineFrameExecutor {
@@ -62,11 +59,10 @@ public final class OfflineFrameExecutor {
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
-        MinecraftHostSubmission hostSubmission = new MinecraftHostSubmission();
-        boolean initializationActive = false;
+        VulkanFrameSubmission submission =
+                new VulkanFrameSubmission(this.imageInitialization);
         try {
-            this.imageInitialization.begin();
-            initializationActive = true;
+            submission.begin();
             pipelineFrame = pipeline.prepareFrame(
                     commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
@@ -88,55 +84,31 @@ public final class OfflineFrameExecutor {
                     plan.integrator(),
                     scene,
                     true);
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                pipeline.trace(
-                        commandBuffer, plan.integrator(), scene);
-                VulkanImageTransitions.prepareOfflineDisplay(
-                        commandBuffer, runningMean);
-                display.recordFrozen(
-                        commandBuffer, plan.input().display(), this.imageInitialization);
-                VulkanImageTransitions.finishAtlasRead(
-                        commandBuffer, atlasView.texture());
-                VulkanImageTransitions.finishSceneTextureReads(
-                        commandBuffer, sceneTextures);
-                VulkanImageTransitions.prepareImagesForCopy(
-                        commandBuffer, displayOutput, mainColor);
-                VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
-                copy.get(0).srcSubresource()
-                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                        .mipLevel(0)
-                        .baseArrayLayer(0)
-                        .layerCount(1);
-                copy.get(0).dstSubresource()
-                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                        .mipLevel(0)
-                        .baseArrayLayer(0)
-                        .layerCount(1);
-                copy.get(0).extent().set(
-                        plan.input().width(),
-                        plan.input().height(),
-                        1);
-                VK12.vkCmdCopyImage(
-                        commandBuffer,
-                        displayOutput.image(),
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        mainColor.vkImage(),
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        copy);
-                VulkanImageTransitions.finishImageCopy(
-                        commandBuffer, displayOutput, mainColor);
-            }
+            pipeline.trace(
+                    commandBuffer, plan.integrator(), scene);
+            VulkanImageTransitions.prepareOfflineDisplay(
+                    commandBuffer, runningMean);
+            display.recordFrozen(
+                    commandBuffer, plan.input().display(), this.imageInitialization);
+            VulkanImageTransitions.finishAtlasRead(
+                    commandBuffer, atlasView.texture());
+            VulkanImageTransitions.finishSceneTextureReads(
+                    commandBuffer, sceneTextures);
+            submission.copyToMinecraft(
+                    commandBuffer,
+                    displayOutput,
+                    mainColor,
+                    plan.input().width(),
+                    plan.input().height());
             this.context.device().instance().debug().endDebugGroup(
                     commandBuffer);
-            VulkanContext.check(
-                    VK12.vkEndCommandBuffer(commandBuffer),
+            submission.submit(
+                    encoder,
+                    commandBuffer,
                     "end Prime offline accumulation command buffer");
-            encoder.execute(commandBuffer);
-            hostSubmission.acceptedByMinecraftHostSubmission();
             HdrPresentation.publish(this.context, display.hdrOutput(), displayOutput);
             // Prime histories advance only after Minecraft's open host submission accepts it.
-            this.imageInitialization.submitted();
-            initializationActive = false;
+            submission.submitted();
             long submittedPipelineFrame = pipelineFrame;
             RuntimeException commitFailure = ResourceCleanup.run(
                     () -> pipeline.submitted(submittedPipelineFrame), null);
@@ -151,12 +123,8 @@ public final class OfflineFrameExecutor {
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
-            if (!hostSubmission.wasAcceptedByMinecraftHostSubmission()) {
-                RuntimeException failure = exception;
-                if (initializationActive) {
-                    failure = ResourceCleanup.run(
-                            this.imageInitialization::abandon, failure);
-                }
+            if (!submission.wasAcceptedByMinecraftHostSubmission()) {
+                RuntimeException failure = submission.abandon(exception);
                 if (pipelineFrame != 0L) {
                     long abandonedPipelineFrame = pipelineFrame;
                     failure = ResourceCleanup.run(

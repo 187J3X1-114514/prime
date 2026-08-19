@@ -2,6 +2,7 @@
 #define PRIME_OFFLINE_WAVEFRONT_STATE_SLANG
 
 import "realtime/wavefront_medium.slang";
+import "integrator/wavefront_queue.slang";
 
 struct PrimeOfflineTransportRecord {
     float4 physicalOriginAndPreviousBsdfPdf;
@@ -101,18 +102,35 @@ void primeResetOfflineQueue(uint queue) {
             ignored);
 }
 
-void primeAppendOfflinePath(uint queue, uint pathIndex) {
-    uint commandWord = primeOfflineQueueCommandWord(queue);
-    uint entry;
-    InterlockedAdd(primeOfflineQueue[commandWord], 1u, entry);
-    uint capacity = primeOfflinePixelCount();
-    if (entry < capacity) {
-        primeOfflineQueue[primeOfflineQueueWord(queue, entry)] = pathIndex;
-    } else {
+struct PrimeOfflineQueueStorage : IPrimeWavefrontQueueStorage {
+    uint capacity(uint queue) {
+        return primeOfflinePixelCount();
+    }
+
+    uint reserve(uint queue, uint count) {
+        uint firstEntry;
+        InterlockedAdd(
+                primeOfflineQueue[primeOfflineQueueCommandWord(queue)],
+                count,
+                firstEntry);
+        return firstEntry;
+    }
+
+    void markOverflow(uint queue, uint capacity) {
+        uint commandWord = primeOfflineQueueCommandWord(queue);
         uint ignored;
         InterlockedMin(primeOfflineQueue[commandWord], capacity, ignored);
         InterlockedOr(primeOfflineQueue[commandWord + 3u], 1u, ignored);
     }
+
+    void store(uint queue, uint entry, uint pathIndex) {
+        primeOfflineQueue[primeOfflineQueueWord(queue, entry)] = pathIndex;
+    }
+};
+
+void primeAppendOfflinePath(uint queue, uint pathIndex) {
+    primeAppendScalarQueueEntry(
+            PrimeOfflineQueueStorage(), queue, pathIndex, true);
 }
 
 interface IPrimeOfflineContinuationAppender {
@@ -122,43 +140,16 @@ interface IPrimeOfflineContinuationAppender {
 struct PrimeScalarOfflineContinuationAppender
         : IPrimeOfflineContinuationAppender {
     void append(uint queue, uint pathIndex, bool continuation) {
-        if (continuation) {
-            primeAppendOfflinePath(queue, pathIndex);
-        }
+        primeAppendScalarQueueEntry(
+                PrimeOfflineQueueStorage(), queue, pathIndex, continuation);
     }
 };
 
 struct PrimeSubgroupOfflineContinuationAppender
         : IPrimeOfflineContinuationAppender {
-    // Every invocation must call this from uniform control flow. The elected lane reserves one
-    // contiguous range, reducing global atomics and preserving subgroup locality.
     void append(uint queue, uint pathIndex, bool continuation) {
-        uint4 activeMask = WaveActiveBallot(continuation);
-        uint activeCount = countbits(activeMask.x) + countbits(activeMask.y)
-                + countbits(activeMask.z) + countbits(activeMask.w);
-        uint firstEntry = 0u;
-        if (WaveIsFirstLane() && activeCount != 0u) {
-            InterlockedAdd(
-                    primeOfflineQueue[primeOfflineQueueCommandWord(queue)],
-                    activeCount,
-                    firstEntry);
-        }
-        firstEntry = WaveReadLaneFirst(firstEntry);
-        uint capacity = primeOfflinePixelCount();
-        bool overflow = activeCount > capacity
-                || firstEntry > capacity - min(activeCount, capacity);
-        if (WaveIsFirstLane() && overflow) {
-            uint commandWord = primeOfflineQueueCommandWord(queue);
-            uint ignored;
-            InterlockedMin(primeOfflineQueue[commandWord], capacity, ignored);
-            InterlockedOr(primeOfflineQueue[commandWord + 3u], 1u, ignored);
-        }
-        if (continuation) {
-            uint entry = firstEntry + WavePrefixCountBits(continuation);
-            if (entry < capacity) {
-                primeOfflineQueue[primeOfflineQueueWord(queue, entry)] = pathIndex;
-            }
-        }
+        primeAppendSubgroupQueueEntry(
+                PrimeOfflineQueueStorage(), queue, pathIndex, continuation);
     }
 };
 

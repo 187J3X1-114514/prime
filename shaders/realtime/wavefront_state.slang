@@ -2,6 +2,7 @@
 #define PRIME_WAVEFRONT_STATE_SLANG
 
 import "realtime/wavefront_medium.slang";
+import "integrator/wavefront_queue.slang";
 #include "realtime/wavefront_storage.slang"
 
 // Member-wise access keeps cold PSR state out of ordinary continuations and prevents a storage
@@ -152,19 +153,35 @@ void primeResetWavefrontQueue(uint queue) {
             ignored);
 }
 
-void primeAppendWavefrontPath(uint queue, uint pathIndex) {
-    uint commandWord = primeWavefrontQueueCommandWord(queue);
-    uint entry;
-    InterlockedAdd(primeWavefrontQueue[commandWord], 1u, entry);
-    uint capacity = primeWavefrontQueueCapacity(queue);
-    if (entry < capacity) {
-        primeWavefrontQueue[
-                primeWavefrontQueueWord(queue, entry)] = pathIndex;
-    } else {
+struct PrimeRealtimeQueueStorage : IPrimeWavefrontQueueStorage {
+    uint capacity(uint queue) {
+        return primeWavefrontQueueCapacity(queue);
+    }
+
+    uint reserve(uint queue, uint count) {
+        uint firstEntry;
+        InterlockedAdd(
+                primeWavefrontQueue[primeWavefrontQueueCommandWord(queue)],
+                count,
+                firstEntry);
+        return firstEntry;
+    }
+
+    void markOverflow(uint queue, uint capacity) {
+        uint commandWord = primeWavefrontQueueCommandWord(queue);
         uint ignored;
         InterlockedMin(primeWavefrontQueue[commandWord], capacity, ignored);
         InterlockedOr(primeWavefrontQueue[commandWord + 3u], 1u, ignored);
     }
+
+    void store(uint queue, uint entry, uint pathIndex) {
+        primeWavefrontQueue[primeWavefrontQueueWord(queue, entry)] = pathIndex;
+    }
+};
+
+void primeAppendWavefrontPath(uint queue, uint pathIndex) {
+    primeAppendScalarQueueEntry(
+            PrimeRealtimeQueueStorage(), queue, pathIndex, true);
 }
 
 interface IPrimeWavefrontContinuationAppender {
@@ -174,45 +191,16 @@ interface IPrimeWavefrontContinuationAppender {
 struct PrimeScalarWavefrontContinuationAppender
         : IPrimeWavefrontContinuationAppender {
     void append(uint queue, uint pathIndex, bool continuation) {
-        if (continuation) {
-            primeAppendWavefrontPath(queue, pathIndex);
-        }
+        primeAppendScalarQueueEntry(
+                PrimeRealtimeQueueStorage(), queue, pathIndex, continuation);
     }
 };
 
 struct PrimeSubgroupWavefrontContinuationAppender
         : IPrimeWavefrontContinuationAppender {
-    // Every invocation must call this from uniform control flow. The elected lane reserves one
-    // contiguous range, reducing global atomics and preserving subgroup locality.
     void append(uint queue, uint pathIndex, bool continuation) {
-        uint4 activeMask = WaveActiveBallot(continuation);
-        uint activeCount = countbits(activeMask.x) + countbits(activeMask.y)
-                + countbits(activeMask.z) + countbits(activeMask.w);
-        uint firstEntry = 0u;
-        if (WaveIsFirstLane() && activeCount != 0u) {
-            InterlockedAdd(
-                    primeWavefrontQueue[primeWavefrontQueueCommandWord(queue)],
-                    activeCount,
-                    firstEntry);
-        }
-        firstEntry = WaveReadLaneFirst(firstEntry);
-        uint capacity = primeWavefrontQueueCapacity(queue);
-        bool overflow = activeCount > capacity
-                || firstEntry > capacity - min(activeCount, capacity);
-        if (WaveIsFirstLane() && overflow) {
-            uint commandWord = primeWavefrontQueueCommandWord(queue);
-            uint ignored;
-            InterlockedMin(primeWavefrontQueue[commandWord], capacity, ignored);
-            InterlockedOr(primeWavefrontQueue[commandWord + 3u], 1u, ignored);
-        }
-        if (!continuation) {
-            return;
-        }
-
-        uint entry = firstEntry + WavePrefixCountBits(continuation);
-        if (entry < capacity) {
-            primeWavefrontQueue[primeWavefrontQueueWord(queue, entry)] = pathIndex;
-        }
+        primeAppendSubgroupQueueEntry(
+                PrimeRealtimeQueueStorage(), queue, pathIndex, continuation);
     }
 };
 

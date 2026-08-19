@@ -8,10 +8,7 @@ import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkImageCopy;
 
 /**
  * Sole device executor for one planned interactive frame.
@@ -50,8 +47,8 @@ public final class RealtimeFrameExecutor {
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
-        MinecraftHostSubmission hostSubmission = new MinecraftHostSubmission();
-        boolean initializationActive = false;
+        VulkanFrameSubmission submission =
+                new VulkanFrameSubmission(this.imageInitialization);
         try {
             Objects.requireNonNull(debugLabel, "debugLabel");
             Objects.requireNonNull(pipeline, "pipeline");
@@ -68,8 +65,7 @@ public final class RealtimeFrameExecutor {
             plan.requireSceneRevision(scene.revision());
             plan.requireTextureRevision(textureRevision);
             validateExtents(plan, processor, output, stableRadiance, mainColor);
-            this.imageInitialization.begin();
-            initializationActive = true;
+            submission.begin();
 
             var encoder = this.context.commandEncoder();
             VkCommandBuffer commandBuffer =
@@ -101,55 +97,31 @@ public final class RealtimeFrameExecutor {
                     plan.integrator(),
                     scene,
                     false);
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                pipeline.trace(commandBuffer, plan.integrator(), scene);
-                processor.record(
-                        commandBuffer,
-                        processorFrame,
-                        plan.reconstruction(),
-                        this.imageInitialization);
-                VulkanImageTransitions.finishAtlasRead(
-                        commandBuffer, atlasView.texture());
-                VulkanImageTransitions.finishSceneTextureReads(
-                        commandBuffer, sceneTextures);
-                VulkanImageTransitions.prepareImagesForCopy(
-                        commandBuffer, output, mainColor);
-                VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
-                copy.get(0).srcSubresource()
-                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                        .mipLevel(0)
-                        .baseArrayLayer(0)
-                        .layerCount(1);
-                copy.get(0).dstSubresource()
-                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                        .mipLevel(0)
-                        .baseArrayLayer(0)
-                        .layerCount(1);
-                copy.get(0).extent().set(
-                        processor.displayWidth(),
-                        processor.displayHeight(),
-                        1);
-                VK12.vkCmdCopyImage(
-                        commandBuffer,
-                        output.image(),
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        mainColor.vkImage(),
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        copy);
-                VulkanImageTransitions.finishImageCopy(
-                        commandBuffer, output, mainColor);
-            }
+            pipeline.trace(commandBuffer, plan.integrator(), scene);
+            processor.record(
+                    commandBuffer,
+                    processorFrame,
+                    plan.reconstruction(),
+                    this.imageInitialization);
+            VulkanImageTransitions.finishAtlasRead(
+                    commandBuffer, atlasView.texture());
+            VulkanImageTransitions.finishSceneTextureReads(
+                    commandBuffer, sceneTextures);
+            submission.copyToMinecraft(
+                    commandBuffer,
+                    output,
+                    mainColor,
+                    processor.displayWidth(),
+                    processor.displayHeight());
             this.context.device().instance().debug().endDebugGroup(
                     commandBuffer);
-            VulkanContext.check(
-                    VK12.vkEndCommandBuffer(commandBuffer),
+            submission.submit(
+                    encoder,
+                    commandBuffer,
                     "end Prime realtime command buffer");
-            encoder.execute(commandBuffer);
-            hostSubmission.acceptedByMinecraftHostSubmission();
             HdrPresentation.publish(this.context, processor.hdrDisplayOutput(), output);
             // A normal return transfers command/resource ownership and advances Prime histories.
-            this.imageInitialization.submitted();
-            initializationActive = false;
+            submission.submitted();
             long submittedPipelineFrame = pipelineFrame;
             RuntimeException commitFailure = ResourceCleanup.run(
                     () -> pipeline.submitted(submittedPipelineFrame), null);
@@ -166,12 +138,8 @@ public final class RealtimeFrameExecutor {
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
-            if (!hostSubmission.wasAcceptedByMinecraftHostSubmission()) {
-                RuntimeException failure = exception;
-                if (initializationActive) {
-                    failure = ResourceCleanup.run(
-                            this.imageInitialization::abandon, failure);
-                }
+            if (!submission.wasAcceptedByMinecraftHostSubmission()) {
+                RuntimeException failure = submission.abandon(exception);
                 if (pipelineFrame != 0L) {
                     long abandonedPipelineFrame = pipelineFrame;
                     failure = ResourceCleanup.run(

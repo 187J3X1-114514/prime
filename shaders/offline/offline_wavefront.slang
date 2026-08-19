@@ -11,7 +11,6 @@ import "core/sampling.slang";
 import "lighting/lights.slang";
 #include "integrator/integrator.slang"
 import "core/camera.slang";
-#include "offline/offline_bsdf.slang"
 #include "offline/wavefront_state.slang"
 #include "offline/offline_integrator.slang"
 #include "offline/offline_output.slang"
@@ -93,6 +92,29 @@ void primeOfflineWavefrontHead(
     uint2 pixel = launchIndex;
     uint pathIndex = primeOfflineIndex(pixel);
     float2 cameraSample = primeOfflineCameraSample(launchIndex);
+    uint maximumBounces = primeMaximumBounces();
+    if (maximumBounces == 0u) {
+        PathState emptyPath = primeCameraPath(pixel, 0u, cameraSample);
+        primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
+                emptyPath,
+                primeOfflineInitialVolumeStack(),
+                float3(0.0),
+                -1.0,
+                float3(1.0),
+                0u,
+                primeEmptyOfflineAreaRequest(),
+                false);
+        return;
+    }
+
+    float3 traceDirection = primeCameraRayDirection(pixel, cameraSample);
+    primeSetNumericalContext(
+            context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, 0u);
+    SurfaceInteraction surface = primeTraceSurface(
+            primePush.cameraPosition, traceDirection);
+
+    // Construct the full path, medium and accumulation state after SER. Only the camera sample
+    // and trace inputs belong in the reorder spill set.
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
     PrimeOpenPbrVolumeStack volumeStack = primeOfflineInitialVolumeStack();
     float3 radiance = float3(0.0);
@@ -100,28 +122,20 @@ void primeOfflineWavefrontHead(
     float3 primaryAlbedo = float3(1.0);
     uint primaryMaterialFlags = 0u;
     PrimeOfflineAreaRequest request = primeEmptyOfflineAreaRequest();
-    uint maximumBounces = primeMaximumBounces();
-    bool continuation = false;
-    if (maximumBounces != 0u) {
-        primeSetNumericalContext(
-                context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, 0u);
-        SurfaceInteraction surface = primeTraceSurface(
-                primePush.cameraPosition, path.rayDirection);
-        PrimeOfflineSurfaceStep step = primeIntegrateOfflineSurface(
-                context,
-                path,
-                primeOfflineIntegrator(),
-                volumeStack,
-                radiance,
-                primaryDistance,
-                primaryAlbedo,
-                primaryMaterialFlags,
-                surface,
-                true);
-        request = step.areaRequest;
-        continuation = step.continuation;
-        continuation = continuation && path.bounce < maximumBounces;
-    }
+    PrimeOfflineSurfaceStep step = primeIntegrateOfflineSurface(
+            context,
+            path,
+            primeOfflineIntegrator(),
+            volumeStack,
+            radiance,
+            primaryDistance,
+            primaryAlbedo,
+            primaryMaterialFlags,
+            surface,
+            true);
+    request = step.areaRequest;
+    bool continuation = step.continuation
+            && path.bounce < maximumBounces;
     primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
             path,
             volumeStack,
@@ -143,16 +157,21 @@ void primeOfflineWavefrontStep(
         uint launchIndex,
         uint sourceQueue) {
     uint pathIndex = primeOfflineQueuedPath(sourceQueue, launchIndex);
-    PrimeOfflineTransportRecord traceRecord =
-            primeOfflinePaths[pathIndex].transport;
-    uint bounce = traceRecord.sourceAndPathControl.w
+    float3 traceOrigin = primeOfflinePaths[pathIndex]
+            .transport.physicalOriginAndPreviousBsdfPdf.xyz;
+    float3 traceDirection = primeOfflinePaths[pathIndex]
+            .transport.rayDirectionAndControl.xyz;
+    uint2 traceSource = primeOfflinePaths[pathIndex]
+            .transport.sourceAndPathControl.xy;
+    uint bounce = primeOfflinePaths[pathIndex]
+            .transport.sourceAndPathControl.w
             & PRIME_OFFLINE_PATH_BYTE_MASK;
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, bounce);
     SurfaceInteraction surface = primeTraceSurface(
-            traceRecord.physicalOriginAndPreviousBsdfPdf.xyz,
-            traceRecord.rayDirectionAndControl.xyz,
-            traceRecord.sourceAndPathControl.xy);
+            traceOrigin,
+            traceDirection,
+            traceSource);
 
     PrimeOfflinePathRecord record = primeOfflinePaths[pathIndex];
     uint2 pixel = primeOfflinePixel(pathIndex);

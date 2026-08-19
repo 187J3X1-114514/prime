@@ -558,6 +558,28 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     return result;
 }
 
+float3 primeEvaluateCompleteDirect(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float3 shadingNormal,
+        LightSample light,
+        float3 lightRadiance,
+        PrimeOpenPbrVolumeStack volumeStack,
+        bool usesMis) {
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            context,
+            surface,
+            viewDirection,
+            shadingNormal,
+            light,
+            lightRadiance,
+            volumeStack,
+            false,
+            usesMis);
+    return split.diffuse + split.specular;
+}
+
 bool primeDirectSampleEligible(
         SurfaceInteraction surface,
         float3 shadingNormal,
@@ -727,7 +749,7 @@ float3 primeEstimateDirectAreaLight(
     }
     float3 radiance =
             primeResolveSampledAreaLightRadiance(area) * shadow.transmittance;
-    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+    return primeEvaluateCompleteDirect(
             context,
             surface,
             viewDirection,
@@ -735,9 +757,7 @@ float3 primeEstimateDirectAreaLight(
             area.light,
             radiance,
             volumeStack,
-            false,
             true);
-    return split.diffuse + split.specular;
 }
 
 float3 primeEstimateDirectSun(
@@ -765,7 +785,7 @@ float3 primeEstimateDirectSun(
     }
     float3 radiance = primeResolveSampledSunRadiance(
             integrator, surface.position, light) * shadow.transmittance;
-    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+    return primeEvaluateCompleteDirect(
             context,
             surface,
             viewDirection,
@@ -773,9 +793,7 @@ float3 primeEstimateDirectSun(
             light,
             radiance,
             volumeStack,
-            false,
             true);
-    return split.diffuse + split.specular;
 }
 
 struct PrimePreparedSunShadow {
@@ -1432,6 +1450,36 @@ uint primeSharcEvent(BsdfSample bsdf) {
             : PRIME_SHARC_EVENT_GLOSSY;
 }
 
+bool primeApplyPathScatter(
+        inout PrimeIntegratorContext context,
+        inout PathState path,
+        SurfaceInteraction surface,
+        BsdfSample bsdf) {
+    primeSetNumericalContext(
+            context.diagnostics, PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
+    float3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
+    primeRecordNonnegative(context.diagnostics, nextThroughput);
+    if (all(nextThroughput == float3(0.0))) {
+        return false;
+    }
+    path.throughput = nextThroughput;
+    path.etaScale = primeEtaScaleAfterScatter(
+            path.etaScale,
+            bsdf.relativeEta,
+            (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
+    primeRecordNonnegative(context.diagnostics, path.etaScale);
+    path.physicalOrigin = surface.position;
+    path.sourcePrimitive = uint2(
+            surface.sectionIndex, primeSurfaceTriangleIndex(surface));
+    path.sourceReserved = 0u;
+    path.rayDirection = bsdf.direction;
+    path.previousBsdfPdf = bsdf.pdf;
+    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
+            ? PRIME_PATH_PREVIOUS_DISCRETE
+            : 0u;
+    return true;
+}
+
 bool primeAdvancePath(
         inout PrimeIntegratorContext context,
         inout PathState path,
@@ -1441,34 +1489,15 @@ bool primeAdvancePath(
         bool discreteOnlyInterface,
         float surfaceLinearRoughness,
         bool skipRoulette) {
-    primeSetNumericalContext(
-            context.diagnostics, PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
-    float3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
-    primeRecordNonnegative(context.diagnostics, nextThroughput);
-    if (all(nextThroughput == float3(0.0))) {
-        return false;
-    }
     uint previousLightNormal = discreteOnlyInterface
             ? 0u
             : primeAreaLightReceiverNormal(surface, -path.rayDirection);
-    path.throughput = nextThroughput;
-    path.physicalOrigin = surface.position;
-    path.sourcePrimitive = uint2(
-            surface.sectionIndex, primeSurfaceTriangleIndex(surface));
-    path.sourceReserved = 0u;
-    path.rayDirection = bsdf.direction;
-    path.previousBsdfPdf = bsdf.pdf;
+    if (!primeApplyPathScatter(context, path, surface, bsdf)) {
+        return false;
+    }
     path.previousLightNormal = previousLightNormal;
     path.previousSharcRoughness = surfaceLinearRoughness;
     path.previousSharcEvent = primeSharcEvent(bsdf);
-    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
-            ? PRIME_PATH_PREVIOUS_DISCRETE
-            : 0u;
-    path.etaScale = primeEtaScaleAfterScatter(
-            path.etaScale,
-            bsdf.relativeEta,
-            (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
-    primeRecordNonnegative(context.diagnostics, path.etaScale);
     if (skipRoulette) {
         return true;
     }

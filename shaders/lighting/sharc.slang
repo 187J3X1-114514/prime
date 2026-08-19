@@ -15,6 +15,12 @@
 #define HASH_GRID_ENABLE_64_BIT_ATOMICS 1
 #define HASH_GRID_COMPACT 0
 
+#include "lighting/sharc_training_core.slang"
+#if SHARC_QUERY
+// The vendored query uses `sampleNum > threshold`; one therefore requires two traced anchors.
+#define SHARC_SAMPLE_NUM_THRESHOLD PRIME_SHARC_TERMINATION_SAMPLE_THRESHOLD
+#endif
+
 // SHaRC's vendored HLSL path normally stores descriptor-backed RWStructuredBuffers. Prime's
 // immutable ABI stores Vulkan buffer device addresses, so Slang physical pointers provide the
 // same indexed lvalues without modifying the hash-locked third-party headers.

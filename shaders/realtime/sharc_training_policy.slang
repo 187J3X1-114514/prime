@@ -15,13 +15,19 @@ struct PrimeIntegratedSharcTraining : IPrimeWavefrontSharcTraining {
         float3 emissive = primeEvaluateLocalHitEmission(
                 context, path, surface, true);
         uint control = primeSharcTrainingControl(path.pixel);
+        bool anchorEligible = primeSharcCacheEligible(path, surface, false);
         if (!primeSharcTrainingActive(control)) {
-            if (primeSharcCacheEligible(path, surface, false)) {
+            if (anchorEligible) {
                 primeBeginSharcTraining(path, surface, direct);
             }
             return;
         }
-        primeAccumulateSharcTrainingTarget(path, direct + emissive);
+        primeRecordSharcTrainingHit(
+                path,
+                surface,
+                direct,
+                direct + emissive,
+                anchorEligible);
     }
 
     void recordMiss(

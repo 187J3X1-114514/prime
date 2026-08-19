@@ -25,7 +25,10 @@ final class RealtimeSharc implements Destroyable {
     static final long ACCUMULATION_BYTES = (long) CAPACITY * 32L;
     static final long RESOLVED_BYTES = (long) CAPACITY * 24L;
     static final long CACHE_BYTES = HASH_BYTES + ACCUMULATION_BYTES + RESOLVED_BYTES;
-    static final int TRAINING_RECORD_BYTES = 80;
+    static final int TRAINING_ANCHOR_COUNT = 4;
+    static final int TRAINING_RECORD_BYTES = 320;
+    static final int TRAINING_GRID_SIZE = 4;
+    static final int TRAINING_PHASE_COUNT = TRAINING_GRID_SIZE * TRAINING_GRID_SIZE;
     private static final int ACCUMULATION_FRAMES = 64;
     private static final int STALE_FRAMES = 128;
     private static final float LOGARITHM_BASE = 2.0F;
@@ -220,14 +223,14 @@ final class RealtimeSharc implements Destroyable {
         if (width <= 0) {
             throw new IllegalArgumentException("SHARC width must be positive");
         }
-        return Math.floorDiv(width - 1, 5) + 1;
+        return Math.floorDiv(width - 1, TRAINING_GRID_SIZE) + 1;
     }
 
     private static int trainingHeight(int height) {
         if (height <= 0) {
             throw new IllegalArgumentException("SHARC height must be positive");
         }
-        return Math.floorDiv(height - 1, 5) + 1;
+        return Math.floorDiv(height - 1, TRAINING_GRID_SIZE) + 1;
     }
 
     Prepared prepare(
@@ -438,7 +441,9 @@ final class RealtimeSharc implements Destroyable {
                     stack.longs(integratorDescriptorSet),
                     null);
             int pathCount = Math.multiplyExact(this.trainingWidth, this.trainingHeight);
-            VK12.vkCmdDispatch(commandBuffer, Math.floorDiv(pathCount - 1, 64) + 1, 1, 1);
+            int updateCount = Math.multiplyExact(pathCount, TRAINING_ANCHOR_COUNT);
+            VK12.vkCmdDispatch(
+                    commandBuffer, Math.floorDiv(updateCount - 1, 64) + 1, 1, 1);
             diagnostics.recordUpdateEnd(commandBuffer, capture);
             VulkanSync.bufferBarriers(
                     commandBuffer,
@@ -498,7 +503,7 @@ final class RealtimeSharc implements Destroyable {
     }
 
     static int updatePhase(int frameIndex) {
-        return Integer.remainderUnsigned(frameIndex, 25);
+        return Integer.remainderUnsigned(frameIndex, TRAINING_PHASE_COUNT);
     }
 
     static boolean requiresClear(

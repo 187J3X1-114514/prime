@@ -19,20 +19,21 @@ final class RealtimeSharcTest {
     }
 
     @Test
-    void sparseUpdateCyclesEveryFiveByFivePhase() {
-        for (int frame = 0; frame < 50; frame++) {
-            assertEquals(frame % 25, RealtimeSharc.updatePhase(frame));
+    void sparseUpdateCyclesEveryFourByFourPhase() {
+        for (int frame = 0; frame < 32; frame++) {
+            assertEquals(frame % 16, RealtimeSharc.updatePhase(frame));
         }
         assertEquals(
-                Integer.remainderUnsigned(-1, 25),
+                Integer.remainderUnsigned(-1, 16),
                 RealtimeSharc.updatePhase(-1));
     }
 
     @Test
-    void integratedTrainingStoresOneCollapsedRootRecordPerCarrierPath() {
-        assertEquals(80, RealtimeSharc.TRAINING_RECORD_BYTES);
-        assertEquals(6_635_520L, RealtimeSharc.trainingBytes(1920, 1080));
-        assertEquals(26_542_080L, RealtimeSharc.trainingBytes(3840, 2160));
+    void integratedTrainingStoresFourCollapsedAnchorsPerCarrierPath() {
+        assertEquals(4, RealtimeSharc.TRAINING_ANCHOR_COUNT);
+        assertEquals(320, RealtimeSharc.TRAINING_RECORD_BYTES);
+        assertEquals(41_472_000L, RealtimeSharc.trainingBytes(1920, 1080));
+        assertEquals(165_888_000L, RealtimeSharc.trainingBytes(3840, 2160));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RealtimeSharc.trainingBytes(0, 1080));

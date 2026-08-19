@@ -9,14 +9,19 @@ import "material/material.slang";
 [numthreads(64, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     uint pathCount = primeSharcFrame.trainingWidth * primeSharcFrame.trainingHeight;
-    uint pathIndex = dispatchThreadId.x;
-    if (pathIndex >= pathCount) {
+    uint taskIndex = dispatchThreadId.x;
+    uint taskCount = pathCount * PRIME_SHARC_TRAINING_ANCHOR_CAPACITY;
+    if (taskIndex >= taskCount) {
         return;
     }
+    uint pathIndex = taskIndex / PRIME_SHARC_TRAINING_ANCHOR_CAPACITY;
+    uint anchor = taskIndex % PRIME_SHARC_TRAINING_ANCHOR_CAPACITY;
 
-    PrimeSharcTrainingRecord record = primeLoadSharcTrainingRecord(pathIndex);
-    if (!primeSharcTrainingActive(record.control)
-            || !primeSharcTrainingComplete(record.control)) {
+    PrimeSharcTrainingRecord record = primeLoadSharcTrainingRecord(
+            pathIndex, anchor);
+    if (!primeSharcTrainingActive(record.pathControl)
+            || !primeSharcTrainingComplete(record.pathControl)
+            || !primeSharcTrainingActive(record.anchorControl)) {
         return;
     }
     SharcState state;

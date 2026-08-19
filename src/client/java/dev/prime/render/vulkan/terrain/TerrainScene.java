@@ -1,9 +1,11 @@
 package dev.prime.render.vulkan.terrain;
 
+import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.scene.SceneRevisionView;
 import dev.prime.render.terrain.*;
 import dev.prime.render.vulkan.PreparedBlas;
+import dev.prime.render.vulkan.OpacityMicromapPool;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.TopLevelAccelerationStructure;
 import dev.prime.render.vulkan.VulkanBuffer;
@@ -33,6 +35,8 @@ public final class TerrainScene implements AutoCloseable {
 
     private final VulkanContext context;
     private final StagingArena stagingArena;
+    private final OpacityMicromapPool opacityMicromapPool;
+    private final VoxelBlasPool voxelBlasPool = new VoxelBlasPool();
     private final BlasCompactionScheduler compactionScheduler =
             new BlasCompactionScheduler();
     private Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
@@ -54,6 +58,7 @@ public final class TerrainScene implements AutoCloseable {
     public TerrainScene(VulkanContext context, StagingArena stagingArena) {
         this.context = context;
         this.stagingArena = stagingArena;
+        this.opacityMicromapPool = new OpacityMicromapPool(context);
     }
 
     public boolean updateStatic(
@@ -277,7 +282,8 @@ public final class TerrainScene implements AutoCloseable {
 
             if (!replacements.isEmpty() || replacementWorldLights != null) {
                 boolean hasOpacityMicromapBuild = replacements.stream()
-                        .anyMatch(GpuCluster::hasOpacityMicromapBuild);
+                        .anyMatch(cluster -> cluster.hasOpacityMicromapBuild(
+                                this.voxelBlasPool));
                 memoryBarrier(
                         commandBuffer,
                         VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -294,7 +300,8 @@ public final class TerrainScene implements AutoCloseable {
                                 | VK12.VK_ACCESS_SHADER_READ_BIT);
                 if (hasOpacityMicromapBuild) {
                     for (GpuCluster cluster : replacements) {
-                        cluster.recordOpacityMicromapBuild(commandBuffer);
+                        cluster.recordOpacityMicromapBuild(
+                                this.voxelBlasPool, commandBuffer);
                     }
                     // EXT micromap construction and BLAS construction are distinct device
                     // operations. The BLAS is allowed to consume the micromap only after its
@@ -309,7 +316,7 @@ public final class TerrainScene implements AutoCloseable {
                             EXTOpacityMicromap.VK_ACCESS_2_MICROMAP_READ_BIT_EXT);
                 }
                 for (GpuCluster cluster : replacements) {
-                    cluster.recordBuild(commandBuffer);
+                    cluster.recordBuild(this.voxelBlasPool, commandBuffer);
                 }
                 if (!replacements.isEmpty()) {
                     memoryBarrier(
@@ -393,7 +400,8 @@ public final class TerrainScene implements AutoCloseable {
             RuntimeException retirementFailure = null;
             for (GpuCluster replacement : replacements) {
                 retirementFailure = ResourceCleanup.run(
-                        replacement::submitted, retirementFailure);
+                        () -> replacement.submitted(this.voxelBlasPool),
+                        retirementFailure);
                 retirementFailure = ResourceCleanup.run(
                         () -> this.compactionScheduler.register(replacement),
                         retirementFailure);
@@ -410,11 +418,18 @@ public final class TerrainScene implements AutoCloseable {
                 for (GpuCluster replacement : replacements) {
                     if (submitted) {
                         failure = ResourceCleanup.run(
-                                () -> this.context.defer(replacement::destroyAllResources),
+                                () -> {
+                                    Destroyable cleanup = replacement.prepareRetirement(
+                                            this.voxelBlasPool);
+                                    this.context.defer(cleanup);
+                                },
                                 failure);
                     } else {
                         failure = ResourceCleanup.run(
-                                replacement::destroyAllResources, failure);
+                                () -> replacement
+                                        .prepareRetirement(this.voxelBlasPool)
+                                        .destroy(),
+                                failure);
                     }
                 }
                 if (replacementTlas != null) {
@@ -653,12 +668,17 @@ public final class TerrainScene implements AutoCloseable {
     public void close() {
         RuntimeException failure = ResourceCleanup.close(this.compactionScheduler, null);
         for (GpuCluster cluster : this.resident.values()) {
-            failure = ResourceCleanup.run(cluster::destroy, failure);
+            failure = ResourceCleanup.run(
+                    () -> cluster.prepareRetirement(this.voxelBlasPool).destroy(),
+                    failure);
         }
         this.resident.clear();
         if (this.dynamicResident != null) {
             failure = ResourceCleanup.run(
-                    this.dynamicResident::destroy, failure);
+                    () -> this.dynamicResident
+                            .prepareRetirement(this.voxelBlasPool)
+                            .destroy(),
+                    failure);
             this.dynamicResident = null;
         }
         for (TopLevelAccelerationStructure slot : this.tlasSlots) {
@@ -672,6 +692,8 @@ public final class TerrainScene implements AutoCloseable {
             this.currentWorldLights = null;
         }
         this.currentWorldLightTree = CpuWorldLightTree.Result.empty(0);
+        failure = ResourceCleanup.close(this.voxelBlasPool, failure);
+        failure = ResourceCleanup.close(this.opacityMicromapPool, failure);
         ResourceCleanup.throwIfFailed(failure);
     }
 
@@ -976,6 +998,7 @@ public final class TerrainScene implements AutoCloseable {
         long uniqueTriangles = 0L;
         long instancedTriangles = 0L;
         int areaLightEmitters = 0;
+        IdentityHashMap<PreparedBlas, Boolean> uniqueBlases = new IdentityHashMap<>();
         for (var entry : this.resident.long2ObjectEntrySet()) {
             if (removedKeys.contains(entry.getLongKey())) {
                 retired.add(entry.getValue());
@@ -994,12 +1017,15 @@ public final class TerrainScene implements AutoCloseable {
             }
             tlasInstances = Math.addExact(
                     tlasInstances, cluster.tlasInstanceCount());
-            uniqueTriangles = Math.addExact(
-                    uniqueTriangles, cluster.uniqueBlasTriangleCount());
+            cluster.forEachBlas(blas -> uniqueBlases.put(blas, Boolean.TRUE));
             instancedTriangles = Math.addExact(
                     instancedTriangles, cluster.instancedTriangleCount());
             areaLightEmitters = Math.addExact(
                     areaLightEmitters, cluster.lights().emitterCount());
+        }
+        for (PreparedBlas blas : uniqueBlases.keySet()) {
+            uniqueTriangles = Math.addExact(
+                    uniqueTriangles, GpuCluster.triangleCount(blas));
         }
         if (replaceDynamic
                 && this.dynamicResident != null
@@ -1077,7 +1103,12 @@ public final class TerrainScene implements AutoCloseable {
             PreparedUpdate update, RuntimeException retirementFailure) {
         for (GpuCluster removed : update.retired()) {
             retirementFailure = ResourceCleanup.run(
-                    () -> this.context.defer(removed::destroy), retirementFailure);
+                    () -> {
+                        Destroyable cleanup = removed.prepareRetirement(
+                                this.voxelBlasPool);
+                        this.context.defer(cleanup);
+                    },
+                    retirementFailure);
         }
         if (update.previousTlas() != null) {
             retirementFailure = ResourceCleanup.run(
@@ -1181,6 +1212,7 @@ public final class TerrainScene implements AutoCloseable {
                         commandBuffer, stagingBatch, mesh, positions, primitives);
                 blas = PreparedBlas.create(
                         this.context,
+                        this.opacityMicromapPool,
                         positions,
                         primitives,
                         mesh.opacityMicromap(),
@@ -1210,13 +1242,16 @@ public final class TerrainScene implements AutoCloseable {
             }
             CompiledClusterLights.Summary lightSummary = mesh.lights().summary();
             for (int index = 0; index < mesh.voxelMeshes().size(); index++) {
-                voxelBlases.add(this.prepareVoxelMesh(
-                        mesh.voxelMeshes().get(index),
-                        stagingBatch,
-                        commandBuffer,
-                        compactionPolicy,
-                        "Prime cluster " + upload.key()
-                                + " voxel mesh " + index));
+                CpuVoxelMesh voxelMesh = mesh.voxelMeshes().get(index);
+                String label = "Prime cluster " + upload.key()
+                        + " voxel mesh " + index;
+                voxelBlases.add(this.voxelBlasPool.acquire(
+                        voxelMesh,
+                        () -> this.prepareVoxelMesh(
+                                voxelMesh,
+                                stagingBatch,
+                                commandBuffer,
+                                label)));
             }
             if (upload.dynamic() && mesh.triangleCount() != 0L) {
                 motion = this.context.createBuffer(
@@ -1249,14 +1284,19 @@ public final class TerrainScene implements AutoCloseable {
         } catch (RuntimeException exception) {
             RuntimeException failure = exception;
             if (blas != null) {
+                blas.releaseSharedResources();
                 failure = ResourceCleanup.run(blas::destroyAllResources, failure);
             } else {
                 failure = ResourceCleanup.destroy(positions, failure);
                 failure = ResourceCleanup.destroy(primitives, failure);
             }
             for (PreparedBlas voxelBlas : voxelBlases) {
-                failure = ResourceCleanup.run(
-                        voxelBlas::destroyAllResources, failure);
+                PreparedBlas released = this.voxelBlasPool.release(voxelBlas);
+                if (released != null) {
+                    released.releaseSharedResources();
+                    failure = ResourceCleanup.run(
+                            released::destroyAllResources, failure);
+                }
             }
             failure = ResourceCleanup.destroy(lights, failure);
             failure = ResourceCleanup.destroy(motion, failure);
@@ -1268,7 +1308,6 @@ public final class TerrainScene implements AutoCloseable {
             CpuVoxelMesh mesh,
             StagingArena.Batch stagingBatch,
             VkCommandBuffer commandBuffer,
-            PreparedBlas.CompactionPolicy compactionPolicy,
             String label) {
         VulkanBuffer positions = null;
         VulkanBuffer primitives = null;
@@ -1296,6 +1335,7 @@ public final class TerrainScene implements AutoCloseable {
                     primitives);
             blas = PreparedBlas.create(
                     this.context,
+                    this.opacityMicromapPool,
                     positions,
                     primitives,
                     mesh.opacityMicromap(),
@@ -1304,7 +1344,7 @@ public final class TerrainScene implements AutoCloseable {
                     mesh.opaqueTriangleCount(),
                     mesh.cutoutTriangleCount(),
                     mesh.transmissiveTriangleCount(),
-                    compactionPolicy,
+                    PreparedBlas.CompactionPolicy.ENABLED,
                     label + " BLAS");
             return blas;
         } catch (RuntimeException exception) {

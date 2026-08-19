@@ -122,6 +122,7 @@ public final class PreparedBlas {
 
     public static PreparedBlas create(
             VulkanContext context,
+            OpacityMicromapPool opacityMicromapPool,
             VulkanBuffer positions,
             VulkanBuffer primitives,
             OpacityMicromapData opacityMicromapData,
@@ -134,6 +135,7 @@ public final class PreparedBlas {
             String label) {
         return create(
                 context,
+                opacityMicromapPool,
                 positions,
                 primitives,
                 opacityMicromapData,
@@ -151,6 +153,7 @@ public final class PreparedBlas {
 
     public static PreparedBlas create(
             VulkanContext context,
+            OpacityMicromapPool opacityMicromapPool,
             VulkanBuffer positions,
             VulkanBuffer primitives,
             OpacityMicromapData opacityMicromapData,
@@ -175,8 +178,7 @@ public final class PreparedBlas {
         requireMacroCount(opaqueTriangleCount, opaqueMacroTriangleCount);
         requireMacroCount(cutoutTriangleCount, cutoutMacroTriangleCount);
         requireMacroCount(transmissiveTriangleCount, transmissiveMacroTriangleCount);
-        OpacityMicromap opacityMicromap = OpacityMicromap.create(
-                context,
+        OpacityMicromap opacityMicromap = opacityMicromapPool.acquire(
                 opacityMicromapData,
                 staging,
                 commandBuffer,
@@ -480,6 +482,13 @@ public final class PreparedBlas {
                     this.opacityMicromap::retireBuildResources, failure);
         }
         ResourceCleanup.throwIfFailed(failure);
+    }
+
+    /** Releases pooled dependencies on the render thread before deferred destruction. */
+    public void releaseSharedResources() {
+        if (this.opacityMicromap != null) {
+            this.opacityMicromap.releasePoolReference();
+        }
     }
 
     public void destroyPersistentResources() {

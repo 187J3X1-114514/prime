@@ -32,10 +32,20 @@ final class BlasCompactionScheduler implements AutoCloseable {
         if (!blas.compactionEnabled()) {
             return;
         }
-        if (this.byBlas.containsKey(blas)) {
-            throw new IllegalStateException("BLAS compaction job was registered twice");
+        Job existing = this.byBlas.get(blas);
+        if (existing != null) {
+            existing.references = Math.incrementExact(existing.references);
+            existing.cancelled = false;
+            return;
+        }
+        PreparedBlas.CompactionState state = blas.compactionState();
+        if (state == PreparedBlas.CompactionState.NOT_BENEFICIAL
+                || state == PreparedBlas.CompactionState.COMPACTED
+                || state == PreparedBlas.CompactionState.DESTROYED) {
+            return;
         }
         Job job = new Job(blas);
+        job.references = 1;
         this.jobs.add(job);
         this.byBlas.put(blas, job);
     }
@@ -43,7 +53,12 @@ final class BlasCompactionScheduler implements AutoCloseable {
     private void unregister(PreparedBlas blas) {
         Job job = this.byBlas.get(blas);
         if (job != null) {
-            job.cancelled = true;
+            if (job.references <= 0) {
+                throw new IllegalStateException(
+                        "BLAS compaction reference count underflow");
+            }
+            job.references--;
+            job.cancelled = job.references == 0;
         }
     }
 
@@ -324,6 +339,7 @@ final class BlasCompactionScheduler implements AutoCloseable {
         private PreparedBlas.Compaction compaction;
         private boolean published;
         private boolean cancelled;
+        private int references;
 
         private Job(PreparedBlas blas) {
             this.blas = blas;

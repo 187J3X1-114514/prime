@@ -1,9 +1,11 @@
 package dev.prime.render.vulkan.terrain;
 
+import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.*;
 import dev.prime.render.vulkan.PreparedBlas;
 import dev.prime.render.vulkan.VulkanBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -137,14 +139,6 @@ record GpuCluster(
         return Math.addExact(1, this.voxelInstances.count());
     }
 
-    long uniqueBlasTriangleCount() {
-        long count = this.blas == null ? 0L : triangleCount(this.blas);
-        for (PreparedBlas voxelBlas : this.voxelBlases) {
-            count = Math.addExact(count, triangleCount(voxelBlas));
-        }
-        return count;
-    }
-
     long instancedTriangleCount() {
         long count = this.blas == null ? 0L : triangleCount(this.blas);
         for (int meshIndex : this.voxelInstances.meshIndices()) {
@@ -154,7 +148,7 @@ record GpuCluster(
         return count;
     }
 
-    private static long triangleCount(PreparedBlas blas) {
+    static long triangleCount(PreparedBlas blas) {
         return Math.addExact(
                 Math.addExact(
                         blas.opaqueTriangleCount(),
@@ -169,37 +163,38 @@ record GpuCluster(
         this.voxelBlases.forEach(consumer);
     }
 
-    boolean hasOpacityMicromapBuild() {
+    boolean hasOpacityMicromapBuild(VoxelBlasPool voxelPool) {
         if (this.blas != null && this.blas.hasOpacityMicromapBuild()) {
             return true;
         }
         for (PreparedBlas voxelBlas : this.voxelBlases) {
-            if (voxelBlas.hasOpacityMicromapBuild()) {
+            if (voxelPool.hasOpacityMicromapBuild(voxelBlas)) {
                 return true;
             }
         }
         return false;
     }
 
-    void recordOpacityMicromapBuild(VkCommandBuffer commandBuffer) {
+    void recordOpacityMicromapBuild(
+            VoxelBlasPool voxelPool, VkCommandBuffer commandBuffer) {
         if (this.blas != null) {
             this.blas.recordOpacityMicromapBuild(commandBuffer);
         }
         for (PreparedBlas voxelBlas : this.voxelBlases) {
-            voxelBlas.recordOpacityMicromapBuild(commandBuffer);
+            voxelPool.recordOpacityMicromapBuild(voxelBlas, commandBuffer);
         }
     }
 
-    void recordBuild(VkCommandBuffer commandBuffer) {
+    void recordBuild(VoxelBlasPool voxelPool, VkCommandBuffer commandBuffer) {
         if (this.blas != null) {
             this.blas.recordBuild(commandBuffer);
         }
         for (PreparedBlas voxelBlas : this.voxelBlases) {
-            voxelBlas.recordBuild(commandBuffer);
+            voxelPool.recordBuild(voxelBlas, commandBuffer);
         }
     }
 
-    void submitted() {
+    void submitted(VoxelBlasPool voxelPool) {
         RuntimeException failure = null;
         if (this.blas != null) {
             failure = ResourceCleanup.run(this.blas::onBuildSubmitted, failure);
@@ -207,40 +202,40 @@ record GpuCluster(
         }
         for (PreparedBlas voxelBlas : this.voxelBlases) {
             failure = ResourceCleanup.run(
-                    voxelBlas::onBuildSubmitted, failure);
-            failure = ResourceCleanup.run(
-                    voxelBlas::retireBuildResources, failure);
+                    () -> voxelPool.submitted(voxelBlas), failure);
         }
         ResourceCleanup.throwIfFailed(failure);
     }
 
-    void destroy() {
-        RuntimeException failure = null;
+    /**
+     * Releases render-thread-owned pool references and returns GPU cleanup safe to defer.
+     */
+    Destroyable prepareRetirement(VoxelBlasPool voxelPool) {
+        ArrayList<PreparedBlas> releasedVoxelBlases = new ArrayList<>();
         if (this.blas != null) {
-            failure = ResourceCleanup.run(
-                    this.blas::destroyPersistentResources, failure);
+            this.blas.releaseSharedResources();
         }
         for (PreparedBlas voxelBlas : this.voxelBlases) {
-            failure = ResourceCleanup.run(
-                    voxelBlas::destroyPersistentResources, failure);
+            PreparedBlas released = voxelPool.release(voxelBlas);
+            if (released != null) {
+                releasedVoxelBlases.add(released);
+                released.releaseSharedResources();
+            }
         }
-        failure = ResourceCleanup.destroy(this.lightBuffer, failure);
-        failure = ResourceCleanup.destroy(this.motionBuffer, failure);
-        ResourceCleanup.throwIfFailed(failure);
+        return () -> {
+            RuntimeException failure = null;
+            if (this.blas != null) {
+                failure = ResourceCleanup.run(
+                        this.blas::destroyAllResources, failure);
+            }
+            for (PreparedBlas voxelBlas : releasedVoxelBlases) {
+                failure = ResourceCleanup.run(
+                        voxelBlas::destroyAllResources, failure);
+            }
+            failure = ResourceCleanup.destroy(this.lightBuffer, failure);
+            failure = ResourceCleanup.destroy(this.motionBuffer, failure);
+            ResourceCleanup.throwIfFailed(failure);
+        };
     }
 
-    void destroyAllResources() {
-        RuntimeException failure = null;
-        if (this.blas != null) {
-            failure = ResourceCleanup.run(
-                    this.blas::destroyAllResources, failure);
-        }
-        for (PreparedBlas voxelBlas : this.voxelBlases) {
-            failure = ResourceCleanup.run(
-                    voxelBlas::destroyAllResources, failure);
-        }
-        failure = ResourceCleanup.destroy(this.lightBuffer, failure);
-        failure = ResourceCleanup.destroy(this.motionBuffer, failure);
-        ResourceCleanup.throwIfFailed(failure);
-    }
 }

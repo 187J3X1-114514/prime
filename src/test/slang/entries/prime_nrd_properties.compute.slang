@@ -78,6 +78,31 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
                     reflectionOnly, true, false, false).primaryDistance != -1.0) {
         mask |= PRIME_TEST_FAILURE_STATE;
     }
+    PrimeIntegrationResult capturedReflection = primeEmptyIntegrationResult();
+    capturedReflection.reflectionGuides.primaryPosition = float3(2.0, 3.0, 4.0);
+    float4 unavailableReflection =
+            primeCapturedReflectionPreviousVirtualPosition(capturedReflection, false);
+    float4 finiteReflection =
+            primeCapturedReflectionPreviousVirtualPosition(capturedReflection, true);
+    capturedReflection.reflectionGuides.primaryHasMotion = true;
+    capturedReflection.reflectionGuides.primaryPreviousPosition = float3(5.0, 6.0, 7.0);
+    float4 movingReflection =
+            primeCapturedReflectionPreviousVirtualPosition(capturedReflection, true);
+    capturedReflection.reflectionDirectionalGuide = true;
+    capturedReflection.reflectionGuides.primaryHasMotion = false;
+    capturedReflection.reflectionGuides.primaryPosition = float3(0.0, 0.0, 2.0);
+    float4 directionalReflection =
+            primeCapturedReflectionPreviousVirtualPosition(capturedReflection, false);
+    capturedReflection.reflectionGuides.primaryPosition = float3(0.0);
+    float4 invalidDirection =
+            primeCapturedReflectionPreviousVirtualPosition(capturedReflection, false);
+    if (!all(unavailableReflection == float4(0.0, 0.0, 0.0, -1.0))
+            || !all(finiteReflection == float4(2.0, 3.0, 4.0, 0.0))
+            || !all(movingReflection == float4(5.0, 6.0, 7.0, 0.0))
+            || !all(directionalReflection == float4(0.0, 0.0, 1.0, 1.0))
+            || !all(invalidDirection == float4(0.0, 0.0, 0.0, -1.0))) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
     float4 result0 = float4(0.0);
     float4 result1 = float4(0.0);
     float4 result2 = float4(0.0);

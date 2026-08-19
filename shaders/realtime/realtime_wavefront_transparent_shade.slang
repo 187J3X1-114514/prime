@@ -95,6 +95,7 @@ void primeWavefrontTransparentShade<AreaNee, Continuation>(
             transmissionBranch,
             !hadGuide && hasGuide,
             !hadDirectionalGuide && directionalGuide,
+            (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
             branchResult);
 
     uint targetQueue = sourceQueue == PRIME_WAVEFRONT_TRACE_QUEUE_0

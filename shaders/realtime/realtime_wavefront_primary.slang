@@ -230,7 +230,11 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee, Continu
             queued.secondActive = continuation;
         }
         primeStoreTransparentBranchIntermediate(
-                pixel, transmissionBranch, branchResult);
+                pixel,
+                transmissionBranch,
+                hasGuide,
+                primaryReflectionOnly,
+                branchResult);
     }
     return queued;
 }

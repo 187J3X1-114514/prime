@@ -16,9 +16,10 @@ void primeWavefrontLightweightTransparentResolve(
     context.diagnostics.firstContext =
             (primaryDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
                     & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
+    PrimeWavefrontTransportRecord reflectionRecord =
+            primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)].transport;
     uint secondaryDiagnostic = asuint(
-            primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)]
-                    .transport.throughputAndNumericalFlags.w);
+            reflectionRecord.throughputAndNumericalFlags.w);
     uint secondaryFlags =
             secondaryDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
     if (context.diagnostics.flags == 0u && secondaryFlags != 0u) {
@@ -34,9 +35,16 @@ void primeWavefrontLightweightTransparentResolve(
         result.transmissionGuides = primeEmptyDenoiserGuides();
         result.transmissionAnchorDistance = -1.0;
     }
+    uint reflectionControl = asuint(
+            reflectionRecord.rayDirectionAndDenoiserControl.w);
+    float4 reflectionPreviousVirtualPosition =
+            primeCapturedReflectionPreviousVirtualPosition(
+                    result,
+                    (reflectionControl & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u);
     primeWriteRealtimeOutput(
             context.diagnostics,
             pixel,
             primeRealtimeCameraSample(pixel),
-            result);
+            result,
+            reflectionPreviousVirtualPosition);
 }

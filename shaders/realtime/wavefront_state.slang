@@ -940,9 +940,54 @@ void primeStoreWavefrontActiveIntermediate(
     }
 }
 
+void primeStoreRrReflectionGuide(
+        uint2 pixel,
+        bool primaryReflectionOnly,
+        PrimeTransparentBranchResult result) {
+    int2 coordinate = int2(pixel);
+    float3 previousPosition = result.guides.primaryHasMotion
+            && primeNrdIsFinite(result.guides.primaryPreviousPosition)
+            ? result.guides.primaryPreviousPosition
+            : result.guides.primaryPosition;
+    primeImageStore(
+            primeNrdReflectionPosition,
+            coordinate,
+            float4(previousPosition, 0.0));
+    if (!primaryReflectionOnly) {
+        return;
+    }
+    // RR allocates only an independent reflection-position image. Under pure TIR the
+    // transmission identity does not exist, so the reflection guide may safely own the otherwise
+    // idle primary material, normal and current-position images.
+    primeImageStore(
+            primeNrdPrimaryPosition,
+            coordinate,
+            float4(result.guides.primaryPosition, result.guides.primaryDistance));
+    primeImageStore(
+            primeNrdMaterial,
+            coordinate,
+            float4(
+                    result.guides.primaryAlbedo,
+                    result.guides.primaryLinearRoughness));
+    float2 normalOctahedral = unpackSnorm2x16ToFloat(
+            primePackOctahedralNormal(result.guides.primaryNormal));
+    primeImageStore(
+            primeNrdSpecularMaterial,
+            coordinate,
+            float4(
+                    result.guides.primarySpecularAlbedo,
+                    normalOctahedral.y));
+    primeImageStore(
+            primeNrdViewZ,
+            coordinate,
+            float4(normalOctahedral.x));
+}
+
 void primeStoreTransparentBranchIntermediate(
         uint2 pixel,
         bool transmissionBranch,
+        bool hasGuide,
+        bool primaryReflectionOnly,
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
@@ -1012,6 +1057,15 @@ void primeStoreTransparentBranchIntermediate(
                                 result.diffuseRadiance
                                         + result.specularRadiance),
                         visibleScratch.a));
+        if (hasGuide) {
+            primeStoreRrReflectionGuide(
+                    pixel, primaryReflectionOnly, result);
+        } else {
+            primeImageStore(
+                    primeNrdReflectionPosition,
+                    coordinate,
+                    float4(0.0, 0.0, 0.0, -1.0));
+        }
         return;
     }
     primeImageStore(
@@ -1121,6 +1175,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
 void primeStoreTransparentBranchGuide(
         uint2 pixel,
         bool transmissionBranch,
+        bool primaryReflectionOnly,
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
@@ -1154,6 +1209,8 @@ void primeStoreTransparentBranchGuide(
         return;
     }
     if (!primeWritesNrdShInputs()) {
+        primeStoreRrReflectionGuide(
+                pixel, primaryReflectionOnly, result);
         return;
     }
 
@@ -1191,6 +1248,7 @@ void primeStoreTransparentBranchActiveIntermediate(
         bool transmissionBranch,
         bool storeGuide,
         bool storeDirectionalPosition,
+        bool primaryReflectionOnly,
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
@@ -1251,10 +1309,9 @@ void primeStoreTransparentBranchActiveIntermediate(
 
     if (storeGuide) {
         primeStoreTransparentBranchGuide(
-                pixel, transmissionBranch, result);
+                pixel, transmissionBranch, primaryReflectionOnly, result);
     } else if (storeDirectionalPosition
-            && !transmissionBranch
-            && primeWritesNrdShInputs()) {
+            && !transmissionBranch) {
         primeImageStore(
                 primeNrdReflectionPosition,
                 coordinate,
@@ -1268,6 +1325,10 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
         uint control) {
     int2 coordinate = int2(pixel);
     bool nrdShInputs = primeWritesNrdShInputs();
+    bool rrReflectionPrimaryGuide = !nrdShInputs
+            && !transmissionBranch
+            && (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u
+            && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     float4 diffuse = transmissionBranch
             ? primeImageLoad(primeNrdNoisyDiffuse, coordinate)
             : nrdShInputs
@@ -1279,20 +1340,21 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
                     ? primeImageLoad(primeNrdReflectionNoisySpecular, coordinate)
                     : float4(0.0);
     float4 position = transmissionBranch
-            ? primeImageLoad(primeNrdPrimaryPosition, coordinate)
-            : nrdShInputs
-                    ? primeImageLoad(primeNrdReflectionPosition, coordinate)
-                    : float4(0.0);
+            || rrReflectionPrimaryGuide
+                    ? primeImageLoad(primeNrdPrimaryPosition, coordinate)
+                    : primeImageLoad(primeNrdReflectionPosition, coordinate);
     float4 material = transmissionBranch
-            ? primeImageLoad(primeNrdMaterial, coordinate)
-            : nrdShInputs
-                    ? primeImageLoad(primeNrdReflectionMaterial, coordinate)
-                    : float4(0.0);
+            || rrReflectionPrimaryGuide
+                    ? primeImageLoad(primeNrdMaterial, coordinate)
+                    : nrdShInputs
+                            ? primeImageLoad(primeNrdReflectionMaterial, coordinate)
+                            : float4(0.0, 0.0, 0.0, -1.0);
     float4 specularMaterial = transmissionBranch
-            ? primeImageLoad(primeNrdSpecularMaterial, coordinate)
-            : nrdShInputs
-                    ? primeImageLoad(primeNrdReflectionSpecularMaterial, coordinate)
-                    : float4(0.0);
+            || rrReflectionPrimaryGuide
+                    ? primeImageLoad(primeNrdSpecularMaterial, coordinate)
+                    : nrdShInputs
+                            ? primeImageLoad(primeNrdReflectionSpecularMaterial, coordinate)
+                            : float4(0.0);
     float4 branchMetadata = transmissionBranch
             ? primeImageLoad(primeWavefrontTransportMetadata, coordinate)
             : position;
@@ -1304,7 +1366,9 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
     result.guides.specularHitDistance = specular.a;
     result.guides.primaryPosition = position.xyz;
     result.guides.primaryDistance =
-            transmissionBranch ? position.w : material.w;
+            transmissionBranch || rrReflectionPrimaryGuide
+                    ? position.w
+                    : material.w;
     result.guides.primaryHitKind = result.guides.primaryDistance >= 0.0
             ? PRIME_HIT_SURFACE
             : PRIME_HIT_NONE;
@@ -1313,13 +1377,13 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
             (control >> PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT)
                     & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK;
     result.guides.primarySpecularAlbedo = specularMaterial.rgb;
-    if (transmissionBranch) {
+    if (transmissionBranch || rrReflectionPrimaryGuide) {
         result.guides.primaryNormal = primeUnpackOctahedralNormal(
                 packSnorm2x16(float2(
                         primeImageLoad(primeNrdViewZ, coordinate).r,
                         specularMaterial.a)));
         result.guides.primaryLinearRoughness = material.w;
-        if (primeWritesNrdShInputs()) {
+        if (transmissionBranch && primeWritesNrdShInputs()) {
             result.guides.diffuseDirection = primeRestoreFp16Direction(
                     primeImageLoad(primeNrdDiffuseDirection, coordinate).xyz);
             result.guides.specularDirection = primeRestoreFp16Direction(

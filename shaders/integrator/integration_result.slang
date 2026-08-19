@@ -122,6 +122,27 @@ public bool primeRrUsesReflectionPrimaryGuide(
             && result.reflectionGuides.primaryHitKind == PRIME_HIT_SURFACE;
 }
 
+public float4 primeCapturedReflectionPreviousVirtualPosition(
+        PrimeIntegrationResult result,
+        bool reachedSolidAngle) {
+    float3 position = result.reflectionGuides.primaryHasMotion
+            ? result.reflectionGuides.primaryPreviousPosition
+            : result.reflectionGuides.primaryPosition;
+    bool finite = !any(isnan(position)) && !any(isinf(position));
+    if (!finite) {
+        return float4(0.0, 0.0, 0.0, -1.0);
+    }
+    if (result.reflectionDirectionalGuide) {
+        float lengthSquared = dot(position, position);
+        return lengthSquared > 1.0e-12 && !isnan(lengthSquared) && !isinf(lengthSquared)
+                ? float4(position * rsqrt(lengthSquared), 1.0)
+                : float4(0.0, 0.0, 0.0, -1.0);
+    }
+    return reachedSolidAngle
+            ? float4(position, 0.0)
+            : float4(0.0, 0.0, 0.0, -1.0);
+}
+
 public PrimeDenoiserGuides primeSelectReconstructionPrimaryGuides(
         PrimeIntegrationResult result,
         bool nrdShInputs,

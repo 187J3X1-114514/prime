@@ -4,10 +4,9 @@
 import "core/packed_geometry.slang";
 #include "lighting/sharc_training_core.slang"
 
-// A selected main-wavefront path trains one cache root. Half of the roots follow the complete
-// renderer path; the other half stop at the first later cache hit and use that previous-frame
-// radiance as a one-edge bootstrap target. Collapsing every downstream contribution into the
-// root's transport frame removes the old fixed-bounce truncation without retaining every vertex.
+// A selected main-wavefront path follows the complete renderer path and trains one collapsed cache
+// root. Training never consumes cached radiance, so changing illumination cannot form a temporal
+// feedback edge through another voxel.
 static const uint PRIME_SHARC_TRAINING_RECORD_WORDS = 20u;
 static const uint PRIME_SHARC_TRAINING_RECORD_BYTES =
         PRIME_SHARC_TRAINING_RECORD_WORDS * 4u;
@@ -16,7 +15,8 @@ static const uint PRIME_SHARC_TRAINING_CONTROL_WORD = 0u;
 static const uint PRIME_SHARC_TRAINING_ROOT_THROUGHPUT_WORD = 1u;
 static const uint PRIME_SHARC_TRAINING_POSITION_WORD = 4u;
 static const uint PRIME_SHARC_TRAINING_NORMAL_WORD = 7u;
-static const uint PRIME_SHARC_TRAINING_ROOT_KEY_WORD = 8u;
+static const uint PRIME_SHARC_TRAINING_RADIANCE_DIRECTION_WORD = 8u;
+// Word 9 preserves the existing 80-byte stride after retiring the two-word bootstrap root key.
 static const uint PRIME_SHARC_TRAINING_DEMODULATION_WORD = 10u;
 static const uint PRIME_SHARC_TRAINING_DIRECT_WORD = 13u;
 static const uint PRIME_SHARC_TRAINING_TAIL_WORD = 16u;
@@ -29,6 +29,7 @@ struct PrimeSharcTrainingRecord {
     float3 rootThroughput;
     float3 position;
     float3 geometricNormal;
+    float3 radianceDirection;
     float3 materialDemodulation;
     float3 direct;
     float3 tail;
@@ -75,16 +76,6 @@ uint primeSharcTrainingControl(uint2 pixel) {
     return words[base + PRIME_SHARC_TRAINING_CONTROL_WORD];
 }
 
-void primeSharcTrainingStoreKey(uint* words, uint offset, HashGridKey key) {
-    words[offset + 0u] = uint(key);
-    words[offset + 1u] = uint(key >> 32u);
-}
-
-HashGridKey primeSharcTrainingLoadKey(uint* words, uint offset) {
-    return HashGridKey(words[offset + 0u])
-            | (HashGridKey(words[offset + 1u]) << 32u);
-}
-
 float primeSharcTrainingIncomingDirectionWeight(PathState path) {
     if (path.previousSharcEvent == PRIME_SHARC_TRAINING_PATH_EVENT_DISCRETE) {
         return 1.0;
@@ -110,40 +101,11 @@ uint primeSharcTrainingEnsureDirection(
     return control;
 }
 
-bool primeSharcTrainingSelectsAnchor(PathState path) {
-    uint hash = primeHash32(path.pixel.x);
-    hash = primeHashCombine(hash, path.pixel.y);
-    hash = primeHashCombine(hash, primeSharcFrame.frameIndex);
-    return (hash & 1u) == 0u;
-}
-
-// Called only after the ordinary SHARC eligibility checks. An uninitialized training pixel opens
-// its root here; a bootstrap path bypasses only that same root and queries at later eligible hits.
+// Selected training paths bypass every cache query until transport completes.
 bool primeSharcTrainingBypassesCache(PathState path) {
     bool selected = primeSharcTrainingPixel(path.pixel);
     uint control = selected ? primeSharcTrainingControl(path.pixel) : 0u;
-    return primeSharcTrainingBypassesCacheValue(
-            selected, control, path.bounce);
-}
-
-bool primeSharcTrainingRejectsSelfFeedback(
-        PathState path,
-        HashGridKey candidateKey) {
-    if (!primeSharcTrainingPixel(path.pixel)) {
-        return false;
-    }
-    uint* words = primeSharcTrainingRecordWords();
-    uint base = primeSharcTrainingRecordBase(
-            primeSharcTrainingPathIndex(path.pixel));
-    uint control = words[base + PRIME_SHARC_TRAINING_CONTROL_WORD];
-    if (!primeSharcTrainingActive(control)
-            || primeSharcTrainingComplete(control)
-            || primeSharcTrainingAnchor(control)
-            || path.bounce <= primeSharcTrainingRootBounce(control)) {
-        return false;
-    }
-    return candidateKey == primeSharcTrainingLoadKey(
-            words, base + PRIME_SHARC_TRAINING_ROOT_KEY_WORD);
+    return primeSharcTrainingBypassesCacheValue(selected, control);
 }
 
 void primeBeginSharcTraining(
@@ -161,12 +123,9 @@ void primeBeginSharcTraining(
             words, base + PRIME_SHARC_TRAINING_POSITION_WORD, surface.position);
     uint packedNormal = primePackOctahedralNormal(surface.geometricNormal);
     words[base + PRIME_SHARC_TRAINING_NORMAL_WORD] = packedNormal;
-    HashGridKey rootKey = HashGridComputeSpatialHash(
-            surface.position,
-            primeUnpackOctahedralNormal(packedNormal),
-            primeSharcParameters().hashGridParameters);
-    primeSharcTrainingStoreKey(
-            words, base + PRIME_SHARC_TRAINING_ROOT_KEY_WORD, rootKey);
+    words[base + PRIME_SHARC_TRAINING_RADIANCE_DIRECTION_WORD] =
+            primePackOctahedralNormal(
+                    primeSharcTrainingRootRadianceDirection(path.rayDirection));
     primeSharcTrainingStoreFloat3(
             words,
             base + PRIME_SHARC_TRAINING_DEMODULATION_WORD,
@@ -178,8 +137,7 @@ void primeBeginSharcTraining(
     primeSharcTrainingStoreFloat3(
             words, base + PRIME_SHARC_TRAINING_TAIL_WORD, float3(0.0));
     words[base + PRIME_SHARC_TRAINING_DIRECTION_WEIGHT_WORD] = asuint(0.0);
-    uint control = primeSharcTrainingRootControl(
-            path.bounce, primeSharcTrainingSelectsAnchor(path));
+    uint control = primeSharcTrainingRootControl(path.bounce);
     // Publish control last. Inter-dispatch barriers make the completed root visible to consumers.
     words[base + PRIME_SHARC_TRAINING_CONTROL_WORD] = control;
 }
@@ -243,6 +201,8 @@ PrimeSharcTrainingRecord primeLoadSharcTrainingRecord(uint pathIndex) {
             words, base + PRIME_SHARC_TRAINING_POSITION_WORD);
     record.geometricNormal = primeUnpackOctahedralNormal(
             words[base + PRIME_SHARC_TRAINING_NORMAL_WORD]);
+    record.radianceDirection = primeUnpackOctahedralNormal(
+            words[base + PRIME_SHARC_TRAINING_RADIANCE_DIRECTION_WORD]);
     record.materialDemodulation = primeSharcTrainingLoadFloat3(
             words, base + PRIME_SHARC_TRAINING_DEMODULATION_WORD);
     float3 direct = primeSharcTrainingLoadFloat3(

@@ -16,20 +16,18 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     float3 localRadiance = asfloat(primeTestInput[inputOffset + 3u]).xyz;
 
     bool selected = inputControl.x != 0u;
-    uint bounce = inputControl.y;
     uint rootBounce = inputControl.z;
-    bool anchor = (inputControl.w & 1u) != 0u;
-    bool complete = (inputControl.w & 2u) != 0u;
-    bool initialized = (inputControl.w & 4u) != 0u;
+    bool complete = (inputControl.w & 1u) != 0u;
+    bool initialized = (inputControl.w & 2u) != 0u;
     uint control = initialized
-            ? primeSharcTrainingRootControl(rootBounce, anchor)
+            ? primeSharcTrainingRootControl(rootBounce)
             : 0u;
     if (complete) control |= PRIME_SHARC_TRAINING_COMPLETE;
 
-    bool bypass = primeSharcTrainingBypassesCacheValue(
-            selected, control, bounce);
-    bool expectedBypass = selected && !complete
-            && (!initialized || anchor || bounce <= min(rootBounce, 255u));
+    bool bypass = primeSharcTrainingBypassesCacheValue(selected, control);
+    bool expectedBypass = selected && !complete;
+    float3 rootDirection = primeSharcTrainingRootRadianceDirection(rootThroughput);
+    float3 expectedRootDirection = -rootThroughput;
     float3 accumulated = primeSharcTrainingAccumulateTarget(
             target, rootThroughput, localRadiance);
     float3 expectedAccumulated = target + rootThroughput * localRadiance;
@@ -42,17 +40,20 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
             rootThroughput.z > 0.0
                     ? expectedAccumulated.z / rootThroughput.z : 0.0);
 
-    uint mask = primeTestClassify(accumulated) | primeTestClassify(ratio);
+    uint mask = primeTestClassify(accumulated)
+            | primeTestClassify(ratio)
+            | primeTestClassify(rootDirection);
     if (bypass != expectedBypass
             || (initialized
                     && (primeSharcTrainingRootBounce(control)
                             != min(rootBounce, 255u)
-                        || primeSharcTrainingAnchor(control) != anchor
                         || !primeSharcTrainingActive(control)))) {
         mask |= PRIME_TEST_FAILURE_STATE;
     }
     if (!primeTestClose(accumulated, expectedAccumulated, 0.0, 0.0)
-            || !primeTestClose(ratio, expectedRatio, 0.0, 0.0)) {
+            || !primeTestClose(ratio, expectedRatio, 0.0, 0.0)
+            || !primeTestClose(
+                    rootDirection, expectedRootDirection, 0.0, 0.0)) {
         mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
 
@@ -62,6 +63,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     if (outputWords >= PRIME_SHARC_TRAINING_WITNESS_WORDS) {
         primeTestOutput[outputOffset + 1u] = asuint(float4(accumulated, 0.0));
         primeTestOutput[outputOffset + 2u] = asuint(float4(ratio, 0.0));
-        primeTestOutput[outputOffset + 3u] = inputControl;
+        primeTestOutput[outputOffset + 3u] = asuint(float4(rootDirection, 0.0));
     }
 }

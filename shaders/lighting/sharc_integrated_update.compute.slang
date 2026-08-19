@@ -24,7 +24,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     SharcHitData hit = primeSharcHitData(
             record.position,
             record.geometricNormal,
-            float3(0.0, 0.0, 1.0),
+            record.radianceDirection,
             0.0,
             record.materialDemodulation,
             float3(0.0));

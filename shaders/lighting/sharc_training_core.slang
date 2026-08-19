@@ -3,8 +3,7 @@
 
 static const uint PRIME_SHARC_TRAINING_ACTIVE = 1u;
 static const uint PRIME_SHARC_TRAINING_COMPLETE = 2u;
-static const uint PRIME_SHARC_TRAINING_ANCHOR = 4u;
-static const uint PRIME_SHARC_TRAINING_DIRECTION = 8u;
+static const uint PRIME_SHARC_TRAINING_DIRECTION = 4u;
 static const uint PRIME_SHARC_TRAINING_ROOT_BOUNCE_SHIFT = 8u;
 static const uint PRIME_SHARC_TRAINING_ROOT_BOUNCE_MASK = 0xffu;
 
@@ -16,34 +15,25 @@ bool primeSharcTrainingComplete(uint control) {
     return (control & PRIME_SHARC_TRAINING_COMPLETE) != 0u;
 }
 
-bool primeSharcTrainingAnchor(uint control) {
-    return (control & PRIME_SHARC_TRAINING_ANCHOR) != 0u;
-}
-
 uint primeSharcTrainingRootBounce(uint control) {
     return (control >> PRIME_SHARC_TRAINING_ROOT_BOUNCE_SHIFT)
             & PRIME_SHARC_TRAINING_ROOT_BOUNCE_MASK;
 }
 
-uint primeSharcTrainingRootControl(uint bounce, bool anchor) {
+uint primeSharcTrainingRootControl(uint bounce) {
     return PRIME_SHARC_TRAINING_ACTIVE
-            | (anchor ? PRIME_SHARC_TRAINING_ANCHOR : 0u)
             | (min(bounce, PRIME_SHARC_TRAINING_ROOT_BOUNCE_MASK)
                     << PRIME_SHARC_TRAINING_ROOT_BOUNCE_SHIFT);
 }
 
 bool primeSharcTrainingBypassesCacheValue(
         bool selected,
-        uint control,
-        uint bounce) {
-    if (!selected || primeSharcTrainingComplete(control)) {
-        return false;
-    }
-    if (!primeSharcTrainingActive(control)
-            || primeSharcTrainingAnchor(control)) {
-        return true;
-    }
-    return bounce <= primeSharcTrainingRootBounce(control);
+        uint control) {
+    return selected && !primeSharcTrainingComplete(control);
+}
+
+float3 primeSharcTrainingRootRadianceDirection(float3 rayDirection) {
+    return -rayDirection;
 }
 
 float primeSharcTrainingRatio(float numerator, float denominator) {

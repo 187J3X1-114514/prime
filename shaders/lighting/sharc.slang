@@ -6,8 +6,8 @@
 #define SHARC_USE_FP16 1
 #define SHARC_ENABLE_FADE_ACCELERATION 1
 #define SHARC_ENABLE_RESPONSIVE_LIGHTING 0
-// Prime performs explicit previous-frame bootstrap at a later main-wavefront vertex. Keep vendor
-// Update resampling disabled so replay cannot introduce an implicit or same-root feedback edge.
+// Training targets come only from traced anchor paths. Keep vendor resampling disabled so cached
+// radiance cannot re-enter the update stream through an implicit feedback edge.
 #define SHARC_ENABLE_CACHE_RESAMPLING 0
 #define SHARC_MATERIAL_DEMODULATION 1
 #define SHARC_SEPARATE_EMISSIVE 1

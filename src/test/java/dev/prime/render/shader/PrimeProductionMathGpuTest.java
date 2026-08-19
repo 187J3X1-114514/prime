@@ -74,7 +74,8 @@ final class PrimeProductionMathGpuTest {
     }
 
     @Test
-    void sharcTrainingStateAndCollapsedTargetsPreserveTransport() throws IOException {
+    void sharcAnchorTrainingStateDirectionAndCollapsedTargetsPreserveTransport()
+            throws IOException {
         int cases = CASES_PER_KIND;
         int inputWords = 4;
         ShaderPropertyBatch.assertProperties(
@@ -1321,7 +1322,7 @@ final class PrimeProductionMathGpuTest {
         ByteBuffer input = ShaderTestBuffer.inputs(cases, words);
         SplittableRandom random = new SplittableRandom(SHARC_TRAINING_SEED);
         for (int index = 0; index < cases; index++) {
-            int state = index & 7;
+            int state = index & 3;
             putInt(input, index, words, 0, 0, (index & 8) == 0 ? 0 : 1);
             putInt(input, index, words, 0, 1, random.nextInt(320));
             putInt(input, index, words, 0, 2, random.nextInt(320));

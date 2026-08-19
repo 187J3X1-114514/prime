@@ -56,8 +56,7 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
         if (!primeSharcCacheEligible(path, surface, diagnosticSample)) {
             return result;
         }
-        // Anchors never query after opening their root. Bootstrap paths bypass the root itself,
-        // then terminate at the first later cache hit; cache misses continue in the main queue.
+        // Training paths must trace their complete transport suffix without cached feedback.
         if (primeSharcTrainingBypassesCache(path)) {
             return result;
         }
@@ -73,13 +72,6 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
                 primeSharcMaterialDemodulation(surface),
                 primeEvaluateLocalHitEmission(
                         context, path, surface, previousUsedAreaNee));
-        HashGridKey hashKey = HashGridComputeSpatialHash(
-                hit.positionWorld,
-                hit.normalWorld,
-                primeSharcParameters().hashGridParameters);
-        if (primeSharcTrainingRejectsSelfFeedback(path, hashKey)) {
-            return result;
-        }
         float3 radiance;
         primeRecordSharcDiagnostic(
                 diagnosticSample, PRIME_SHARC_DIAGNOSTIC_LOOKUP);

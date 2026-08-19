@@ -185,13 +185,14 @@ struct PrimeSerSurfaceTracePolicy : IPrimeSurfaceTracePolicy {
                 direction,
                 1000000.0,
                 payloadLocation);
-        // Six section bits preserve primitive-buffer locality; two bits identify the transport
-        // class so reordered invocations remain coherent on return to shading.
-        uint coherenceHint = ((pathClass & 0x3u) << 6u)
-                | (hitObjectIsHitEXT(hitObject)
-                        ? uint(hitObjectGetInstanceIdEXT(hitObject)) & 0x3fu
-                        : 0u);
-        reorderThreadEXT(hitObject, coherenceHint, 8u);
+        // Eight section bits preserve primitive-buffer locality, two geometry bits separate
+        // opaque, cutout and transmissive hit work, and two transport bits keep the return to
+        // ordinary, transparent-reflection or transparent-transmission shading coherent.
+        bool hit = hitObjectIsHitEXT(hitObject);
+        uint coherenceHint = ((pathClass & 0x3u) << 10u)
+                | (hit ? (uint(hitObjectGetGeometryIndexEXT(hitObject)) & 0x3u) << 8u : 0u)
+                | (hit ? uint(hitObjectGetInstanceIdEXT(hitObject)) & 0xffu : 0u);
+        reorderThreadEXT(hitObject, coherenceHint, 12u);
         hitObjectExecuteShaderEXT(hitObject, payloadLocation);
     }
 };

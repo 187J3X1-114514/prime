@@ -37,6 +37,7 @@ public final class PreparedBlas {
     private VulkanBuffer compactionResult;
     private long compactionQueryPool;
     private final CompactionPolicy compactionPolicy;
+    private final boolean ownsGeometryBuffers;
     private CompactionState compactionState;
     private long compactionSourceSize;
     private long compactedSize;
@@ -64,6 +65,7 @@ public final class PreparedBlas {
             long cutoutMacroTriangleCount,
             long transmissiveMacroTriangleCount,
             CompactionPolicy compactionPolicy,
+            boolean ownsGeometryBuffers,
             String label) {
         this.context = context;
         this.accelerationStructure = accelerationStructure;
@@ -80,6 +82,7 @@ public final class PreparedBlas {
         this.cutoutMacroTriangleCount = cutoutMacroTriangleCount;
         this.transmissiveMacroTriangleCount = transmissiveMacroTriangleCount;
         this.compactionPolicy = compactionPolicy;
+        this.ownsGeometryBuffers = ownsGeometryBuffers;
         this.compactionState = compactionPolicy == CompactionPolicy.ENABLED
                 ? CompactionState.BUILD_PENDING
                 : CompactionState.DISABLED;
@@ -166,6 +169,78 @@ public final class PreparedBlas {
             long cutoutMacroTriangleCount,
             long transmissiveMacroTriangleCount,
             CompactionPolicy compactionPolicy,
+            String label) {
+        return create(
+                context,
+                opacityMicromapPool,
+                positions,
+                primitives,
+                opacityMicromapData,
+                staging,
+                commandBuffer,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                opaqueMacroTriangleCount,
+                cutoutMacroTriangleCount,
+                transmissiveMacroTriangleCount,
+                compactionPolicy,
+                true,
+                label);
+    }
+
+    /** Creates a BLAS whose position and primitive buffers outlive this build object. */
+    public static PreparedBlas createWithBorrowedGeometry(
+            VulkanContext context,
+            OpacityMicromapPool opacityMicromapPool,
+            VulkanBuffer positions,
+            VulkanBuffer primitives,
+            OpacityMicromapData opacityMicromapData,
+            StagingArena.Batch staging,
+            VkCommandBuffer commandBuffer,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            long opaqueMacroTriangleCount,
+            long cutoutMacroTriangleCount,
+            long transmissiveMacroTriangleCount,
+            CompactionPolicy compactionPolicy,
+            String label) {
+        return create(
+                context,
+                opacityMicromapPool,
+                positions,
+                primitives,
+                opacityMicromapData,
+                staging,
+                commandBuffer,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                opaqueMacroTriangleCount,
+                cutoutMacroTriangleCount,
+                transmissiveMacroTriangleCount,
+                compactionPolicy,
+                false,
+                label);
+    }
+
+    private static PreparedBlas create(
+            VulkanContext context,
+            OpacityMicromapPool opacityMicromapPool,
+            VulkanBuffer positions,
+            VulkanBuffer primitives,
+            OpacityMicromapData opacityMicromapData,
+            StagingArena.Batch staging,
+            VkCommandBuffer commandBuffer,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            long opaqueMacroTriangleCount,
+            long cutoutMacroTriangleCount,
+            long transmissiveMacroTriangleCount,
+            CompactionPolicy compactionPolicy,
+            boolean ownsGeometryBuffers,
             String label) {
         if (compactionPolicy == null) {
             throw new IllegalArgumentException("BLAS compaction policy must not be null");
@@ -256,6 +331,7 @@ public final class PreparedBlas {
                         cutoutMacroTriangleCount,
                         transmissiveMacroTriangleCount,
                         compactionPolicy,
+                        ownsGeometryBuffers,
                         label);
             } catch (RuntimeException exception) {
                 RuntimeException failure = ResourceCleanup.destroy(
@@ -496,13 +572,15 @@ public final class PreparedBlas {
             this.transition(CompactionEvent.DESTROYED);
         }
         RuntimeException failure = ResourceCleanup.destroy(this.accelerationStructure, null);
-        failure = ResourceCleanup.destroy(this.primitives, failure);
+        if (this.ownsGeometryBuffers) {
+            failure = ResourceCleanup.destroy(this.primitives, failure);
+        }
         failure = ResourceCleanup.destroy(this.opacityMicromap, failure);
         failure = ResourceCleanup.run(this::destroyCompactionQuery, failure);
-        if (this.positions != null) {
+        if (this.ownsGeometryBuffers && this.positions != null) {
             failure = ResourceCleanup.destroy(this.positions, failure);
-            this.positions = null;
         }
+        this.positions = null;
         ResourceCleanup.throwIfFailed(failure);
     }
 

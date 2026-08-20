@@ -11,7 +11,8 @@
   BLAS/TLAS instance；
 - 为纹理体素表面设计跨 cluster GPU mesh 池，复用相同纹理、UV 和朝向生成的
   BLAS、primitive 与 OMM，同时明确 resource epoch、引用所有权、compaction 注册和退休顺序；
-- 评估 TLAS refit 或更有效的批处理；新 geometry 不得在可见性结构外提前发布。
+- 评估地形静态更新更有效的批处理；动态捕获固定逐帧重建 BLAS/TLAS，不做 dirty check
+  或 refit。新 geometry 不得在可见性结构外提前发布。
 - 评估让同一 motion/lifetime domain 内的动态表面复用静态 `SurfaceDefinition` resolver；必须
   保持逐帧 resident 所有权、previous-position 对应和无法证明关系时的原几何回退。
 

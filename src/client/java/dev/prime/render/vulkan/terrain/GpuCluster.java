@@ -23,7 +23,8 @@ record GpuCluster(
         VulkanBuffer lightBuffer,
         VulkanBuffer motionBuffer,
         CompiledClusterLights.Summary lights,
-        boolean dynamic) {
+        boolean dynamic,
+        DynamicBufferPool.Lease dynamicBuffers) {
     GpuCluster {
         voxelBlases = List.copyOf(voxelBlases);
         voxelInstances = Objects.requireNonNull(
@@ -33,6 +34,11 @@ record GpuCluster(
                 || motionBuffer != null && !dynamic) {
             throw new IllegalArgumentException(
                     "Only a dynamic cluster may own previous-position storage");
+        }
+        if (dynamicBuffers != null
+                && (!dynamic || motionBuffer != dynamicBuffers.motion())) {
+            throw new IllegalArgumentException(
+                    "A dynamic buffer lease must own the cluster motion buffer");
         }
         if (voxelBlases.isEmpty() != (voxelInstances.count() == 0)) {
             throw new IllegalArgumentException(
@@ -70,7 +76,8 @@ record GpuCluster(
                 lightBuffer,
                 motionBuffer,
                 lights,
-                dynamic);
+                dynamic,
+                null);
     }
 
     GpuCluster(
@@ -113,7 +120,8 @@ record GpuCluster(
                 lightBuffer,
                 null,
                 lights,
-                dynamic);
+                dynamic,
+                null);
     }
     long lightAddress() {
         // Dynamic clusters have no emitters, so this section slot carries the previous-position
@@ -233,7 +241,11 @@ record GpuCluster(
                         voxelBlas::destroyAllResources, failure);
             }
             failure = ResourceCleanup.destroy(this.lightBuffer, failure);
-            failure = ResourceCleanup.destroy(this.motionBuffer, failure);
+            if (this.dynamicBuffers != null) {
+                failure = ResourceCleanup.run(this.dynamicBuffers::release, failure);
+            } else {
+                failure = ResourceCleanup.destroy(this.motionBuffer, failure);
+            }
             ResourceCleanup.throwIfFailed(failure);
         };
     }

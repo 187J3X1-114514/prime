@@ -36,6 +36,7 @@ public final class TerrainScene implements AutoCloseable {
     private final VulkanContext context;
     private final StagingArena stagingArena;
     private final OpacityMicromapPool opacityMicromapPool;
+    private final DynamicBufferPool dynamicBufferPool;
     private final VoxelBlasPool voxelBlasPool = new VoxelBlasPool();
     private final BlasCompactionScheduler compactionScheduler =
             new BlasCompactionScheduler();
@@ -59,6 +60,7 @@ public final class TerrainScene implements AutoCloseable {
         this.context = context;
         this.stagingArena = stagingArena;
         this.opacityMicromapPool = new OpacityMicromapPool(context);
+        this.dynamicBufferPool = new DynamicBufferPool(context);
     }
 
     public boolean updateStatic(
@@ -121,8 +123,9 @@ public final class TerrainScene implements AutoCloseable {
             combined.add(dynamicUpload);
             uploads = combined;
         }
-        boolean contentChanged = this.hasActualContentChange(
-                staticUploads, evictions, dynamicUpload, replaceDynamic);
+        // Dynamic capture is the frame clock: replace and rebuild BLAS/TLAS without a dirty check.
+        boolean contentChanged = replaceDynamic
+                || this.hasActualContentChange(staticUploads, evictions);
         boolean staticContentChanged =
                 this.hasActualStaticContentChange(staticUploads, evictions);
         LongOpenHashSet removedKeys = removedKeys(staticUploads, evictions);
@@ -693,6 +696,7 @@ public final class TerrainScene implements AutoCloseable {
         }
         this.currentWorldLightTree = CpuWorldLightTree.Result.empty(0);
         failure = ResourceCleanup.close(this.voxelBlasPool, failure);
+        failure = ResourceCleanup.run(this.dynamicBufferPool::destroy, failure);
         failure = ResourceCleanup.close(this.opacityMicromapPool, failure);
         ResourceCleanup.throwIfFailed(failure);
     }
@@ -772,9 +776,7 @@ public final class TerrainScene implements AutoCloseable {
 
     private boolean hasActualContentChange(
             List<CompiledCluster> uploads,
-            long[] evictions,
-            @Nullable CompiledCluster dynamicUpload,
-            boolean replaceDynamic) {
+            long[] evictions) {
         for (long key : evictions) {
             if (this.resident.containsKey(key)) {
                 return true;
@@ -785,9 +787,7 @@ public final class TerrainScene implements AutoCloseable {
                 return true;
             }
         }
-        return replaceDynamic
-                && (this.dynamicResident != null
-                        || dynamicUpload != null && !dynamicUpload.isEmpty());
+        return false;
     }
 
     private List<TerrainOccluderChange> occluderChanges(
@@ -1191,41 +1191,72 @@ public final class TerrainScene implements AutoCloseable {
         VulkanBuffer lights = null;
         VulkanBuffer motion = null;
         PreparedBlas blas = null;
+        DynamicBufferPool.Lease dynamicBuffers = null;
         ArrayList<PreparedBlas> voxelBlases =
                 new ArrayList<>(mesh.voxelMeshes().size());
         try {
             if (mesh.triangleCount() != 0L) {
-                positions = this.context.createBuffer(
-                        mesh.positionBytes(),
-                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                | KHRAccelerationStructure.VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-                        false,
-                        "Prime cluster " + upload.key() + " positions");
-                primitives = this.context.createBuffer(
-                        Math.addExact(
-                                mesh.primitiveBytes(), mesh.surfaceRelationBytes()),
-                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                        false,
-                        "Prime cluster " + upload.key() + " primitives");
+                long primitiveBytes = Math.addExact(
+                        mesh.primitiveBytes(), mesh.surfaceRelationBytes());
+                if (upload.dynamic()) {
+                    dynamicBuffers = this.dynamicBufferPool.acquire(
+                            mesh.positionBytes(),
+                            primitiveBytes,
+                            (long) upload.motionPositions().length * Float.BYTES);
+                    positions = dynamicBuffers.positions();
+                    primitives = dynamicBuffers.primitives();
+                    motion = dynamicBuffers.motion();
+                } else {
+                    positions = this.context.createBuffer(
+                            mesh.positionBytes(),
+                            VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                    | KHRAccelerationStructure.VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+                            false,
+                            "Prime cluster " + upload.key() + " positions");
+                    primitives = this.context.createBuffer(
+                            primitiveBytes,
+                            VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                    | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                            false,
+                            "Prime cluster " + upload.key() + " primitives");
+                }
                 copyMeshSegments(
                         commandBuffer, stagingBatch, mesh, positions, primitives);
-                blas = PreparedBlas.create(
-                        this.context,
-                        this.opacityMicromapPool,
-                        positions,
-                        primitives,
-                        mesh.opacityMicromap(),
-                        stagingBatch,
-                        commandBuffer,
-                        mesh.opaqueTriangleCount(),
-                        mesh.cutoutTriangleCount(),
-                        mesh.transmissiveTriangleCount(),
-                        mesh.opaqueMacroTriangleCount(),
-                        mesh.cutoutMacroTriangleCount(),
-                        mesh.transmissiveMacroTriangleCount(),
-                        compactionPolicy,
-                        "Prime cluster " + upload.key() + " BLAS");
+                if (upload.dynamic()) {
+                    blas = PreparedBlas.createWithBorrowedGeometry(
+                            this.context,
+                            this.opacityMicromapPool,
+                            positions,
+                            primitives,
+                            mesh.opacityMicromap(),
+                            stagingBatch,
+                            commandBuffer,
+                            mesh.opaqueTriangleCount(),
+                            mesh.cutoutTriangleCount(),
+                            mesh.transmissiveTriangleCount(),
+                            mesh.opaqueMacroTriangleCount(),
+                            mesh.cutoutMacroTriangleCount(),
+                            mesh.transmissiveMacroTriangleCount(),
+                            compactionPolicy,
+                            "Prime cluster " + upload.key() + " BLAS");
+                } else {
+                    blas = PreparedBlas.create(
+                            this.context,
+                            this.opacityMicromapPool,
+                            positions,
+                            primitives,
+                            mesh.opacityMicromap(),
+                            stagingBatch,
+                            commandBuffer,
+                            mesh.opaqueTriangleCount(),
+                            mesh.cutoutTriangleCount(),
+                            mesh.transmissiveTriangleCount(),
+                            mesh.opaqueMacroTriangleCount(),
+                            mesh.cutoutMacroTriangleCount(),
+                            mesh.transmissiveMacroTriangleCount(),
+                            compactionPolicy,
+                            "Prime cluster " + upload.key() + " BLAS");
+                }
             }
             if (!mesh.lights().isEmpty()) {
                 lights = this.context.createBuffer(
@@ -1254,12 +1285,6 @@ public final class TerrainScene implements AutoCloseable {
                                 label)));
             }
             if (upload.dynamic() && mesh.triangleCount() != 0L) {
-                motion = this.context.createBuffer(
-                        (long) upload.motionPositions().length * Float.BYTES,
-                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                        false,
-                        "Prime dynamic previous positions");
                 copyBuffer(
                         commandBuffer,
                         stagingBatch.write(
@@ -1280,13 +1305,14 @@ public final class TerrainScene implements AutoCloseable {
                     lights,
                     motion,
                     lightSummary,
-                    upload.dynamic());
+                    upload.dynamic(),
+                    dynamicBuffers);
         } catch (RuntimeException exception) {
             RuntimeException failure = exception;
             if (blas != null) {
                 blas.releaseSharedResources();
                 failure = ResourceCleanup.run(blas::destroyAllResources, failure);
-            } else {
+            } else if (dynamicBuffers == null) {
                 failure = ResourceCleanup.destroy(positions, failure);
                 failure = ResourceCleanup.destroy(primitives, failure);
             }
@@ -1299,7 +1325,12 @@ public final class TerrainScene implements AutoCloseable {
                 }
             }
             failure = ResourceCleanup.destroy(lights, failure);
-            failure = ResourceCleanup.destroy(motion, failure);
+            if (dynamicBuffers != null) {
+                DynamicBufferPool.Lease failedBuffers = dynamicBuffers;
+                failure = ResourceCleanup.run(failedBuffers::release, failure);
+            } else {
+                failure = ResourceCleanup.destroy(motion, failure);
+            }
             throw failure;
         }
     }

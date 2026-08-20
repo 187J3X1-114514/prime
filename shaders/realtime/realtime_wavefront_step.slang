@@ -22,7 +22,7 @@ void primePublishWavefrontShadePath(uint recordIndex, bool transparentBranch) {
 #endif
 }
 
-void primeWavefrontTransparentPrimaryDirect<AreaNee>(
+bool primeWavefrontTransparentPrimaryDirect<AreaNee>(
         AreaNee areaNee,
         inout PrimeIntegratorContext context,
         uint recordIndex,
@@ -34,20 +34,20 @@ void primeWavefrontTransparentPrimaryDirect<AreaNee>(
     bool guideEnabled = primeWavefrontGuideEnabled(control);
     bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     if (!guideEnabled || hasGuide) {
-        return;
+        return false;
     }
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
-        return;
+        return true;
     }
     float3 viewDirection = -path.rayDirection;
     PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
             surface, viewDirection, volumeStack);
     if (!primeClosureSupports(closureTraits, PRIME_MEASURE_SOLID_ANGLE)
             || primeClosureIsDiscreteOnly(closureTraits)) {
-        return;
+        return true;
     }
 
     PrimePreparedSampleBase preparedSample =
@@ -91,6 +91,7 @@ void primeWavefrontTransparentPrimaryDirect<AreaNee>(
             primeWavefrontTransmissionBranch(control),
             diffuseDirect,
             specularDirect);
+    return true;
 }
 
 void primeWavefrontStep<AreaNee>(
@@ -134,16 +135,18 @@ void primeWavefrontStep<AreaNee>(
             PrimeSurfaceTracePolicy(),
             physicalOrigin, rayDirection, sourcePrimitive, pathClass);
     primeStoreWavefrontSurface(recordIndex, surface);
+    bool skipLight = false;
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeWavefrontTransparentBranch(traceControl)) {
         PrimeWavefrontTransportRecord record =
                 primeLoadWavefrontTransportRecord(recordIndex);
-        primeWavefrontTransparentPrimaryDirect(
+        skipLight = primeWavefrontTransparentPrimaryDirect(
                 areaNee, context, recordIndex, record, surface, traceControl);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     // Surface-hit compaction depends on traversal output and therefore remains scalar after SER.
-    if (surface.hitKind == PRIME_HIT_SURFACE) {
+    // Pending-guide lighting was handled above; its Light invocation would only early-out.
+    if (surface.hitKind == PRIME_HIT_SURFACE && !skipLight) {
         primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, recordIndex);
     }
 }

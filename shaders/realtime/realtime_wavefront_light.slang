@@ -207,8 +207,6 @@ void primeWavefrontLight<LightNee, IndirectReuse, SharcTraining>(
 
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
@@ -239,6 +237,13 @@ void primeWavefrontLight<LightNee, IndirectReuse, SharcTraining>(
         }
         return;
     }
+    if (primeWavefrontTransparentBranch(control)) {
+        bool guideEnabled = primeWavefrontGuideEnabled(control);
+        bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
+        if (guideEnabled && !hasGuide && !primeClosureIsDiscreteOnly(closureTraits)) {
+            return;
+        }
+    }
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
             primePush.sunDirection,
@@ -249,14 +254,9 @@ void primeWavefrontLight<LightNee, IndirectReuse, SharcTraining>(
     primeStoreWavefrontSunFamilyProbability(
             recordIndex,
             primeStoredSunFamilyProbability(sunProbability));
-    if (primeWavefrontTransparentBranch(control)) {
-        bool guideEnabled = primeWavefrontGuideEnabled(control);
-        bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
-        if (guideEnabled && !hasGuide && !primeClosureIsDiscreteOnly(closureTraits)) {
-            return;
-        }
-    }
 
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
     float3 direct = lightNee.estimate(
             context,

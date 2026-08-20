@@ -29,7 +29,17 @@ void main(in BuiltInTriangleIntersectionAttributes attributes) {
         return;
     }
     PrimitiveRecord primitive = primePrimitive(section);
+    bool primaryTransmissive =
+            primeRecipeIsTransmissive(primePrimitiveControl(primitive));
+    // Without a relation, transparent radiance hits need neither triangle reconstruction nor
+    // opacity evaluation.
+    if (primaryTransmissive && section.surfaceRelationAddress == uint64_t(0)) {
+        return;
+    }
     PrimeSurfaceRelation relation = primeSurfaceRelation(section);
+    if (primaryTransmissive && relation.control == 0u) {
+        return;
+    }
     float3 authoredNormal = primeUnpackOctahedralNormal(primitive.normal);
     PrimeHitTriangle hit = primeHitTriangle(
             section, barycentrics, authoredNormal);

@@ -94,6 +94,27 @@ struct PrimeDenoiserState {
     uint primaryBounce;
 };
 
+SurfaceInteraction primeMissSurfaceInteraction(uint2 sourcePrimitive) {
+    SurfaceInteraction surface;
+    surface.position = float3(0.0);
+    surface.t = 0.0;
+    surface.geometricNormal = float3(0.0, 1.0, 0.0);
+    surface.hitKind = PRIME_HIT_NONE;
+    surface.baseColor = float3(0.0);
+    surface.materialControl = 0u;
+    surface.sectionIndex = sourcePrimitive.x;
+    surface.emitterIndex = PRIME_NO_LIGHT_INDEX;
+    surface.textureLod = 0.0;
+    surface.opacity = 0.0;
+    surface.shadingNormal = primePackOctahedralNormal(float3(0.0, 1.0, 0.0));
+    surface.roughness = primeConfiguredDefaultLinearRoughness();
+    surface.opticalControl = 0u;
+    surface.motionZFlags = sourcePrimitive.y;
+    surface.adjacentBaseColor = float3(0.0);
+    surface.adjacentInterfaceControl = 0u;
+    return surface;
+}
+
 void primeResetSurfacePayload(uint2 sourcePrimitive) {
     primeSurfacePayload.t = 0.0;
     primeSurfacePayload.geometricNormal = float3(0.0, 1.0, 0.0);

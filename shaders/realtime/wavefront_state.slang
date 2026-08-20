@@ -92,6 +92,13 @@ uint primeLoadWavefrontSunFamilyProbability(uint pathIndex) {
 
 void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
     uint base = primeWavefrontSurfaceWord(pathIndex);
+    if (surface.hitKind == PRIME_HIT_NONE) {
+        // Clear the complete packed hit-kind word; Light may reuse its high bits for sun-family
+        // probability on surface paths, and stale bits must not survive record reuse.
+        primeWavefrontQueue[base + PRIME_WAVEFRONT_SURFACE_LANE_WORDS] =
+                PRIME_HIT_NONE;
+        return;
+    }
     primeStoreWavefrontSurfaceLane(base, 0u, uint4(
             asuint(surface.t),
             asuint(surface.geometricNormal.x),
@@ -126,16 +133,26 @@ void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
 
 SurfaceInteraction primeLoadWavefrontSurface(uint pathIndex) {
     uint base = primeWavefrontSurfaceWord(pathIndex);
+    uint hitKind = primeWavefrontQueue[
+            base + PRIME_WAVEFRONT_SURFACE_LANE_WORDS]
+            & PRIME_HIT_KIND_MASK;
+    if (hitKind == PRIME_HIT_NONE) {
+        return primeMissSurfaceInteraction(
+                primeWavefrontPaths[pathIndex]
+                        .transport.sourceAndPathControl.xy);
+    }
     SurfaceInteraction surface;
     uint4 lane = primeLoadWavefrontSurfaceLane(base, 0u);
     surface.t = asfloat(lane.x);
     surface.geometricNormal = float3(
             asfloat(lane.y), asfloat(lane.z), asfloat(lane.w));
-    lane = primeLoadWavefrontSurfaceLane(base, 1u);
-    surface.hitKind = lane.x & PRIME_HIT_KIND_MASK;
-    surface.materialControl = lane.y;
-    surface.sectionIndex = lane.z;
-    surface.emitterIndex = lane.w;
+    surface.hitKind = hitKind;
+    surface.materialControl = primeWavefrontQueue[
+            base + PRIME_WAVEFRONT_SURFACE_LANE_WORDS + 1u];
+    surface.sectionIndex = primeWavefrontQueue[
+            base + PRIME_WAVEFRONT_SURFACE_LANE_WORDS + 2u];
+    surface.emitterIndex = primeWavefrontQueue[
+            base + PRIME_WAVEFRONT_SURFACE_LANE_WORDS + 3u];
     lane = primeLoadWavefrontSurfaceLane(base, 2u);
     surface.baseColor = float3(
             asfloat(lane.x), asfloat(lane.y), asfloat(lane.z));

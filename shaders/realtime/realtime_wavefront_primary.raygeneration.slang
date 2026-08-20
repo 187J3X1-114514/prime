@@ -6,7 +6,7 @@ void main()
     uint launchIndex = DispatchRaysIndex().x;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     if (launchIndex == 0u) {
-        primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_PRIMARY_QUEUE);
     }
     primeWavefrontPrimary(
             PrimeStagedSecondaryAreaNee(),

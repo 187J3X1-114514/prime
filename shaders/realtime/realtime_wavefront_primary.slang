@@ -5,6 +5,7 @@ struct PrimeWavefrontContinuations {
     uint secondPathIndex;
     bool firstActive;
     bool secondActive;
+    bool transparent;
 };
 
 PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
@@ -24,6 +25,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
     queued.secondPathIndex = primeWavefrontIndex(pixel, 1u);
     queued.firstActive = false;
     queued.secondActive = false;
+    queued.transparent = true;
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         PrimeDenoiserState emptyState = primeInitialDenoiserState();
         PrimeWavefrontPathRecord emptyRecord = primeMakeWavefrontRecord(context.diagnostics,
@@ -247,7 +249,7 @@ void primeWavefrontPrimary<AreaNee>(
     where AreaNee : IPrimeSecondaryAreaNee
 {
     uint recordIndex = primeWavefrontQueuedPath(
-            PRIME_WAVEFRONT_SHADE_QUEUE, launchIndex);
+            PRIME_WAVEFRONT_PRIMARY_QUEUE, launchIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
@@ -266,6 +268,7 @@ void primeWavefrontPrimary<AreaNee>(
     continuations.secondPathIndex = primeWavefrontIndex(pixel, 1u);
     continuations.firstActive = false;
     continuations.secondActive = false;
+    continuations.transparent = false;
 
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeMaterialIsTransmissive(surface.materialControl)) {
@@ -316,10 +319,15 @@ void primeWavefrontPrimary<AreaNee>(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
             continuations.firstPathIndex,
-            continuations.firstActive);
+            continuations.firstActive && !continuations.transparent);
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
-            PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
+            continuations.firstPathIndex,
+            continuations.firstActive && continuations.transparent);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
             continuations.secondPathIndex,
             continuations.secondActive);
 }

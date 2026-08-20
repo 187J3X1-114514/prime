@@ -43,7 +43,7 @@ void primeWavefrontHead(
     primeStoreWavefrontIntermediate(pixel, result);
     // SER may repack invocations. Queue publication after it must not use subgroup collectives.
     if (continuation) {
-        primeAppendWavefrontPath(PRIME_WAVEFRONT_SHADE_QUEUE, pathIndex);
+        primeAppendWavefrontPath(PRIME_WAVEFRONT_PRIMARY_QUEUE, pathIndex);
         if (primaryHitKind == PRIME_HIT_SURFACE) {
             primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, pathIndex);
         }

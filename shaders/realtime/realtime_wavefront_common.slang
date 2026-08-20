@@ -25,6 +25,16 @@ typealias PrimeWavefrontContinuationAppender =
         PrimeScalarWavefrontContinuationAppender;
 #endif
 
+// SER may repack invocations after traversal. Only non-SER variants retain the producer subgroup
+// required by a collective queue reservation at the end of a fused bounce.
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE) && !defined(PRIME_ENABLE_SER)
+typealias PrimePostTraceWavefrontContinuationAppender =
+        PrimeSubgroupWavefrontContinuationAppender;
+#else
+typealias PrimePostTraceWavefrontContinuationAppender =
+        PrimeScalarWavefrontContinuationAppender;
+#endif
+
 struct PrimeWavefrontShaderRecord {
     uint control;
 };

@@ -39,8 +39,6 @@ void primeWavefrontHead(
             result.guides,
             continuation);
     primeWavefrontPaths[pathIndex] = record;
-    record.transport = primeWavefrontWithActive(record.transport, false);
-    primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = record;
     primeStoreWavefrontArea(pixel, result.guides);
     primeStoreWavefrontIntermediate(pixel, result);
     // SER may repack invocations. Queue publication after it must not use subgroup collectives.

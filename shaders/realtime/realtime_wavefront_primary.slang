@@ -308,8 +308,6 @@ void primeWavefrontPrimary<AreaNee>(
                 result.guides,
                 continuation);
         primeWavefrontPaths[recordIndex] = updated;
-        updated.transport = primeWavefrontWithActive(updated.transport, false);
-        primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = updated;
         primeStoreWavefrontArea(pixel, result.guides);
         primeStoreWavefrontIntermediate(pixel, result);
         continuations.firstActive = continuation;

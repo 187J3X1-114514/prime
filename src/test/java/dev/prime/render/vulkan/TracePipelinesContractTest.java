@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -96,6 +97,22 @@ final class TracePipelinesContractTest {
                 .map(OfflineRayTracingPipeline::raygenControl)
                 .boxed()
                 .toList());
+    }
+
+    @Test
+    void realtimeBarriersExposeOnlyTheNextStageImageDependencies() {
+        assertArrayEquals(
+                new int[] {1, 2},
+                RealtimeRayTracingPipeline.primaryDirectInputImageIndices());
+        assertArrayEquals(
+                new int[] {0, 1, 2, 4, 6, 7, 8, 9, 10, 20, 21},
+                RealtimeRayTracingPipeline.primaryInputImageIndices());
+        assertArrayEquals(
+                new int[] {0, 1, 2, 11, 12},
+                RealtimeRayTracingPipeline.nextStepInputImageIndices());
+        assertArrayEquals(
+                new int[] {0, 1, 2, 5, 6, 7, 9, 10, 11, 12, 17, 18, 21},
+                RealtimeRayTracingPipeline.shadeInputImageIndices());
     }
 
     @Test

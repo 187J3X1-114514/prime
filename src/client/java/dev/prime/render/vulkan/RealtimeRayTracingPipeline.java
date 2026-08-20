@@ -34,6 +34,22 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         return 4 * Math.max(scatterCount - 1, 0) + 5;
     }
 
+    static int[] primaryDirectInputImageIndices() {
+        return new int[] {1, 2};
+    }
+
+    static int[] primaryInputImageIndices() {
+        return new int[] {0, 1, 2, 4, 6, 7, 8, 9, 10, 20, 21};
+    }
+
+    static int[] nextStepInputImageIndices() {
+        return new int[] {0, 1, 2, 11, 12};
+    }
+
+    static int[] shadeInputImageIndices() {
+        return new int[] {0, 1, 2, 5, 6, 7, 9, 10, 11, 12, 17, 18, 21};
+    }
+
     public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
         super(
                 context,
@@ -61,7 +77,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 input.width(),
                 input.height(),
                 RealtimeWavefrontGroups.HEAD);
-        this.allImagesBarrier(commandBuffer, stack);
+        this.primaryDirectInputBarrier(commandBuffer, stack);
         this.traceQueued(
                 commandBuffer,
                 stack,
@@ -69,7 +85,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 RealtimeWavefrontGroups.PRIMARY_DIRECT,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.primaryDirectBarrier(commandBuffer, stack);
+        this.primaryInputBarrier(commandBuffer, stack);
         this.traceQueued(
                 commandBuffer,
                 stack,
@@ -77,7 +93,11 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 RealtimeWavefrontGroups.PRIMARY,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-        this.allImagesBarrier(commandBuffer, stack);
+        if (input.scatterCount() > 1) {
+            this.nextStepBarrier(commandBuffer, stack, false);
+        } else {
+            this.resolveInputBarrier(commandBuffer, stack);
+        }
         int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
         for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
             this.recordRound(
@@ -85,7 +105,8 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                     stack,
                     activeProgram,
                     commandOffset,
-                    traceQueue);
+                    traceQueue,
+                    scatter + 1 == input.scatterCount());
             traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
                     ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
                     : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
@@ -112,7 +133,8 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
             MemoryStack stack,
             TraceProgram activeProgram,
             long commandOffset,
-            int traceQueue) {
+            int traceQueue,
+            boolean finalRound) {
         this.traceQueued(
                 commandBuffer,
                 stack,
@@ -128,7 +150,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 RealtimeWavefrontGroups.light(),
                 commandOffset,
                 ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.directRadianceBarrier(commandBuffer, stack);
+        this.shadeInputBarrier(commandBuffer, stack);
         this.traceQueued(
                 commandBuffer,
                 stack,
@@ -143,7 +165,11 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 RealtimeWavefrontGroups.transparentShade(traceQueue),
                 commandOffset,
                 ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
-        this.allImagesBarrier(commandBuffer, stack);
+        if (finalRound) {
+            this.resolveInputBarrier(commandBuffer, stack);
+        } else {
+            this.nextStepBarrier(commandBuffer, stack, true);
+        }
     }
 
     // A named member keeps sibling renderers off javac's auxiliary-class access path.
@@ -589,34 +615,65 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         WavefrontCommands.wavefrontBarrier(commandBuffer, stack, this.wavefront);
     }
 
-    protected final void primaryDirectBarrier(
+    protected final void primaryDirectInputBarrier(
             VkCommandBuffer commandBuffer, MemoryStack stack) {
         this.wavefrontResourceBarrier(
-                commandBuffer, stack, this.bindings.primaryDirectImages);
+                commandBuffer,
+                stack,
+                this.bindings.primaryDirectInputImages,
+                false);
     }
 
-    protected final void directRadianceBarrier(
+    protected final void primaryInputBarrier(
             VkCommandBuffer commandBuffer, MemoryStack stack) {
         this.wavefrontResourceBarrier(
-                commandBuffer, stack, this.bindings.directRadianceImages);
+                commandBuffer,
+                stack,
+                this.bindings.primaryInputImages,
+                false);
     }
 
-    protected final void allImagesBarrier(
+    protected final void nextStepBarrier(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            boolean synchronizeSharcTraining) {
+        this.wavefrontResourceBarrier(
+                commandBuffer,
+                stack,
+                this.bindings.nextStepInputImages,
+                synchronizeSharcTraining);
+    }
+
+    protected final void shadeInputBarrier(
             VkCommandBuffer commandBuffer, MemoryStack stack) {
-        this.wavefrontResourceBarrier(commandBuffer, stack, this.bindings.allImages);
+        this.wavefrontResourceBarrier(
+                commandBuffer,
+                stack,
+                this.bindings.shadeInputImages,
+                true);
+    }
+
+    protected final void resolveInputBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
+        this.wavefrontResourceBarrier(
+                commandBuffer,
+                stack,
+                this.bindings.allImages,
+                false);
     }
 
     private void wavefrontResourceBarrier(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
-            long[] images) {
+            long[] images,
+            boolean synchronizeSharcTraining) {
         long sourceStage =
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
         long destinationStage = sourceStage | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
         long destinationAccess = VK12.VK_ACCESS_SHADER_READ_BIT
                 | VK12.VK_ACCESS_SHADER_WRITE_BIT
                 | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
-        if (this.sharc == null) {
+        if (this.sharc == null || !synchronizeSharcTraining) {
             VulkanSync.resourceBarrier(
                     commandBuffer,
                     stack,
@@ -771,8 +828,10 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         private final long stableRadiance;
         private final long[] images;
         private final long[] allImages;
-        private final long[] primaryDirectImages;
-        private final long[] directRadianceImages;
+        private final long[] primaryDirectInputImages;
+        private final long[] primaryInputImages;
+        private final long[] nextStepInputImages;
+        private final long[] shadeInputImages;
         private final long wavefront;
         private final long sharcFrame;
         private boolean destroyed;
@@ -792,10 +851,18 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             this.stableRadiance = stableRadiance;
             this.images = images.clone();
             this.allImages = allImages.clone();
-            this.primaryDirectImages = select(
-                    this.allImages, 1, 2, 20, 21);
-            this.directRadianceImages = select(
-                    this.allImages, 0, 1, 2, 11, 12);
+            this.primaryDirectInputImages = select(
+                    this.allImages,
+                    RealtimeRayTracingPipeline.primaryDirectInputImageIndices());
+            this.primaryInputImages = select(
+                    this.allImages,
+                    RealtimeRayTracingPipeline.primaryInputImageIndices());
+            this.nextStepInputImages = select(
+                    this.allImages,
+                    RealtimeRayTracingPipeline.nextStepInputImageIndices());
+            this.shadeInputImages = select(
+                    this.allImages,
+                    RealtimeRayTracingPipeline.shadeInputImageIndices());
             this.wavefront = wavefront;
             this.sharcFrame = sharcFrame;
         }

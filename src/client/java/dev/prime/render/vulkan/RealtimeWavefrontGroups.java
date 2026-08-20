@@ -6,15 +6,14 @@ import java.util.List;
 /** Ray-generation group order for execution-mode queues. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
-    static final int PRIMARY = 3;
-    static final int PRIMARY_AREA = 4;
-    static final int PRIMARY_SUN = 5;
-    static final int RESOLVE = 11;
-    static final int TRANSPARENT_RESOLVE = 12;
-    static final int GROUP_COUNT = 13;
-    static final int MODULE_COUNT = 10;
-    private static final int[] MODULES = {0, 1, 1, 2, 3, 4, 5, 6, 6, 7, 7, 8, 9};
-    private static final int[] CONTROLS = {0, 1, 257, 0, 0, 0, 4, 2, 258, 2, 258, 3, 5};
+    static final int PRIMARY_DIRECT = 3;
+    static final int PRIMARY = 5;
+    static final int RESOLVE = 10;
+    static final int TRANSPARENT_RESOLVE = 11;
+    static final int GROUP_COUNT = 12;
+    static final int MODULE_COUNT = 9;
+    private static final int[] MODULES = {0, 1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8};
+    private static final int[] CONTROLS = {0, 1, 257, 0, 4, 0, 2, 258, 2, 258, 3, 5};
 
     private RealtimeWavefrontGroups() {}
 
@@ -42,10 +41,9 @@ final class RealtimeWavefrontGroups {
         return RaygenSchedule.of(List.of(
                 prefix + "head" + suffix,
                 prefix + "step" + suffix,
-                prefix + "primary" + suffix,
-                prefix + "primary_area" + suffix,
-                prefix + "primary_sun" + suffix,
+                prefix + "primary_direct" + suffix,
                 light,
+                prefix + "primary" + suffix,
                 shade,
                 prefix + "transparent_shade" + suffix,
                 prefix + "resolve" + suffix,
@@ -65,15 +63,15 @@ final class RealtimeWavefrontGroups {
     }
 
     static int light() {
-        return 6;
+        return 4;
     }
 
     static int shade(int queue) {
-        return queued(queue, 7, 8);
+        return queued(queue, 6, 7);
     }
 
     static int transparentShade(int queue) {
-        return queued(queue, 9, 10);
+        return queued(queue, 8, 9);
     }
 
     private static int queued(int queue, int first, int second) {

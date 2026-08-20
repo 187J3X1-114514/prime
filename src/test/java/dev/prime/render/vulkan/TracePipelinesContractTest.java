@@ -60,11 +60,11 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(13, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(10, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(50, RealtimeRayTracingPipeline.dispatchCount(12));
-        assertEquals(6, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(258, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(12, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(9, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(49, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(5, RealtimeRayTracingPipeline.dispatchCount(1));
+        assertEquals(257, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
@@ -74,13 +74,13 @@ final class TracePipelinesContractTest {
         assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 1, 2, 3, 4, 5, 6, 6, 7, 7, 8, 9),
+        assertEquals(List.of(0, 1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 257, 0, 0, 0, 4, 2, 258, 2, 258, 3, 5),
+        assertEquals(List.of(0, 1, 257, 0, 4, 0, 2, 258, 2, 258, 3, 5),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -107,16 +107,16 @@ final class TracePipelinesContractTest {
         assertEquals(realtime.moduleCount(), sharc.moduleCount());
         assertEquals(realtime.groupCount(), sharc.groupCount());
         for (int module = 0; module < realtime.moduleCount(); module++) {
-            if (module != 5 && module != 6) {
+            if (module != 3 && module != 5) {
                 assertEquals(realtime.moduleResource(module), sharc.moduleResource(module));
             }
         }
         assertEquals(
                 "/prime/shaders/realtime_wavefront_sharc_light_ser.rgen.spv",
-                sharc.moduleResource(5));
+                sharc.moduleResource(3));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_sharc_shade_ser.rgen.spv",
-                sharc.moduleResource(6));
+                sharc.moduleResource(5));
         for (int group = 0; group < realtime.groupCount(); group++) {
             assertEquals(realtime.module(group), sharc.module(group));
             assertEquals(realtime.control(group), sharc.control(group));
@@ -136,13 +136,16 @@ final class TracePipelinesContractTest {
     void setOneAbiDoesNotCrossRendererBoundary() throws IOException {
         for (String suffix : List.of("", "_subgroup", "_ser")) {
             Set<Integer> realtime = descriptorBindings(
-                    wavefrontShaders(
-                             "realtime",
-                             suffix,
-                             List.of("head", "step", "primary", "primary_area",
-                                    "primary_sun", "light", "shade",
-                                    "transparent_shade", "resolve",
-                                    "transparent_resolve")),
+                    List.of(
+                            wavefrontShader("realtime", "head", suffix),
+                            wavefrontShader("realtime", "step", suffix),
+                            wavefrontShader("realtime", "primary_direct", suffix),
+                            wavefrontShader("realtime", "light", suffix),
+                            wavefrontShader("realtime", "primary", suffix),
+                            wavefrontShader("realtime", "shade", suffix),
+                            wavefrontShader("realtime", "transparent_shade", suffix),
+                            wavefrontShader("realtime", "resolve", suffix),
+                            wavefrontShader("realtime", "transparent_resolve", suffix)),
                     1);
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
@@ -212,21 +215,9 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "step", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
-                    Set.of(),
+                    Set.of(shadowPayload),
                     payloadShapes(
-                            wavefrontShader("realtime", "primary", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            for (String stage : List.of("primary_area", "primary_sun")) {
-                assertEquals(
-                        Set.of(shadowPayload),
-                        payloadShapes(
-                                wavefrontShader("realtime", stage, suffix),
-                                STORAGE_RAY_PAYLOAD));
-            }
-            assertEquals(
-                    Set.of(),
-                    payloadShapes(
-                            wavefrontShader("realtime", "resolve", suffix),
+                            wavefrontShader("realtime", "primary_direct", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(tracePayload, shadowPayload),
@@ -248,12 +239,22 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(),
                     payloadShapes(
+                            wavefrontShader("realtime", "primary", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
                             wavefrontShader("realtime", "shade", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(),
                     payloadShapes(
                             wavefrontShader("realtime", "transparent_shade", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader("realtime", "resolve", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(shadowPayload),

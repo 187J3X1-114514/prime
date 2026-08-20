@@ -31,7 +31,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
 
     static int dispatchCount(int scatterCount) {
-        return 4 * Math.max(scatterCount - 1, 0) + 6;
+        return 4 * Math.max(scatterCount - 1, 0) + 5;
     }
 
     public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
@@ -66,15 +66,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 commandBuffer,
                 stack,
                 activeProgram,
-                RealtimeWavefrontGroups.PRIMARY_AREA,
-                commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.primaryDirectBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.PRIMARY_SUN,
+                RealtimeWavefrontGroups.PRIMARY_DIRECT,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_AREA_QUEUE);
         this.primaryDirectBarrier(commandBuffer, stack);

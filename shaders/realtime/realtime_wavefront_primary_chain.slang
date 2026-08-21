@@ -1,77 +1,33 @@
 #define PRIME_TWO_STAGE_WAVEFRONT 1
-#include "realtime/realtime_wavefront_bounce.slang"
+#include "realtime/realtime_wavefront_primary_chain_state.slang"
 
-uint primeShadePrimaryChainVertex(
-        inout PrimeIntegratorContext context,
+bool primePrimaryChainHitIsDeltaOnly(
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
-        SurfaceInteraction surface,
-        PrimeTransparentLightEvent lightEvent) {
-    if (lightEvent.type == PRIME_TRANSPARENT_LIGHT_EVENT_SUN) {
-        PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
-        PrimeFusedWavefrontLightResult light =
-                primeShadeTransparentSunLightEvent(
-                        context, recordIndex, record, surface, lightEvent);
-        if (!light.diagnosticsCommitted) {
-            context.diagnostics = shadeDiagnostics;
-        }
-        return light.storedSunProbability;
+        SurfaceInteraction surface) {
+    if (surface.hitKind != PRIME_HIT_SURFACE) {
+        return false;
     }
-    if (!primeTransparentLightEventSamplesArea(lightEvent)) {
-        return 0u;
-    }
-
-    PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
     PathState path = primeWavefrontPath(
             primeWavefrontPixel(recordIndex), record);
-    float3 preparedThroughput = float3(0.0);
-    PrimeTransparentAreaSampleInput lightData = {};
-    bool preparedArea = primePrepareTransparentAreaSample(
-            context,
-            path,
-            primeWavefrontVolumeStack(record),
+    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
             surface,
-            lightEvent,
-            preparedThroughput,
-            lightData);
-    AreaLightSample area = {};
-    if (preparedArea) {
-        area = primeExecuteTransparentAreaSample(context, lightData);
-    }
-    PrimeFusedWavefrontLightResult light =
-            primeShadeTransparentAreaLightEvent(
-                    context,
-                    recordIndex,
-                    record,
-                    surface,
-                    lightEvent,
-                    preparedArea,
-                    preparedThroughput,
-                    area);
-    if (!light.diagnosticsCommitted) {
-        context.diagnostics = shadeDiagnostics;
-    }
-    return light.storedSunProbability;
+            -path.rayDirection,
+            primeWavefrontVolumeStack(record));
+    return primeClosureIsDiscreteOnly(closureTraits);
 }
 
-void primeInvalidatePrimaryChainGuide(
+void primeQueuePrimaryChainLanding(
+        inout PrimeIntegratorContext context,
         uint recordIndex,
-        PrimeWavefrontTransportRecord record) {
-    uint2 pixel = primeWavefrontPixel(recordIndex);
-    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    bool transmission = primeWavefrontTransmissionBranch(control);
-    PrimeTransparentBranchResult result =
-            primeLoadTransparentBranchActiveIntermediate(
-                    pixel, transmission, control);
-    result.guides = primeEmptyDenoiserGuides();
-    result.anchorDistance = -1.0;
-    result.directionalGuide = false;
-    primeStoreTransparentBranchIntermediate(
-            pixel,
-            transmission,
-            false,
-            (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
-            result);
+        SurfaceInteraction surface) {
+    primeStoreWavefrontSurface(recordIndex, surface);
+    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
+    primeAppendWavefrontContinuation(
+            PrimePostTraceWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_PRIMARY_QUEUE,
+            recordIndex,
+            true);
 }
 
 void primeProcessPrimaryChainBranch(
@@ -84,72 +40,25 @@ void primeProcessPrimaryChainBranch(
         return;
     }
 
-    // The primary transmissive sample has already performed transition one.
+    // PRIMARY already completed the first delta transition. Each iteration either lands without
+    // sampling, or performs exactly one additional delta transition.
     uint transitions = 1u;
     [loop]
     for (uint step = 0u; step < limit; ++step) {
-        SurfaceInteraction surface = primeFusedWavefrontTrace(
-                context,
-                recordIndex,
-                primeWavefrontTransparentBranch(
-                        asuint(record.rayDirectionAndDenoiserControl.w)));
-        record = primeLoadWavefrontTransportRecord(recordIndex);
         uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-        PrimeTransparentLightEvent lightEvent =
-                primeClassifyTransparentLightEvent(
-                        recordIndex, record, surface, control);
-        uint storedSunProbability = primeShadePrimaryChainVertex(
-                context, recordIndex, record, surface, lightEvent);
         bool transparent = primeWavefrontTransparentBranch(control);
-        bool continuation = transparent
-                ? primeAdvanceTransparentWavefrontRecord(
-                        context,
-                        recordIndex,
-                        record,
-                        surface,
-                        control,
-                        storedSunProbability,
-                        true)
-                : primeAdvanceOrdinaryWavefrontRecord(
-                        context,
-                        recordIndex,
-                        record,
-                        surface,
-                        control,
-                        storedSunProbability,
-                        true);
-        if (!continuation) {
-            return;
-        }
-
+        SurfaceInteraction surface = primeFusedDeltaWavefrontTrace(
+                context, recordIndex, transparent);
         record = primeLoadWavefrontTransportRecord(recordIndex);
-        PathState updatedPath = primeWavefrontPath(
-                primeWavefrontPixel(recordIndex), record);
-        bool delta =
-                (updatedPath.flags & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
-        if (!delta) {
-            uint psrControl = (record.sourceAndPathControl.w
-                    >> PRIME_WAVEFRONT_PSR_CONTROL_SHIFT)
-                    & PRIME_WAVEFRONT_PSR_CONTROL_MASK;
-            PrimeQueuedPsrState psrState = primeEmptyQueuedPsrState();
-            psrState.control = psrControl;
-            bool invalidGuide =
-                    primeQueuedPsrOverflowed(psrState)
-                    || primeWavefrontGuideProbeFallback(
-                            record.sourceAndPathControl.w);
-            if (transparent && invalidGuide) {
-                primeInvalidatePrimaryChainGuide(recordIndex, record);
-            }
-            record = primeWavefrontSteadyState(record);
-            primeStoreWavefrontTransportRecord(recordIndex, record);
-            primeAppendWavefrontContinuation(
-                    PrimePostTraceWavefrontContinuationAppender(),
-                    PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
-                    recordIndex,
-                    true);
+        control = asuint(record.rayDirectionAndDenoiserControl.w);
+
+        if (!primePrimaryChainHitIsDeltaOnly(
+                recordIndex, record, surface)) {
+            primeQueuePrimaryChainLanding(context, recordIndex, surface);
             return;
         }
 
+        // Limit one permits the transition already completed by PRIMARY and its landing trace.
         if (transitions >= limit) {
             if (transparent) {
                 primeInvalidatePrimaryChainGuide(recordIndex, record);
@@ -159,7 +68,25 @@ void primeProcessPrimaryChainBranch(
             primeStoreWavefrontTransportRecord(recordIndex, record);
             return;
         }
+
+        bool continuation = transparent
+                ? primeAdvanceTransparentPrimaryDelta(
+                        context,
+                        recordIndex,
+                        record,
+                        surface,
+                        control)
+                : primeAdvanceOrdinaryPrimaryDelta(
+                        context,
+                        recordIndex,
+                        record,
+                        surface,
+                        control);
+        if (!continuation) {
+            return;
+        }
         transitions++;
+        record = primeLoadWavefrontTransportRecord(recordIndex);
     }
 }
 

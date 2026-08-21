@@ -13,6 +13,7 @@ import "core/transport_math.slang";
 import "material/material.slang";
 import "core/light_tree_math.slang";
 import "core/starmap.slang";
+import "lighting/hit_emission.slang";
 
 static const float PRIME_LIGHT_PI = 3.141592653589793;
 
@@ -142,7 +143,6 @@ public LightSample primeSampleSun(
     return result;
 }
 
-public static const uint PRIME_NO_LIGHT_INDEX = 0xffffffffu;
 static const uint PRIME_LIGHT_LEAF_FLAG = 0x80000000u;
 static const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
 static const uint PRIME_LIGHT_TREE_MAX_DEPTH = 27u;
@@ -151,8 +151,6 @@ static const uint PRIME_LIGHT_PATH_TRAIL_MASK = 0x07ffffffu;
 static const uint PRIME_LIGHT_LEAF_MAX_ENTRIES = 8u;
 static const uint PRIME_LIGHT_CELL_SUBDIVISION = 16u;
 static const uint PRIME_LIGHT_CELL_COUNT = 256u;
-static const uint PRIME_EMITTER_TWO_SIDED = 1u;
-
 struct LightTreePick {
     uint index;
     float pdf;
@@ -503,25 +501,6 @@ uint primeLightCellIndex(float2 parentBarycentric) {
     return rowBase + 2u * coordinate.x + (upper ? 1u : 0u);
 }
 
-float2 primeEmitterUv(uint3 packedUvs, float2 parentBarycentric) {
-    float2 uv0 = primeUnpackUv(packedUvs.x);
-    float2 uv1 = primeUnpackUv(packedUvs.y);
-    float2 uv2 = primeUnpackUv(packedUvs.z);
-    return uv0 * (1.0 - parentBarycentric.x - parentBarycentric.y)
-            + uv1 * parentBarycentric.x
-            + uv2 * parentBarycentric.y;
-}
-
-float primeEmitterCosine(
-        float3 emitterNormal,
-        uint emitterFlags,
-        float3 directionFromSurfaceToLight) {
-    float cosine = dot(emitterNormal, -directionFromSurfaceToLight);
-    return (emitterFlags & PRIME_EMITTER_TWO_SIDED) != 0u
-            ? abs(cosine)
-            : max(cosine, 0.0);
-}
-
 float primeAreaSolidAnglePdf(
         inout PrimeNumericalDiagnostics diagnostics,
         float3 origin,
@@ -733,6 +712,11 @@ public LightEvaluation primeEvaluateAreaLight(
     LightEvaluation result;
     result.radiance = float3(0.0);
     result.pdf = 0.0;
+    if (!evaluatePdf) {
+        result.radiance = primeEvaluateHitEmitterRadiance(
+                surface, rayDirection);
+        return result;
+    }
     uint emitterIndex = primeSurfaceEmitterIndex(surface);
     if (emitterIndex == PRIME_NO_LIGHT_INDEX) {
         return result;
@@ -774,9 +758,6 @@ public LightEvaluation primeEvaluateAreaLight(
                     emitters[emitterIndex].uvsTint.xyz,
                     parentBarycentric),
             surface.textureLod);
-    if (!evaluatePdf) {
-        return result;
-    }
     float3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
 
     uint64_t worldNodeAddress = sections[surface.sectionIndex].worldLightAddress;

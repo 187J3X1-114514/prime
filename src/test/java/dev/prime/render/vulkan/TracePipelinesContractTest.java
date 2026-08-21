@@ -61,11 +61,11 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(10, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(10, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(54, RealtimeRayTracingPipeline.dispatchCount(12));
-        assertEquals(10, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(262, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(11, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(11, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(55, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(11, RealtimeRayTracingPipeline.dispatchCount(1));
+        assertEquals(263, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(38, RealtimeRayTracingPipeline.sharcDispatchCount(12));
         assertEquals(5, RealtimeRayTracingPipeline.sharcDispatchCount(1));
         assertEquals(194, RealtimeRayTracingPipeline.sharcDispatchCount(64));
@@ -78,13 +78,13 @@ final class TracePipelinesContractTest {
         assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -128,7 +128,7 @@ final class TracePipelinesContractTest {
                 realtime.moduleResource(2));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_steady_area_ser.rgen.spv",
-                realtime.moduleResource(7));
+                realtime.moduleResource(8));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_sharc_bounce_ser.rgen.spv",
                 sharc.moduleResource(1));
@@ -150,12 +150,13 @@ final class TracePipelinesContractTest {
 
     @Test
     void setOneAbiDoesNotCrossRendererBoundary() throws IOException {
-        for (String suffix : List.of("", "_subgroup", "_ser")) {
+        for (String suffix : List.of("", "_ser")) {
             Set<Integer> realtime = descriptorBindings(
                     List.of(
                             wavefrontShader("realtime", "head", suffix),
                             wavefrontShader("realtime", "two_stage_primary", suffix),
                             wavefrontShader("realtime", "primary_chain", suffix),
+                            wavefrontShader("realtime", "primary_landing", suffix),
                             wavefrontShader("realtime", "steady_classify", suffix),
                             wavefrontShader("realtime", "steady_none", suffix),
                             wavefrontShader("realtime", "steady_sun", suffix),
@@ -191,7 +192,7 @@ final class TracePipelinesContractTest {
 
     @Test
     void sharcModulesExposeOnlyTheDeclaredFrameBinding() throws IOException {
-        for (String suffix : List.of("", "_subgroup", "_ser")) {
+        for (String suffix : List.of("", "_ser")) {
             Set<Integer> query = descriptorBindings(List.of(
                     "realtime_wavefront_sharc_bounce" + suffix + ".rgen.spv"), 1);
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
@@ -224,7 +225,7 @@ final class TracePipelinesContractTest {
                     Set.of(shadowPayload),
                     payloadShapes(shader, STORAGE_INCOMING_RAY_PAYLOAD));
         }
-        for (String suffix : List.of("", "_subgroup", "_ser")) {
+        for (String suffix : List.of("", "_ser")) {
             assertEquals(
                     Set.of(tracePayload),
                     payloadShapes(
@@ -241,9 +242,14 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "transparent_bounce", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
-                    Set.of(tracePayload, shadowPayload),
+                    Set.of(tracePayload),
                     payloadShapes(
                             wavefrontShader("realtime", "primary_chain", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader("realtime", "primary_landing", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(tracePayload),
@@ -334,20 +340,13 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void fusedBounceUsesSubgroupCompactionOnlyWithoutSer() throws IOException {
+    void fusedBounceDisablesSubgroupCompactionAfterSerReordering() throws IOException {
         Set<Integer> scalar = parse(
                 wavefrontShader("realtime", "bounce", "")).opcodes;
         assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_ELECT));
         assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
         assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT));
         assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
-
-        Set<Integer> subgroup = parse(
-                wavefrontShader("realtime", "bounce", "_subgroup")).opcodes;
-        assertTrue(subgroup.contains(OP_GROUP_NON_UNIFORM_ELECT));
-        assertTrue(subgroup.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
-        assertTrue(subgroup.contains(OP_GROUP_NON_UNIFORM_BALLOT));
-        assertTrue(subgroup.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
 
         Set<Integer> ser = parse(
                 wavefrontShader("realtime", "bounce", "_ser")).opcodes;
@@ -395,9 +394,13 @@ final class TracePipelinesContractTest {
 
     @Test
     void compiledPathRecordsUseIndependentStrides() throws IOException {
-        for (String suffix : List.of("", "_subgroup", "_ser")) {
+        for (String suffix : List.of("", "_ser")) {
             assertRecordStride(
                     wavefrontShader("realtime", "primary_chain", suffix),
+                    ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
+                    ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
+            assertRecordStride(
+                    wavefrontShader("realtime", "primary_landing", suffix),
                     ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
                     ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
             assertRecordStride(

@@ -1074,9 +1074,6 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 					|| source.name.startsWith('offline_wavefront_')
 					? [
 							[name: '', definitions: []],
-							[name: '_subgroup', definitions: [
-									'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
-							]],
 							[name: '_ser', definitions: [
 									'-DPRIME_ENABLE_SER=1',
 									'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
@@ -1089,35 +1086,35 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			// update it only when a mode becomes reachable from the corresponding entry point.
 			def wavefrontVariantPlan = [
 					'realtime_wavefront_head':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_step':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_primary':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_primary_direct':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_transparent_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_transparent_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_sharc_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_sharc_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'offline_wavefront_head':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
+							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_step':
-							[compile: ['', '_ser'], alias: ['_subgroup': '']],
+							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_area':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']]
+							[compile: [''], alias: ['_ser': '']]
 			][stem]
 			def variants = wavefrontVariantPlan == null
 					? allWavefrontVariants

@@ -9,14 +9,15 @@ final class RealtimeWavefrontGroups {
     static final int PRIMARY_DIRECT = 1;
     static final int PRIMARY = 2;
     static final int PRIMARY_CHAIN = 3;
-    static final int CLASSIFY = 4;
-    static final int NONE = 5;
-    static final int SUN = 6;
-    static final int AREA = 7;
-    static final int TRANSPARENT_RESOLVE = 8;
-    static final int RESOLVE = 9;
-    static final int GROUP_COUNT = 10;
-    static final int MODULE_COUNT = 10;
+    static final int PRIMARY_LANDING = 4;
+    static final int CLASSIFY = 5;
+    static final int NONE = 6;
+    static final int SUN = 7;
+    static final int AREA = 8;
+    static final int TRANSPARENT_RESOLVE = 9;
+    static final int RESOLVE = 10;
+    static final int GROUP_COUNT = 11;
+    static final int MODULE_COUNT = 11;
 
     static final int LEGACY_HEAD = 0;
     static final int LEGACY_PRIMARY_DIRECT = 7;
@@ -26,8 +27,8 @@ final class RealtimeWavefrontGroups {
     static final int LEGACY_GROUP_COUNT = 11;
     static final int LEGACY_MODULE_COUNT = 8;
 
-    private static final int[] MODULES = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    private static final int[] CONTROLS = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    private static final int[] MODULES = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    private static final int[] CONTROLS = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     private static final int[] LEGACY_MODULES = {0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7};
     private static final int[] LEGACY_CONTROLS = {0, 0, 256, 768, 512, 768, 512, 0, 0, 3, 5};
 
@@ -40,6 +41,7 @@ final class RealtimeWavefrontGroups {
                 prefix + "primary_direct" + suffix,
                 prefix + "two_stage_primary" + suffix,
                 prefix + "primary_chain" + suffix,
+                prefix + "primary_landing" + suffix,
                 prefix + "steady_classify" + suffix,
                 prefix + "steady_none" + suffix,
                 prefix + "steady_sun" + suffix,

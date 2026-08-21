@@ -12,12 +12,12 @@ import org.lwjgl.vulkan.VK11;
 
 final class VulkanDeviceNegotiatorTest {
     @Test
-    void wavefrontShaderPermutationSelectsSubgroupsWithoutSer() {
+    void wavefrontShaderPermutationUsesScalarFallbackWithoutSer() {
         assertEquals(".rgen.spv",
                 WavefrontShaderPermutation.suffix(false, false));
         assertEquals(".rgen.spv",
                 WavefrontShaderPermutation.suffix(false, true));
-        assertEquals("_subgroup.rgen.spv",
+        assertEquals(".rgen.spv",
                 WavefrontShaderPermutation.suffix(true, false));
         assertEquals("_ser.rgen.spv",
                 WavefrontShaderPermutation.suffix(true, true));

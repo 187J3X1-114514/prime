@@ -93,26 +93,34 @@ interface IPrimeWavefrontLightNee {
             float sunProbability);
 }
 
+float primeMixedWavefrontSunProbability(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        float3 viewDirection) {
+    float2 importance = primeSecondaryLightFamilyImportance(
+            integrator, surface, viewDirection);
+    float probability = primeQuantizedSunFamilyProbability(
+            importance.x, importance.y);
+    float minimumProbability =
+            float(PRIME_SUN_FAMILY_MINIMUM_MIXED_CODE)
+            / float(PRIME_SUN_FAMILY_PROBABILITY_STEPS);
+    if (importance.x > 0.0
+            && importance.y > 0.0
+            && probability > minimumProbability) {
+        importance.x *= primeRealtimeSunShadowImportance(surface.position);
+        probability = primeQuantizedSunFamilyProbability(
+                importance.x, importance.y);
+    }
+    return probability;
+}
+
 struct PrimeMixedWavefrontLightNee : IPrimeWavefrontLightNee {
     float sunProbability(
             IntegratorRecord integrator,
             SurfaceInteraction surface,
             float3 viewDirection) {
-        float2 importance = primeSecondaryLightFamilyImportance(
+        return primeMixedWavefrontSunProbability(
                 integrator, surface, viewDirection);
-        float probability = primeQuantizedSunFamilyProbability(
-                importance.x, importance.y);
-        float minimumProbability =
-                float(PRIME_SUN_FAMILY_MINIMUM_MIXED_CODE)
-                / float(PRIME_SUN_FAMILY_PROBABILITY_STEPS);
-        if (importance.x > 0.0
-                && importance.y > 0.0
-                && probability > minimumProbability) {
-            importance.x *= primeRealtimeSunShadowImportance(surface.position);
-            probability = primeQuantizedSunFamilyProbability(
-                    importance.x, importance.y);
-        }
-        return probability;
     }
 
     float3 estimate(

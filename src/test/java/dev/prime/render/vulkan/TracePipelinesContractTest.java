@@ -61,11 +61,11 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(9, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(7, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(27, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(11, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(8, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(38, RealtimeRayTracingPipeline.dispatchCount(12));
         assertEquals(5, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(131, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(194, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
@@ -75,13 +75,13 @@ final class TracePipelinesContractTest {
         assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 1, 4, 4, 2, 3, 5, 6),
+        assertEquals(List.of(0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 0, 256, 768, 512, 0, 0, 3, 5),
+        assertEquals(List.of(0, 0, 256, 768, 512, 768, 512, 0, 0, 3, 5),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)

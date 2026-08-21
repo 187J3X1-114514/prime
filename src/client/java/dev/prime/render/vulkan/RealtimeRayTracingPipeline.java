@@ -31,7 +31,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
 
     static int dispatchCount(int scatterCount) {
-        return 2 * Math.max(scatterCount - 1, 0) + 5;
+        return 3 * Math.max(scatterCount - 1, 0) + 5;
     }
 
     static int[] primaryDirectInputImageIndices() {
@@ -152,6 +152,16 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 stack,
                 activeProgram,
                 RealtimeWavefrontGroups.transparentBounce(transparentTraceQueue),
+                commandOffset,
+                transparentTraceQueue);
+        // AREA/PRIMARY records retain their source entries. One buffer barrier publishes the
+        // marker and exact hit before the resource-specialized shader rescans that source domain.
+        this.queueBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.transparentArea(transparentTraceQueue),
                 commandOffset,
                 transparentTraceQueue);
         if (finalRound) {

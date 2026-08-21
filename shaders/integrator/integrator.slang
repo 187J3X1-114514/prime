@@ -721,26 +721,14 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
     return result;
 }
 
-PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
+PrimeDirectLightingSplit primeEstimatePrimaryDirectPreparedAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
-        PrimePreparedSampleBase preparedSample,
+        AreaLightSample area,
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    AreaLightSample area = primeSampleAreaLight(
-            context.diagnostics,
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY));
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -775,21 +763,42 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             false);
 }
 
-float3 primeEstimateDirectAreaLight(
+PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
-        float2 treeSample,
-        float2 positionSample,
+        PrimePreparedSampleBase preparedSample,
         PrimeOpenPbrVolumeStack volumeStack,
-        float lightFamilyProbability) {
-    float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+        bool conditionalTransparentBranch) {
     AreaLightSample area = primeSampleAreaLight(
             context.diagnostics,
             surface.position,
             primeAreaLightReceiverNormal(surface, viewDirection),
-            treeSample,
-            positionSample);
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_SECONDARY));
+    return primeEstimatePrimaryDirectPreparedAreaLight(
+            context,
+            surface,
+            viewDirection,
+            area,
+            volumeStack,
+            conditionalTransparentBranch);
+}
+
+float3 primeEstimateDirectPreparedAreaLight(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        AreaLightSample area,
+        PrimeOpenPbrVolumeStack volumeStack,
+        float lightFamilyProbability) {
+    float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     area.light.pdf = primeLightFamilyPdfValue(
             area.light.pdf, lightFamilyProbability);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
@@ -815,6 +824,29 @@ float3 primeEstimateDirectAreaLight(
             radiance,
             volumeStack,
             true);
+}
+
+float3 primeEstimateDirectAreaLight(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float2 treeSample,
+        float2 positionSample,
+        PrimeOpenPbrVolumeStack volumeStack,
+        float lightFamilyProbability) {
+    AreaLightSample area = primeSampleAreaLight(
+            context.diagnostics,
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            treeSample,
+            positionSample);
+    return primeEstimateDirectPreparedAreaLight(
+            context,
+            surface,
+            viewDirection,
+            area,
+            volumeStack,
+            lightFamilyProbability);
 }
 
 float3 primeEstimateDirectSun(

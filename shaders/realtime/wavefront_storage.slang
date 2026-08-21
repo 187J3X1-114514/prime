@@ -54,6 +54,9 @@ static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
 static const uint PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK = 0x1ffu;
 static const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
 static const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
+// The physical surface hit-kind word carries this dispatch-local marker above the stored
+// sun-family field. The area stage consumes it before the source queue is reused.
+static const uint PRIME_WAVEFRONT_TRANSPARENT_AREA_PENDING = 0x2000u;
 static const uint PRIME_WAVEFRONT_SHARC_SHIFT = 24u;
 static const uint PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK = 0x3fu;
 static const uint PRIME_WAVEFRONT_SHARC_EVENT_SHIFT = 6u;

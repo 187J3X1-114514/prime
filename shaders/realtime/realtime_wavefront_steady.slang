@@ -1,5 +1,6 @@
 #define PRIME_TWO_STAGE_WAVEFRONT 1
 #define PRIME_STEADY_WAVEFRONT 1
+#define PRIME_WAVEFRONT_LIGHT_EVENT_ONLY 1
 #include "realtime/realtime_wavefront_bounce.slang"
 
 static const uint PRIME_STEADY_EVENT_NONE = 0u;

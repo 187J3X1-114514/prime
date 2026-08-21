@@ -1,7 +1,11 @@
 #include "realtime/realtime_wavefront_light.slang"
+#if !defined(PRIME_WAVEFRONT_LIGHT_EVENT_ONLY)
 #include "realtime/realtime_wavefront_step.slang"
+#endif
 #include "realtime/transparent_light_event.slang"
+#if !defined(PRIME_WAVEFRONT_CLASSIFY_ONLY)
 #include "realtime/realtime_wavefront_advance.slang"
+#endif
 
 struct PrimeFusedWavefrontLightResult {
     uint storedSunProbability;
@@ -68,6 +72,7 @@ bool primeTransparentLightEventSamplesArea(PrimeTransparentLightEvent event) {
             || event.type == PRIME_TRANSPARENT_LIGHT_EVENT_AREA;
 }
 
+#if !defined(PRIME_WAVEFRONT_CLASSIFY_ONLY)
 bool primePrepareTransparentAreaSample(
         inout PrimeIntegratorContext context,
         PathState path,
@@ -266,7 +271,9 @@ PrimeFusedWavefrontLightResult primeShadeTransparentAreaLightEvent(
     result.diagnosticsCommitted = true;
     return result;
 }
+#endif
 
+#if !defined(PRIME_WAVEFRONT_LIGHT_EVENT_ONLY)
 PrimeFusedWavefrontLightResult primeFusedWavefrontLight<
         LightNee, IndirectReuse, SharcTraining>(
         LightNee lightNee,
@@ -610,3 +617,4 @@ void primeWavefrontTransparentArea(
             control,
             light.storedSunProbability);
 }
+#endif

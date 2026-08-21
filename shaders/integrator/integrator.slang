@@ -996,9 +996,16 @@ bool primeAdvancePath(
     if (skipRoulette) {
         return true;
     }
-    // bounce counts every completed scatter, including discrete-only transparent interfaces.
+    // Two-stage realtime has already completed its non-delta bridge scatter before steady bounce
+    // zero. Count that scatter for RR without folding primary delta depth into the steady bounce
+    // domain or reducing its independent dispatch limit.
+    uint rouletteCompletedScatters = path.bounce;
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+    rouletteCompletedScatters =
+            primeTwoStageRouletteCompletedScatters(path.bounce);
+#endif
     if (!primeRussianRouletteApplies(
-            path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
+            rouletteCompletedScatters, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
     float rouletteSample = primeHashSample1D(

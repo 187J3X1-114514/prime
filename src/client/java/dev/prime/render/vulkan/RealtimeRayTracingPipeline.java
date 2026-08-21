@@ -31,7 +31,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
 
     static int dispatchCount(int scatterCount) {
-        return 4 * scatterCount + 7;
+        return 4 * scatterCount + 9;
     }
 
     static int sharcDispatchCount(int scatterCount) {
@@ -110,9 +110,24 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 commandBuffer,
                 stack,
                 activeProgram,
-                RealtimeWavefrontGroups.PRIMARY_LANDING,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_CLASSIFY,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+        this.queueBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_PRIMARY,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_SECONDARY,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
         this.queueBarrier(commandBuffer, stack);
         for (int bounce = 0; bounce < input.scatterCount(); bounce++) {
             this.traceQueued(

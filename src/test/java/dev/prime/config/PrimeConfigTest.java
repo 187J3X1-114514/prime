@@ -280,7 +280,7 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
-        assertTrue(serialized.contains("renderer.scatter_count=12\n"));
+        assertTrue(serialized.contains("renderer.scatter_count=8\n"));
         assertTrue(serialized.contains("renderer.primary_chain_limit=8\n"));
         assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());

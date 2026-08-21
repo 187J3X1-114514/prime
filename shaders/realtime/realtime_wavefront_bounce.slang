@@ -3,7 +3,8 @@
 #include "realtime/realtime_wavefront_step.slang"
 #endif
 #include "realtime/transparent_light_event.slang"
-#if !defined(PRIME_WAVEFRONT_CLASSIFY_ONLY)
+#if !defined(PRIME_WAVEFRONT_CLASSIFY_ONLY) \
+        && !defined(PRIME_WAVEFRONT_NO_ADVANCE)
 #include "realtime/realtime_wavefront_advance.slang"
 #endif
 

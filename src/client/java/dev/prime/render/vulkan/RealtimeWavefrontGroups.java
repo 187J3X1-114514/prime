@@ -12,14 +12,15 @@ final class RealtimeWavefrontGroups {
     static final int PRIMARY_LANDING_CLASSIFY = 4;
     static final int PRIMARY_LANDING_PRIMARY = 5;
     static final int PRIMARY_LANDING_SECONDARY = 6;
-    static final int CLASSIFY = 7;
-    static final int NONE = 8;
-    static final int SUN = 9;
-    static final int AREA = 10;
-    static final int TRANSPARENT_RESOLVE = 11;
-    static final int RESOLVE = 12;
-    static final int GROUP_COUNT = 13;
-    static final int MODULE_COUNT = 13;
+    static final int PRIMARY_LANDING_ADVANCE = 7;
+    static final int CLASSIFY = 8;
+    static final int NONE = 9;
+    static final int SUN = 10;
+    static final int AREA = 11;
+    static final int TRANSPARENT_RESOLVE = 12;
+    static final int RESOLVE = 13;
+    static final int GROUP_COUNT = 14;
+    static final int MODULE_COUNT = 14;
 
     static final int LEGACY_HEAD = 0;
     static final int LEGACY_PRIMARY_DIRECT = 7;
@@ -29,8 +30,12 @@ final class RealtimeWavefrontGroups {
     static final int LEGACY_GROUP_COUNT = 11;
     static final int LEGACY_MODULE_COUNT = 8;
 
-    private static final int[] MODULES = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
-    private static final int[] CONTROLS = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    private static final int[] MODULES = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+    };
+    private static final int[] CONTROLS = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
     private static final int[] LEGACY_MODULES = {0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7};
     private static final int[] LEGACY_CONTROLS = {0, 0, 256, 768, 512, 768, 512, 0, 0, 3, 5};
 
@@ -46,6 +51,7 @@ final class RealtimeWavefrontGroups {
                 prefix + "primary_landing" + suffix,
                 prefix + "primary_landing_primary" + suffix,
                 prefix + "primary_landing_secondary" + suffix,
+                prefix + "primary_landing_advance" + suffix,
                 prefix + "steady_classify" + suffix,
                 prefix + "steady_none" + suffix,
                 prefix + "steady_sun" + suffix,

@@ -61,11 +61,11 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(13, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(13, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(57, RealtimeRayTracingPipeline.dispatchCount(12));
-        assertEquals(13, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(265, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(14, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(14, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(58, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(14, RealtimeRayTracingPipeline.dispatchCount(1));
+        assertEquals(266, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(38, RealtimeRayTracingPipeline.sharcDispatchCount(12));
         assertEquals(5, RealtimeRayTracingPipeline.sharcDispatchCount(1));
         assertEquals(194, RealtimeRayTracingPipeline.sharcDispatchCount(64));
@@ -78,13 +78,13 @@ final class TracePipelinesContractTest {
         assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -128,7 +128,7 @@ final class TracePipelinesContractTest {
                 realtime.moduleResource(2));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_steady_area_ser.rgen.spv",
-                realtime.moduleResource(10));
+                realtime.moduleResource(11));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_sharc_bounce_ser.rgen.spv",
                 sharc.moduleResource(1));
@@ -161,6 +161,8 @@ final class TracePipelinesContractTest {
                                     "realtime", "primary_landing_primary", suffix),
                             wavefrontShader(
                                     "realtime", "primary_landing_secondary", suffix),
+                            wavefrontShader(
+                                    "realtime", "primary_landing_advance", suffix),
                             wavefrontShader("realtime", "steady_classify", suffix),
                             wavefrontShader("realtime", "steady_none", suffix),
                             wavefrontShader("realtime", "steady_sun", suffix),
@@ -266,6 +268,12 @@ final class TracePipelinesContractTest {
                     payloadShapes(
                             wavefrontShader(
                                     "realtime", "primary_landing_secondary", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "primary_landing_advance", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(tracePayload),
@@ -445,6 +453,11 @@ final class TracePipelinesContractTest {
             assertRecordStride(
                     wavefrontShader(
                             "realtime", "primary_landing_secondary", suffix),
+                    ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
+                    ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
+            assertRecordStride(
+                    wavefrontShader(
+                            "realtime", "primary_landing_advance", suffix),
                     ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
                     ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
             assertRecordStride(

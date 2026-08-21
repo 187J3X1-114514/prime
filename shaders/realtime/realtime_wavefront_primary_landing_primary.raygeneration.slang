@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront_primary_landing.slang"
+#include "realtime/realtime_wavefront_primary_landing_light.slang"
 
 [shader("raygeneration")]
 void main()
@@ -8,5 +8,5 @@ void main()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_TRACE_QUEUE_0);
     }
-    primeWavefrontPrimaryLandingPrimary(context, launchIndex);
+    primeWavefrontPrimaryLandingLight(context, launchIndex);
 }

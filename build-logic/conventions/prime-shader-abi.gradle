@@ -157,7 +157,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| wavefrontContract.areaRecordSize
 						!= 16 + wavefrontSurfaceRecord.size * wavefrontContract.pathSlotsPerPixel
 				|| wavefrontContract.queueEntriesPerPixel != 2
-				|| wavefrontContract.queueStorageEntriesPerPixel != 8
+				|| wavefrontContract.queueStorageEntriesPerPixel != 9
 				|| wavefrontContract.queueCount != 6
 				|| wavefrontContract.traceQueue0 != 0
 				|| wavefrontContract.traceQueue1 != 1

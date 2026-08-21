@@ -154,8 +154,8 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 RealtimeWavefrontGroups.transparentBounce(transparentTraceQueue),
                 commandOffset,
                 transparentTraceQueue);
-        // AREA/PRIMARY records retain their source entries. One buffer barrier publishes the
-        // marker and exact hit before the resource-specialized shader rescans that source domain.
+        // One buffer barrier publishes the compact AREA/PRIMARY queue and exact resolved hits.
+        // Its SBT record still identifies the transparent source queue for the ping-pong tail.
         this.queueBarrier(commandBuffer, stack);
         this.traceQueued(
                 commandBuffer,
@@ -163,7 +163,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 activeProgram,
                 RealtimeWavefrontGroups.transparentArea(transparentTraceQueue),
                 commandOffset,
-                transparentTraceQueue);
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
         if (finalRound) {
             this.resolveInputBarrier(commandBuffer, stack);
         } else {

@@ -90,29 +90,6 @@ uint primeLoadWavefrontSunFamilyProbability(uint pathIndex) {
     return primeWavefrontSurfaceSunProbability(primeWavefrontQueue[word]);
 }
 
-void primeClearWavefrontTransparentAreaPending(uint pathIndex) {
-    uint word = primeWavefrontSurfaceWord(pathIndex)
-            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
-    primeWavefrontQueue[word] &= ~PRIME_WAVEFRONT_TRANSPARENT_AREA_PENDING;
-}
-
-void primeStoreWavefrontTransparentAreaPending(
-        uint pathIndex,
-        uint storedProbability) {
-    uint word = primeWavefrontSurfaceWord(pathIndex)
-            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
-    primeWavefrontQueue[word] = primePackWavefrontSurfaceSunProbability(
-            primeWavefrontQueue[word], storedProbability)
-            | PRIME_WAVEFRONT_TRANSPARENT_AREA_PENDING;
-}
-
-bool primeWavefrontTransparentAreaPending(uint pathIndex) {
-    uint word = primeWavefrontSurfaceWord(pathIndex)
-            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
-    return (primeWavefrontQueue[word]
-            & PRIME_WAVEFRONT_TRANSPARENT_AREA_PENDING) != 0u;
-}
-
 void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
     uint base = primeWavefrontSurfaceWord(pathIndex);
     if (surface.hitKind == PRIME_HIT_NONE) {

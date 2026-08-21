@@ -54,9 +54,6 @@ static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
 static const uint PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK = 0x1ffu;
 static const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
 static const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
-// The physical surface hit-kind word carries this dispatch-local marker above the stored
-// sun-family field. The area stage consumes it before the source queue is reused.
-static const uint PRIME_WAVEFRONT_TRANSPARENT_AREA_PENDING = 0x2000u;
 static const uint PRIME_WAVEFRONT_SHARC_SHIFT = 24u;
 static const uint PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK = 0x3fu;
 static const uint PRIME_WAVEFRONT_SHARC_EVENT_SHIFT = 6u;
@@ -79,9 +76,11 @@ uint primeWavefrontPixelCount() {
 }
 
 uint primeWavefrontQueueCapacity(uint queue) {
-    bool transparentTrace = queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0
-            || queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1;
-    uint entriesPerPixel = transparentTrace
+    // Either transparent branch can independently defer area work from the same pixel.
+    bool wideQueue = queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0
+            || queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
+            || queue == PRIME_WAVEFRONT_AREA_QUEUE;
+    uint entriesPerPixel = wideQueue
             ? PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL
             : 1u;
     return primeWavefrontPixelCount() * entriesPerPixel;
@@ -123,7 +122,8 @@ uint primeWavefrontQueueWord(uint queue, uint entry) {
     if (queue == PRIME_WAVEFRONT_AREA_QUEUE) {
         return indexWords + 6u * pixelCount + entry;
     }
-    return indexWords + 7u * pixelCount + entry;
+    // The area queue occupies both slots 6 and 7; resolve starts after its compact domain.
+    return indexWords + 8u * pixelCount + entry;
 }
 
 static const uint PRIME_WAVEFRONT_AREA_GUIDE_WORDS = 4u;

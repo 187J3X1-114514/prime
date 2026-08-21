@@ -289,7 +289,7 @@
     "pathSlotsPerPixel": 2,
     "areaRecordSize": 208,
     "queueEntriesPerPixel": 2,
-    "queueStorageEntriesPerPixel": 8,
+    "queueStorageEntriesPerPixel": 9,
     "queueCount": 6,
     "traceQueue0": 0,
     "traceQueue1": 1,

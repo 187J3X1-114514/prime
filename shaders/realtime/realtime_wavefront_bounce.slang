@@ -612,15 +612,19 @@ void primeWavefrontTransparentBounce(
             context, recordIndex, true);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeClearWavefrontTransparentAreaPending(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     PrimeTransparentLightEvent lightEvent = primeClassifyTransparentLightEvent(
             recordIndex, record, surface, control);
-    if (primeTransparentLightEventSamplesArea(lightEvent)) {
-        // Preserve the exact texture-resolved hit; the specialized stage consumes this marker
-        // while rescanning the still-live source queue.
+    bool areaPending = primeTransparentLightEventSamplesArea(lightEvent);
+    primeAppendWavefrontContinuation(
+            PrimePostTraceWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_AREA_QUEUE,
+            recordIndex,
+            areaPending);
+    if (areaPending) {
+        // Preserve the exact texture-resolved hit for the compact resource-specialized queue.
         primeStoreWavefrontSurface(recordIndex, surface);
-        primeStoreWavefrontTransparentAreaPending(
+        primeStoreWavefrontSunFamilyProbability(
                 recordIndex, lightEvent.storedSunProbability);
         primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
         return;
@@ -655,11 +659,8 @@ void primeWavefrontTransparentArea(
         inout PrimeIntegratorContext context,
         uint launchIndex,
         uint sourceQueue) {
-    uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
-    if (!primeWavefrontTransparentAreaPending(recordIndex)) {
-        return;
-    }
-
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
@@ -712,7 +713,6 @@ void primeWavefrontTransparentArea(
     if (!light.diagnosticsCommitted) {
         context.diagnostics = shadeDiagnostics;
     }
-    primeClearWavefrontTransparentAreaPending(recordIndex);
     primeFinishTransparentWavefrontBounce(
             context,
             recordIndex,

@@ -3,46 +3,64 @@ package dev.prime.render.vulkan;
 import dev.prime.render.shader.ShaderAbi;
 import java.util.List;
 
-/** Ray-generation group order for execution-mode queues. */
+/** Independent standard two-stage and legacy SHARC ray-generation schedules. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
-    static final int PRIMARY_DIRECT = 7;
-    static final int PRIMARY = 8;
+    static final int PRIMARY_DIRECT = 1;
+    static final int PRIMARY = 2;
+    static final int PRIMARY_CHAIN = 3;
+    static final int CLASSIFY = 4;
+    static final int NONE = 5;
+    static final int SUN = 6;
+    static final int AREA = 7;
+    static final int TRANSPARENT_RESOLVE = 8;
     static final int RESOLVE = 9;
-    static final int TRANSPARENT_RESOLVE = 10;
-    static final int GROUP_COUNT = 11;
-    static final int MODULE_COUNT = 8;
-    private static final int[] MODULES = {0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7};
-    private static final int[] CONTROLS = {0, 0, 256, 768, 512, 768, 512, 0, 0, 3, 5};
+    static final int GROUP_COUNT = 10;
+    static final int MODULE_COUNT = 10;
+
+    static final int LEGACY_HEAD = 0;
+    static final int LEGACY_PRIMARY_DIRECT = 7;
+    static final int LEGACY_PRIMARY = 8;
+    static final int LEGACY_RESOLVE = 9;
+    static final int LEGACY_TRANSPARENT_RESOLVE = 10;
+    static final int LEGACY_GROUP_COUNT = 11;
+    static final int LEGACY_MODULE_COUNT = 8;
+
+    private static final int[] MODULES = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    private static final int[] CONTROLS = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    private static final int[] LEGACY_MODULES = {0, 1, 1, 4, 4, 5, 5, 2, 3, 6, 7};
+    private static final int[] LEGACY_CONTROLS = {0, 0, 256, 768, 512, 768, 512, 0, 0, 3, 5};
+
     private RealtimeWavefrontGroups() {}
 
     static RaygenSchedule standardSchedule(String suffix) {
         String prefix = "/prime/shaders/realtime_wavefront_";
-        return schedule(
-                suffix,
-                prefix + "bounce" + suffix);
+        return RaygenSchedule.of(List.of(
+                prefix + "head" + suffix,
+                prefix + "primary_direct" + suffix,
+                prefix + "two_stage_primary" + suffix,
+                prefix + "primary_chain" + suffix,
+                prefix + "steady_classify" + suffix,
+                prefix + "steady_none" + suffix,
+                prefix + "steady_sun" + suffix,
+                prefix + "steady_area" + suffix,
+                prefix + "two_stage_transparent_resolve" + suffix,
+                prefix + "resolve" + suffix), MODULES, CONTROLS);
     }
 
     static RaygenSchedule sharcSchedule(String suffix) {
         String prefix = "/prime/shaders/realtime_wavefront_";
-        return schedule(
-                suffix,
-                prefix + "sharc_bounce" + suffix);
-    }
-
-    private static RaygenSchedule schedule(
-            String suffix,
-            String bounce) {
-        String prefix = "/prime/shaders/realtime_wavefront_";
         return RaygenSchedule.of(List.of(
                 prefix + "head" + suffix,
-                bounce,
+                prefix + "sharc_bounce" + suffix,
                 prefix + "primary_direct" + suffix,
                 prefix + "primary" + suffix,
                 prefix + "transparent_bounce" + suffix,
                 prefix + "transparent_area" + suffix,
                 prefix + "resolve" + suffix,
-                prefix + "transparent_resolve" + suffix), MODULES, CONTROLS);
+                prefix + "transparent_resolve" + suffix),
+                LEGACY_MODULES,
+                LEGACY_CONTROLS);
     }
 
     static int module(int group) {
@@ -53,11 +71,11 @@ final class RealtimeWavefrontGroups {
         return CONTROLS[group];
     }
 
-    static int bounce(int queue) {
+    static int legacyBounce(int queue) {
         return queued(queue, 1, 2);
     }
 
-    static int transparentBounce(int queue) {
+    static int legacyTransparentBounce(int queue) {
         return switch (queue) {
             case ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0 -> 3;
             case ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1 -> 4;
@@ -65,7 +83,7 @@ final class RealtimeWavefrontGroups {
         };
     }
 
-    static int transparentArea(int queue) {
+    static int legacyTransparentArea(int queue) {
         return switch (queue) {
             case ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0 -> 5;
             case ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1 -> 6;

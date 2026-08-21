@@ -5,6 +5,8 @@ struct PrimeWavefrontContinuations {
     uint secondPathIndex;
     bool firstActive;
     bool secondActive;
+    bool firstPrimaryChain;
+    bool secondPrimaryChain;
     bool transparent;
 };
 
@@ -25,6 +27,8 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
     queued.secondPathIndex = primeWavefrontIndex(pixel, 1u);
     queued.firstActive = false;
     queued.secondActive = false;
+    queued.firstPrimaryChain = false;
+    queued.secondPrimaryChain = false;
     queued.transparent = true;
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         PrimeDenoiserState emptyState = primeInitialDenoiserState();
@@ -143,6 +147,9 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 && hasScatter
                 && !hasGuide
                 && primeSurfaceHasMotion(surface);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        guideProbeFallback = false;
+#endif
         bool diffusePath = transmissionBranch;
         uint guideBounce = path.bounce;
 
@@ -200,17 +207,32 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                     preparedSample,
                     branchDiscreteOnly,
                     surfaceLinearRoughness,
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+                    true);
+#else
                     primeTransparentRouletteBlocked(
                             primeTransparentTransportOwnsGuide(
                                     false,
                                     guideProbeFallback),
                             guideEnabled,
                             hasGuide));
+#endif
         }
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
             continuation = branchPath.bounce < maximumBounces;
+#endif
         }
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        bool primaryChain = continuation
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u;
+        if (continuation && !primaryChain) {
+            branchPath.bounce = 0u;
+        }
+#else
+        bool primaryChain = false;
+#endif
         PrimeWavefrontPathRecord record =
                 primeMakeTransparentWavefrontRecord(context.diagnostics,
                 branchPath,
@@ -225,12 +247,19 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 primaryReflectionOnly,
                 guideProbeFallback,
                 continuation);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        if (continuation && !primaryChain) {
+            record.transport = primeWavefrontSteadyState(record.transport);
+        }
+#endif
         uint pathIndex = primeWavefrontIndex(pixel, branch);
         primeWavefrontPaths[pathIndex] = record;
         if (transmissionBranch) {
             queued.firstActive = continuation;
+            queued.firstPrimaryChain = primaryChain;
         } else {
             queued.secondActive = continuation;
+            queued.secondPrimaryChain = primaryChain;
         }
         primeStoreTransparentBranchIntermediate(
                 pixel,
@@ -268,6 +297,8 @@ void primeWavefrontPrimary<AreaNee>(
     continuations.secondPathIndex = primeWavefrontIndex(pixel, 1u);
     continuations.firstActive = false;
     continuations.secondActive = false;
+    continuations.firstPrimaryChain = false;
+    continuations.secondPrimaryChain = false;
     continuations.transparent = false;
 
     if (surface.hitKind == PRIME_HIT_SURFACE
@@ -301,8 +332,22 @@ void primeWavefrontPrimary<AreaNee>(
                 result,
                 surface,
                 0u,
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+                true,
+#else
+                false,
+#endif
                 recordIndex);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        bool primaryChain = continuation
+                && (path.flags & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
+        if (continuation && !primaryChain) {
+            path.bounce = 0u;
+        }
+#else
+        bool primaryChain = false;
         continuation = continuation && path.bounce < maximumBounces;
+#endif
         PrimeWavefrontPathRecord updated = primeMakeWavefrontRecord(
                 context.diagnostics,
                 path,
@@ -310,11 +355,34 @@ void primeWavefrontPrimary<AreaNee>(
                 denoiserState,
                 result.guides,
                 continuation);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        if (continuation && !primaryChain) {
+            updated.transport = primeWavefrontSteadyState(updated.transport);
+        }
+#endif
         primeWavefrontPaths[recordIndex] = updated;
         primeStoreWavefrontArea(pixel, result.guides);
         primeStoreWavefrontIntermediate(pixel, result);
         continuations.firstActive = continuation;
+        continuations.firstPrimaryChain = primaryChain;
     }
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
+            continuations.firstPathIndex,
+            continuations.firstActive && !continuations.firstPrimaryChain);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
+            continuations.secondPathIndex,
+            continuations.secondActive && !continuations.secondPrimaryChain);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            continuations.firstPathIndex,
+            continuations.firstPrimaryChain || continuations.secondPrimaryChain);
+#else
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
@@ -330,4 +398,5 @@ void primeWavefrontPrimary<AreaNee>(
             PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
             continuations.secondPathIndex,
             continuations.secondActive);
+#endif
 }

@@ -205,7 +205,8 @@ struct PrimeRealtimeQueueStorage : IPrimeWavefrontQueueStorage {
         uint commandWord = primeWavefrontQueueCommandWord(queue);
         uint ignored;
         InterlockedMin(primeWavefrontQueue[commandWord], capacity, ignored);
-        InterlockedOr(primeWavefrontQueue[commandWord + 3u], 1u, ignored);
+        // Queue zero's low byte is immutable first-stage metadata.
+        InterlockedOr(primeWavefrontQueue[commandWord + 3u], 0x80000000u, ignored);
     }
 
     void store(uint queue, uint entry, uint pathIndex) {
@@ -690,6 +691,25 @@ PrimeWavefrontTransportRecord primeMakeUpdatedWavefrontRecord(
     record.rayDirectionAndDenoiserControl.w = asfloat(denoiserControl);
     record = primeWavefrontWithQueuedPsrControl(record, psrControl);
     return record;
+}
+
+PrimeWavefrontTransportRecord primeWavefrontWithBounce(
+        PrimeWavefrontTransportRecord record, uint bounce) {
+    record.sourceAndPathControl.w =
+            (record.sourceAndPathControl.w & ~PRIME_WAVEFRONT_BYTE_MASK)
+            | min(bounce, PRIME_WAVEFRONT_BYTE_MASK);
+    return record;
+}
+
+PrimeWavefrontTransportRecord primeWavefrontSteadyState(
+        PrimeWavefrontTransportRecord record) {
+    record = primeWavefrontWithBounce(record, 0u);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    control &= ~(PRIME_WAVEFRONT_BYTE_MASK
+            << PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT);
+    record.rayDirectionAndDenoiserControl.w = asfloat(control);
+    record = primeWavefrontWithQueuedPsrControl(record, 0u);
+    return primeWavefrontWithGuideProbeFallback(record, false);
 }
 
 PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(

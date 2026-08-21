@@ -1,6 +1,8 @@
 #include "realtime/realtime_wavefront_common.slang"
 
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
 #include "realtime/transparent_guide_probe.slang"
+#endif
 #include "realtime/wavefront_output.slang"
 
 void primeWavefrontTransparentResolve(
@@ -38,6 +40,7 @@ void primeWavefrontTransparentResolve(
     bool guideModeEnabled = primeTransparentGuideMode()
             != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED;
     uint probeMask = 0u;
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
     if (primeWavefrontGuideProbeFallback(primaryPathControl)) {
         probeMask |= PRIME_GUIDE_PROBE_TRANSMISSION_MASK;
     }
@@ -66,18 +69,26 @@ void primeWavefrontTransparentResolve(
             hasProbes = true;
         }
     }
+#endif
 
     // Resolve after every probe trace so the complete radiance and guide result does not remain
     // live across traversal. The probes are reconstruction-only and cannot affect this load.
     PrimeIntegrationResult result =
             primeResolveTransparentWavefrontResult(pixel);
     float4 reflectionPreviousVirtualPosition =
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+            primeCapturedReflectionPreviousVirtualPosition(
+                    result,
+                    (reflectionControl & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE)
+                            != 0u);
+#else
             (probeMask & PRIME_GUIDE_PROBE_REFLECTION_MASK) == 0u
             ? primeCapturedReflectionPreviousVirtualPosition(
                     result,
                     (reflectionControl & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE)
                             != 0u)
             : float4(0.0, 0.0, 0.0, -1.0);
+#endif
     if (!guideModeEnabled) {
         // Full mode historically ignored its queued TIR marker when transparent reconstruction was
         // disabled; keep that output topology independent of this probe-elision path.
@@ -89,6 +100,7 @@ void primeWavefrontTransparentResolve(
         result.transmissionGuides = primeEmptyDenoiserGuides();
         result.transmissionAnchorDistance = -1.0;
     }
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
     if (hasProbes) {
         if ((probeMask & PRIME_GUIDE_PROBE_TRANSMISSION_MASK) != 0u
                 && !result.transparentReflectionOnly) {
@@ -116,6 +128,7 @@ void primeWavefrontTransparentResolve(
                     probes.reflectionPreviousVirtualPosition;
         }
     }
+#endif
     primeWriteRealtimeOutput(context.diagnostics,
             pixel,
             cameraSample,

@@ -17,6 +17,7 @@ public record IntegratorFrameInput(
         AstronomyState astronomy,
         int packedRayCone,
         int scatterCount,
+        int primaryChainLimit,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -28,6 +29,31 @@ public record IntegratorFrameInput(
         boolean shInput,
         boolean rawNumericalDiagnostic,
         boolean triangleDebug) {
+    public IntegratorFrameInput(
+            FrameCamera camera,
+            int width,
+            int height,
+            AstronomyState astronomy,
+            int packedRayCone,
+            int scatterCount,
+            int sampleIndex,
+            int sampleEpoch,
+            int jitterPhase,
+            boolean cameraInWater,
+            PostProcessingMode postProcessingMode,
+            TransparentGuideMode transparentGuideMode,
+            LightingSettings.Snapshot lighting,
+            MaterialSettings.Snapshot material,
+            boolean shInput,
+            boolean rawNumericalDiagnostic,
+            boolean triangleDebug) {
+        this(
+                camera, width, height, astronomy, packedRayCone, scatterCount,
+                PrimaryChainSettings.DEFAULT_LIMIT, sampleIndex, sampleEpoch, jitterPhase,
+                cameraInWater, postProcessingMode, transparentGuideMode, lighting, material,
+                shInput, rawNumericalDiagnostic, triangleDebug);
+    }
+
     public IntegratorFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
@@ -71,6 +97,7 @@ public record IntegratorFrameInput(
                 cameraInWater,
                 transparentGuideMode);
         ScatterSettings.validateCount(scatterCount);
+        PrimaryChainSettings.validateLimit(primaryChainLimit);
         IntegratorSettings.packMaterialLightingControl(
                 lighting.sunQuarterSteps(),
                 lighting.starQuarterSteps(),

@@ -12,7 +12,8 @@ public record RealtimeRenderSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
-        int scatterCount) {
+        int scatterCount,
+        int primaryChainLimit) {
     public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
@@ -20,6 +21,7 @@ public record RealtimeRenderSettings(
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
         ScatterSettings.validateCount(scatterCount);
+        PrimaryChainSettings.validateLimit(primaryChainLimit);
     }
 
     public static RealtimeRenderSettings capture(RendererSettings settings) {
@@ -31,6 +33,7 @@ public record RealtimeRenderSettings(
                 settings.lighting(),
                 settings.material(),
                 settings.display(),
-                settings.scatterCount());
+                settings.scatterCount(),
+                settings.primaryChainLimit());
     }
 }

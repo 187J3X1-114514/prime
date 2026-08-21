@@ -1726,6 +1726,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         bool transmissionBranch,
         bool guideEnabled,
         uint storedSunProbability,
+        bool skipRoulette,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
@@ -1743,6 +1744,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     bool observesIndependentGuide = guideEnabled
             && !hasGuide
             && !guideProbeFallback;
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
     if (observesIndependentGuide
             && surface.hitKind == PRIME_HIT_SURFACE
             && primeSurfaceHasMotion(surface)) {
@@ -1750,11 +1752,18 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         // probe whenever a moving surface enters the unresolved discrete chain.
         guideProbeFallback = true;
     }
+#endif
 
     float hitDistance = surface.hitKind == PRIME_HIT_NONE
             ? PRIME_NRD_FP16_MAX
             : primeNrdSanitizeHitDistance(surface.t);
-    if (path.bounce == 1u) {
+    if (path.bounce ==
+#if defined(PRIME_STEADY_WAVEFRONT)
+            0u
+#else
+            1u
+#endif
+    ) {
         result.firstHitDistance = hitDistance;
     }
     if (hasGuide && path.bounce == guideBounce + 1u) {
@@ -1812,7 +1821,11 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
-    bool previousUsedAreaNee = areaNee.enabled() && path.bounce > 0u;
+    bool previousUsedAreaNee = areaNee.enabled()
+#if !defined(PRIME_STEADY_WAVEFRONT)
+            && path.bounce > 0u
+#endif
+            ;
     float3 emitted = primeEvaluateHitEmission(
             context, path, surface, previousUsedAreaNee);
     primeAccumulateTransparentBranch(
@@ -1922,7 +1935,9 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     }
     BsdfSample bsdf = scatter.bsdf;
     if (compareGuideContinuation && !guideContinuationReusable) {
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
         guideProbeFallback = true;
+#endif
     }
     if (!primeHasScatter(bsdf)) {
         return false;
@@ -1954,7 +1969,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             preparedSample,
             discreteContinuation,
             surfaceLinearRoughness,
-            primeTransparentRouletteBlocked(
+            skipRoulette || primeTransparentRouletteBlocked(
                     primeTransparentTransportOwnsGuide(
                             false,
                             guideProbeFallback),
@@ -2001,6 +2016,7 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
         inout PrimeIntegrationResult result,
         SurfaceInteraction surface,
         uint storedSunProbability,
+        bool skipRoulette,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
@@ -2017,7 +2033,13 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
     }
 
     if (denoiserState.hasPrimarySurface
-            && path.bounce == denoiserState.primaryBounce + 1u) {
+            && path.bounce ==
+#if defined(PRIME_STEADY_WAVEFRONT)
+                    0u
+#else
+                    denoiserState.primaryBounce + 1u
+#endif
+    ) {
         float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
                 ? PRIME_NRD_FP16_MAX
                 : primeNrdSanitizeHitDistance(surface.t);
@@ -2206,13 +2228,20 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     bsdf,
                     preparedSample,
                     discreteOnlyInterface,
-                    surfaceLinearRoughness)) {
+                    surfaceLinearRoughness,
+                    skipRoulette)) {
         return false;
     }
     if (areaNee.enabled()
             && supportsSolidAngle
             && denoiserState.hasPrimarySurface
-            && path.bounce != denoiserState.primaryBounce) {
+            &&
+#if defined(PRIME_STEADY_WAVEFRONT)
+                    true
+#else
+                    path.bounce != denoiserState.primaryBounce
+#endif
+    ) {
         areaNee.markSecondaryPath(
                 path,
                 integrator,

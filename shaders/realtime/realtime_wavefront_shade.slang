@@ -64,6 +64,7 @@ void primeWavefrontShade<AreaNee, IndirectReuse, SharcTraining>(
             result,
             surface,
             primeLoadWavefrontSunFamilyProbability(recordIndex),
+            false,
             recordIndex);
     continuation = continuation && path.bounce < maximumBounces;
     if (!continuation) {

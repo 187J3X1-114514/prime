@@ -80,6 +80,11 @@ uint primeWavefrontQueueCapacity(uint queue) {
     bool wideQueue = queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0
             || queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
             || queue == PRIME_WAVEFRONT_AREA_QUEUE;
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+    // Standard stage two aliases AREA onto queue zero; legacy SHARC retains its one-path
+    // ordinary ping-pong capacity and therefore cannot consume queue one's adjacent slot.
+    wideQueue = wideQueue || queue == PRIME_WAVEFRONT_TRACE_QUEUE_0;
+#endif
     uint entriesPerPixel = wideQueue
             ? PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL
             : 1u;
@@ -124,6 +129,12 @@ uint primeWavefrontQueueWord(uint queue, uint entry) {
     }
     // The area queue occupies both slots 6 and 7; resolve starts after its compact domain.
     return indexWords + 8u * pixelCount + entry;
+}
+
+uint primePrimaryChainLimit() {
+    return primeWavefrontQueue[
+            primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_TRACE_QUEUE_0) + 3u]
+            & 0xffu;
 }
 
 static const uint PRIME_WAVEFRONT_AREA_GUIDE_WORDS = 4u;

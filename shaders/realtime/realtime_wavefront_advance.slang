@@ -129,6 +129,7 @@ bool primeAdvanceTransparentWavefrontRecord(
             storedSunProbability,
             skipRoulette,
             recordIndex);
+    bool integratedContinuation = continuation;
     continuation = continuation
             && (skipRoulette || path.bounce < primeMaximumBounces());
     PrimeWavefrontTransportRecord updatedRecord =
@@ -159,6 +160,14 @@ bool primeAdvanceTransparentWavefrontRecord(
             !hadDirectionalGuide && directionalGuide,
             (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
             branchResult);
+    if (transmissionBranch && guideEnabled && !hasGuide && !continuation) {
+        uint stopReason = surface.hitKind == PRIME_HIT_NONE
+                ? PRIME_GUIDE_STOP_MISS
+                : integratedContinuation
+                        ? PRIME_GUIDE_STOP_BOUNCE_LIMIT
+                        : PRIME_GUIDE_STOP_SURFACE;
+        primeStoreUnownedTransmissionGuideDiagnostic(pixel, stopReason);
+    }
     return continuation;
 }
 

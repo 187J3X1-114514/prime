@@ -76,12 +76,122 @@ float3 primeNrdEffectiveDirection(
             : float3(0.0);
 }
 
+float3 primeRrGuideDiagnosticNormal(PrimeDenoiserGuides guides) {
+    if (guides.primaryHitKind != PRIME_HIT_SURFACE) return float3(0.0);
+    if (!primeNrdIsFinite(guides.primaryNormal)) return float3(1.0, 0.0, 1.0);
+    return clamp(guides.primaryNormal * 0.5 + 0.5, 0.0, 1.0);
+}
+
+float3 primeRrGuideDiagnosticRoughness(PrimeDenoiserGuides guides) {
+    if (guides.primaryHitKind != PRIME_HIT_SURFACE) return float3(0.0);
+    if (!primeNrdIsFinite(guides.primaryLinearRoughness)) {
+        return float3(1.0, 0.0, 1.0);
+    }
+    return float3(clamp(guides.primaryLinearRoughness, 0.0, 1.0));
+}
+
+float3 primeRrGuideDiagnosticAlbedo(float3 albedo, uint hitKind) {
+    if (hitKind != PRIME_HIT_SURFACE) return float3(0.0);
+    if (!primeNrdIsFinite(albedo)) return float3(1.0, 0.0, 1.0);
+    return clamp(albedo, 0.0, 1.0);
+}
+
+void primeStoreRrGuideDiagnosticCell(
+        int2 local,
+        int2 cellExtent,
+        uint column,
+        PrimeDenoiserGuides guides) {
+    int x = local.x + int(column) * cellExtent.x;
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 3 * cellExtent.y),
+            float4(primeRrGuideDiagnosticNormal(guides), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 2 * cellExtent.y),
+            float4(primeRrGuideDiagnosticRoughness(guides), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + cellExtent.y),
+            float4(primeRrGuideDiagnosticAlbedo(
+                    guides.primaryAlbedo, guides.primaryHitKind), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y),
+            float4(primeRrGuideDiagnosticAlbedo(
+                    guides.primarySpecularAlbedo, guides.primaryHitKind), 1.0));
+}
+
+// One image records four resolve-time fields without changing reconstruction inputs. Selecting
+// one in every 5x4 source pixels gives each logical guide a full-scene panel with unique writes.
+void primeStoreRrGuideDiagnostic(
+        uint2 pixel,
+        PrimeIntegrationResult sampleResult,
+        PrimeDenoiserGuides selectedGuides,
+        bool usesTransmissionAnchor,
+        bool rrUsesTransmissionGuide,
+        bool rrUsesReflectionGuide,
+        float3 transmissionGuideStatus) {
+    if (primeTransparentGuideMode()
+                    != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR
+            || pixel.x % 5u != 0u
+            || pixel.y % 4u != 0u) {
+        return;
+    }
+    uint width;
+    uint height;
+    primeRawNumericalDiagnostic.GetDimensions(width, height);
+    int2 cellExtent = int2(width / 5u, height / 4u);
+    int2 local = int2(pixel.x / 5u, pixel.y / 4u);
+    if (any(cellExtent <= int2(0)) || any(local >= cellExtent)) return;
+
+    primeStoreRrGuideDiagnosticCell(
+            local, cellExtent, 0u, sampleResult.guides);
+    primeStoreRrGuideDiagnosticCell(
+            local, cellExtent, 1u, sampleResult.transmissionGuides);
+    // Column two is the immutable first-owned transmission-guide snapshot.
+    primeStoreRrGuideDiagnosticCell(
+            local, cellExtent, 3u, selectedGuides);
+
+    float3 validity = float3(
+            sampleResult.guides.primaryHitKind == PRIME_HIT_SURFACE ? 1.0 : 0.0,
+            sampleResult.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE
+                    ? 1.0 : 0.0,
+            sampleResult.reflectionGuides.primaryHitKind == PRIME_HIT_SURFACE
+                    ? 1.0 : 0.0);
+    float3 selection = float3(
+            !rrUsesTransmissionGuide && !rrUsesReflectionGuide ? 1.0 : 0.0,
+            rrUsesTransmissionGuide ? 1.0 : 0.0,
+            rrUsesReflectionGuide ? 1.0 : 0.0);
+    int x = local.x + 4 * cellExtent.x;
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 3 * cellExtent.y),
+            float4(validity, 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 2 * cellExtent.y),
+            float4(selection, 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + cellExtent.y),
+            float4(float3(
+                    sampleResult.transparentPrimary ? 1.0 : 0.0,
+                    sampleResult.transparentReflectionOnly ? 1.0 : 0.0,
+                    usesTransmissionAnchor ? 1.0 : 0.0), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y),
+            float4(transmissionGuideStatus, 1.0));
+}
+
 void primeWriteRealtimeOutput(
         inout PrimeNumericalDiagnostics diagnostics,
         uint2 pixel,
         float2 cameraSample,
         PrimeIntegrationResult sampleResult,
-        float4 reflectionPreviousVirtualPosition) {
+        float4 reflectionPreviousVirtualPosition,
+        float3 transmissionGuideStatus) {
     if (primeWritesRawNumericalDiagnostic()) {
         primeSetNumericalContext(
                 diagnostics, PRIME_NUMERICAL_STAGE_FINAL_OUTPUT, 0u);
@@ -120,6 +230,14 @@ void primeWriteRealtimeOutput(
             nrdGuides.primarySpecularAlbedo = float3(0.0);
         }
     }
+    primeStoreRrGuideDiagnostic(
+            pixel,
+            sampleResult,
+            nrdGuides,
+            usesTransmissionAnchor,
+            rrUsesTransmissionGuide,
+            rrUsesReflectionGuide,
+            transmissionGuideStatus);
     float3 noisyDiffuse = sampleResult.radiance.diffuse;
     float3 noisySpecular = sampleResult.radiance.specular;
     if (!nrdShInputs && sampleResult.transparentPrimary) {
@@ -386,7 +504,8 @@ void primeWriteRealtimeOutput(
             pixel,
             cameraSample,
             sampleResult,
-            float4(0.0, 0.0, 0.0, -1.0));
+            float4(0.0, 0.0, 0.0, -1.0),
+            float3(0.0));
 }
 
 #endif

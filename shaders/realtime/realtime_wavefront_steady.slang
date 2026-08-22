@@ -41,8 +41,9 @@ void primeWavefrontSteadyClassify(
     primeStoreWavefrontSunFamilyProbability(
             recordIndex, lightEvent.storedSunProbability);
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
+    // NONE, SUN and AREA are a per-lane partition, so the queue is not subgroup-uniform.
     primeAppendWavefrontContinuation(
-            PrimePostTraceWavefrontContinuationAppender(),
+            PrimeScalarWavefrontContinuationAppender(),
             primeSteadyEventQueue(eventType),
             recordIndex,
             true);

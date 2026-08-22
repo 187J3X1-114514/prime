@@ -61,6 +61,12 @@ void primeProcessPrimaryChainBranch(
         // Limit one permits the transition already completed by PRIMARY and its landing trace.
         if (transitions >= limit) {
             if (transparent) {
+                if (primeWavefrontTransmissionBranch(control)
+                        && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
+                    primeStoreUnownedTransmissionGuideDiagnostic(
+                            primeWavefrontPixel(recordIndex),
+                            PRIME_GUIDE_STOP_CHAIN_LIMIT);
+                }
                 primeInvalidatePrimaryChainGuide(recordIndex, record);
             }
             record = primeWavefrontWithActive(record, false);
@@ -83,6 +89,13 @@ void primeProcessPrimaryChainBranch(
                         surface,
                         control);
         if (!continuation) {
+            if (transparent
+                    && primeWavefrontTransmissionBranch(control)
+                    && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
+                primeStoreUnownedTransmissionGuideDiagnostic(
+                        primeWavefrontPixel(recordIndex),
+                        PRIME_GUIDE_STOP_SURFACE);
+            }
             return;
         }
         transitions++;

@@ -100,6 +100,23 @@ void primeWavefrontTransparentResolve(
         result.transmissionGuides = primeEmptyDenoiserGuides();
         result.transmissionAnchorDistance = -1.0;
     }
+    bool transmissionGuideReached = (asuint(
+            primaryRecord.rayDirectionAndDenoiserControl.w)
+            & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
+    uint transmissionGuideBounce = (asuint(
+            primaryRecord.rayDirectionAndDenoiserControl.w)
+            >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
+            & PRIME_WAVEFRONT_BYTE_MASK;
+    float3 transmissionGuideStatus = float3(
+            transmissionGuideReached ? 1.0 : 0.0,
+            transmissionGuideReached && transmissionGuideBounce == 0u ? 1.0 : 0.0,
+            primeWavefrontGuideProbeFallback(primaryPathControl) ? 1.0 : 0.0);
+    if (guideModeEnabled
+            && !transmissionGuideReached
+            && primeWavefrontActive(primaryRecord)) {
+        primeStoreUnownedTransmissionGuideDiagnostic(
+                pixel, PRIME_GUIDE_STOP_DISPATCH_LIMIT);
+    }
 #if !defined(PRIME_TWO_STAGE_WAVEFRONT)
     if (hasProbes) {
         if ((probeMask & PRIME_GUIDE_PROBE_TRANSMISSION_MASK) != 0u
@@ -133,5 +150,6 @@ void primeWavefrontTransparentResolve(
             pixel,
             cameraSample,
             result,
-            reflectionPreviousVirtualPosition);
+            reflectionPreviousVirtualPosition,
+            transmissionGuideStatus);
 }

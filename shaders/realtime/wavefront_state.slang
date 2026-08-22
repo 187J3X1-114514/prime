@@ -1041,6 +1041,127 @@ void primeStoreRrReflectionGuide(
             float4(normalOctahedral.x));
 }
 
+float3 primeOwnedGuideDiagnosticNormal(PrimeDenoiserGuides guides) {
+    if (guides.primaryHitKind != PRIME_HIT_SURFACE) return float3(0.0);
+    if (!primeNrdIsFinite(guides.primaryNormal)) return float3(1.0, 0.0, 1.0);
+    return clamp(guides.primaryNormal * 0.5 + 0.5, 0.0, 1.0);
+}
+
+float3 primeOwnedGuideDiagnosticRoughness(PrimeDenoiserGuides guides) {
+    if (guides.primaryHitKind != PRIME_HIT_SURFACE) return float3(0.0);
+    if (!primeNrdIsFinite(guides.primaryLinearRoughness)) {
+        return float3(1.0, 0.0, 1.0);
+    }
+    return float3(clamp(guides.primaryLinearRoughness, 0.0, 1.0));
+}
+
+float3 primeOwnedGuideDiagnosticAlbedo(float3 albedo, uint hitKind) {
+    if (hitKind != PRIME_HIT_SURFACE) return float3(0.0);
+    if (!primeNrdIsFinite(albedo)) return float3(1.0, 0.0, 1.0);
+    return clamp(albedo, 0.0, 1.0);
+}
+
+// Column two captures the exact guide at the false -> true ownership transition. Primary writes
+// it immediately for a non-discrete interface; a queued path writes it when it first reaches a
+// solid-angle surface. No later active transport store is allowed to replace that guide.
+void primeStoreOwnedTransmissionGuideDiagnostic(
+        uint2 pixel, PrimeDenoiserGuides guides) {
+    if (primeTransparentGuideMode()
+                    != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR
+            || pixel.x % 5u != 0u
+            || pixel.y % 4u != 0u) {
+        return;
+    }
+    uint width;
+    uint height;
+    primeRawNumericalDiagnostic.GetDimensions(width, height);
+    int2 cellExtent = int2(width / 5u, height / 4u);
+    int2 local = int2(pixel.x / 5u, pixel.y / 4u);
+    if (any(cellExtent <= int2(0)) || any(local >= cellExtent)) return;
+
+    int x = local.x + 2 * cellExtent.x;
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 3 * cellExtent.y),
+            float4(primeOwnedGuideDiagnosticNormal(guides), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 2 * cellExtent.y),
+            float4(primeOwnedGuideDiagnosticRoughness(guides), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + cellExtent.y),
+            float4(primeOwnedGuideDiagnosticAlbedo(
+                    guides.primaryAlbedo, guides.primaryHitKind), 1.0));
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y),
+            float4(primeOwnedGuideDiagnosticAlbedo(
+                    guides.primarySpecularAlbedo, guides.primaryHitKind), 1.0));
+}
+
+static const uint PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER = 1u;
+static const uint PRIME_GUIDE_STOP_PRIMARY_ADVANCE = 2u;
+static const uint PRIME_GUIDE_STOP_MISS = 3u;
+static const uint PRIME_GUIDE_STOP_SURFACE = 4u;
+static const uint PRIME_GUIDE_STOP_CHAIN_LIMIT = 5u;
+static const uint PRIME_GUIDE_STOP_BOUNCE_LIMIT = 6u;
+static const uint PRIME_GUIDE_STOP_DISPATCH_LIMIT = 7u;
+
+float3 primeGuideStopDiagnosticColor(uint reason) {
+    if (reason == PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER) {
+        return float3(1.0, 0.0, 0.0);
+    }
+    if (reason == PRIME_GUIDE_STOP_PRIMARY_ADVANCE) {
+        return float3(1.0, 0.0, 1.0);
+    }
+    if (reason == PRIME_GUIDE_STOP_MISS) {
+        return float3(0.0, 0.0, 1.0);
+    }
+    if (reason == PRIME_GUIDE_STOP_SURFACE) {
+        return float3(0.0, 1.0, 0.0);
+    }
+    if (reason == PRIME_GUIDE_STOP_CHAIN_LIMIT) {
+        return float3(0.0, 1.0, 1.0);
+    }
+    if (reason == PRIME_GUIDE_STOP_BOUNCE_LIMIT) {
+        return float3(1.0, 1.0, 0.0);
+    }
+    return float3(1.0);
+}
+
+// An unresolved transmission guide colors all four column-two cells with its terminal cause.
+// A later ownership transition replaces this marker with the actual guide snapshot.
+void primeStoreUnownedTransmissionGuideDiagnostic(uint2 pixel, uint reason) {
+    if (primeTransparentGuideMode()
+                    != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR
+            || pixel.x % 5u != 0u
+            || pixel.y % 4u != 0u) {
+        return;
+    }
+    uint width;
+    uint height;
+    primeRawNumericalDiagnostic.GetDimensions(width, height);
+    int2 cellExtent = int2(width / 5u, height / 4u);
+    int2 local = int2(pixel.x / 5u, pixel.y / 4u);
+    if (any(cellExtent <= int2(0)) || any(local >= cellExtent)) return;
+
+    int x = local.x + 2 * cellExtent.x;
+    float4 marker = float4(primeGuideStopDiagnosticColor(reason), 1.0);
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 3 * cellExtent.y), marker);
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + 2 * cellExtent.y), marker);
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y + cellExtent.y), marker);
+    primeImageStoreWriteOnly(
+            primeRawNumericalDiagnostic,
+            int2(x, local.y), marker);
+}
+
 void primeStoreTransparentBranchIntermediate(
         uint2 pixel,
         bool transmissionBranch,
@@ -1049,6 +1170,11 @@ void primeStoreTransparentBranchIntermediate(
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
+        // This full store begins the pixel's branch lifetime. Clear an old diagnostic snapshot
+        // until this frame actually acquires guide ownership.
+        primeStoreOwnedTransmissionGuideDiagnostic(
+                pixel,
+                hasGuide ? result.guides : primeEmptyDenoiserGuides());
         primeImageStore(
                 primeNrdNoisyDiffuse,
                 coordinate,
@@ -1237,6 +1363,7 @@ void primeStoreTransparentBranchGuide(
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
+        primeStoreOwnedTransmissionGuideDiagnostic(pixel, result.guides);
         primeImageStore(
                 primeNrdPrimaryPosition,
                 coordinate,

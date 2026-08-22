@@ -267,6 +267,13 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 hasGuide,
                 primaryReflectionOnly,
                 branchResult);
+        if (transmissionBranch && guideEnabled && !hasGuide && !continuation) {
+            primeStoreUnownedTransmissionGuideDiagnostic(
+                    pixel,
+                    hasScatter
+                            ? PRIME_GUIDE_STOP_PRIMARY_ADVANCE
+                            : PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER);
+        }
     }
     return queued;
 }

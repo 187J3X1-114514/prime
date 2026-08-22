@@ -6,6 +6,7 @@ import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.DispatchMath;
 import dev.prime.render.vulkan.VulkanShaderModules;
 import java.nio.ByteBuffer;
@@ -13,6 +14,7 @@ import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import java.util.List;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
@@ -23,6 +25,8 @@ import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
+import org.lwjgl.vulkan.VkDependencyInfo;
+import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
@@ -30,11 +34,15 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Prime-owned release-safe visualizer over RR inputs and reflection-MV construction guides. */
 final class DlssRrDebugPass implements Destroyable {
-    private static final int IMAGE_COUNT = 10;
+    private static final int IMAGE_COUNT = 18;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
+    private static final int SNAPSHOT_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    private static final int SNAPSHOT_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT;
     private static final int PUSH_SIZE = 20;
     private static final int LOCAL_SIZE = 8;
     private static final String SHADER = "/prime/shaders/rr_debug.comp.spv";
+    private static final String CAPTURE_SHADER =
+            "/prime/shaders/rr_debug_capture.comp.spv";
 
     private final VulkanContext context;
     private final long descriptorSetLayout;
@@ -42,8 +50,14 @@ final class DlssRrDebugPass implements Destroyable {
     private final long descriptorSet;
     private final long pipelineLayout;
     private final long pipeline;
+    private final long capturePipeline;
+    private final VulkanImage rawMaterial;
+    private final VulkanImage rawSpecularMaterial;
+    private final VulkanImage rawTransportMetadata;
     private final int dispatchX;
     private final int dispatchY;
+    private final int captureDispatchX;
+    private final int captureDispatchY;
     private boolean destroyed;
 
     private DlssRrDebugPass(
@@ -53,16 +67,28 @@ final class DlssRrDebugPass implements Destroyable {
             long descriptorSet,
             long pipelineLayout,
             long pipeline,
-            int width,
-            int height) {
+            long capturePipeline,
+            VulkanImage rawMaterial,
+            VulkanImage rawSpecularMaterial,
+            VulkanImage rawTransportMetadata,
+            int displayWidth,
+            int displayHeight,
+            int renderWidth,
+            int renderHeight) {
         this.context = context;
         this.descriptorSetLayout = descriptorSetLayout;
         this.descriptorPool = descriptorPool;
         this.descriptorSet = descriptorSet;
         this.pipelineLayout = pipelineLayout;
         this.pipeline = pipeline;
-        this.dispatchX = DispatchMath.divideRoundUp(width, LOCAL_SIZE);
-        this.dispatchY = DispatchMath.divideRoundUp(height, LOCAL_SIZE);
+        this.capturePipeline = capturePipeline;
+        this.rawMaterial = rawMaterial;
+        this.rawSpecularMaterial = rawSpecularMaterial;
+        this.rawTransportMetadata = rawTransportMetadata;
+        this.dispatchX = DispatchMath.divideRoundUp(displayWidth, LOCAL_SIZE);
+        this.dispatchY = DispatchMath.divideRoundUp(displayHeight, LOCAL_SIZE);
+        this.captureDispatchX = DispatchMath.divideRoundUp(renderWidth, LOCAL_SIZE);
+        this.captureDispatchY = DispatchMath.divideRoundUp(renderHeight, LOCAL_SIZE);
     }
 
     static DlssRrDebugPass create(
@@ -70,22 +96,52 @@ final class DlssRrDebugPass implements Destroyable {
             DlssRrTargets targets,
             VulkanImage displayOutput,
             VulkanBuffer exposureState) {
-        List<VulkanImage> images = List.of(
-                targets.inputColor(),
-                targets.motion(),
-                targets.specularMotion(),
-                targets.viewZ(),
-                targets.rrNormalRoughness(),
-                targets.material(),
-                targets.specularMaterial(),
-                targets.specularHitDistance(),
-                targets.rrOutput(),
-                displayOutput);
+        VulkanImage rawMaterial = null;
+        VulkanImage rawSpecularMaterial = null;
+        VulkanImage rawTransportMetadata = null;
         long setLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;
         long pipeline = 0L;
+        long capturePipeline = 0L;
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            rawMaterial = context.createImage2D(
+                    targets.inputColor().width(),
+                    targets.inputColor().height(),
+                    SNAPSHOT_FORMAT,
+                    SNAPSHOT_USAGE,
+                    "Prime RR debug raw material snapshot");
+            rawSpecularMaterial = context.createImage2D(
+                    targets.inputColor().width(),
+                    targets.inputColor().height(),
+                    SNAPSHOT_FORMAT,
+                    SNAPSHOT_USAGE,
+                    "Prime RR debug raw specular material snapshot");
+            rawTransportMetadata = context.createImage2D(
+                    targets.inputColor().width(),
+                    targets.inputColor().height(),
+                    SNAPSHOT_FORMAT,
+                    SNAPSHOT_USAGE,
+                    "Prime RR debug raw transport metadata snapshot");
+            List<VulkanImage> images = List.of(
+                    targets.inputColor(),
+                    targets.motion(),
+                    targets.specularMotion(),
+                    targets.viewZ(),
+                    targets.rrNormalRoughness(),
+                    targets.material(),
+                    targets.specularMaterial(),
+                    targets.specularHitDistance(),
+                    targets.rrOutput(),
+                    displayOutput,
+                    targets.noisyDiffuse(),
+                    targets.noisySpecular(),
+                    targets.normalRoughness(),
+                    targets.reflectionPosition(),
+                    rawMaterial,
+                    rawSpecularMaterial,
+                    rawTransportMetadata,
+                    targets.guideDiagnostic());
             VkDescriptorSetLayoutBinding.Buffer bindings =
                     VkDescriptorSetLayoutBinding.calloc(IMAGE_COUNT + 1, stack);
             for (int binding = 0; binding < IMAGE_COUNT; binding++) {
@@ -120,18 +176,10 @@ final class DlssRrDebugPass implements Destroyable {
                             pointer),
                     "create RR debug pipeline layout");
             pipelineLayout = pointer.get(0);
-            long shader = VulkanShaderModules.create(context, stack, SHADER);
-            try {
-                VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
-                        .sType$Default().stage(COMPUTE_STAGE).module(shader).pName(stack.UTF8("main"));
-                VkComputePipelineCreateInfo.Buffer info = VkComputePipelineCreateInfo.calloc(1, stack);
-                info.get(0).sType$Default().stage(stage).layout(pipelineLayout);
-                pointer.clear();
-                context.createComputePipeline(info, pointer, "RR debug");
-                pipeline = pointer.get(0);
-            } finally {
-                VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
-            }
+            pipeline = createPipeline(
+                    context, stack, pipelineLayout, SHADER, "RR debug");
+            capturePipeline = createPipeline(
+                    context, stack, pipelineLayout, CAPTURE_SHADER, "RR debug capture");
             VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(2, stack);
             poolSize.get(0).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                     .descriptorCount(IMAGE_COUNT);
@@ -185,14 +233,117 @@ final class DlssRrDebugPass implements Destroyable {
                     descriptorSet,
                     pipelineLayout,
                     pipeline,
+                    capturePipeline,
+                    rawMaterial,
+                    rawSpecularMaterial,
+                    rawTransportMetadata,
                     displayOutput.width(),
-                    displayOutput.height());
+                    displayOutput.height(),
+                    targets.inputColor().width(),
+                    targets.inputColor().height());
         } catch (RuntimeException exception) {
             if (descriptorPool != 0L) VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
+            if (capturePipeline != 0L) VK12.vkDestroyPipeline(context.vkDevice(), capturePipeline, null);
             if (pipeline != 0L) VK12.vkDestroyPipeline(context.vkDevice(), pipeline, null);
             if (pipelineLayout != 0L) VK12.vkDestroyPipelineLayout(context.vkDevice(), pipelineLayout, null);
             if (setLayout != 0L) VK12.vkDestroyDescriptorSetLayout(context.vkDevice(), setLayout, null);
+            if (rawTransportMetadata != null) rawTransportMetadata.destroy();
+            if (rawSpecularMaterial != null) rawSpecularMaterial.destroy();
+            if (rawMaterial != null) rawMaterial.destroy();
             throw exception;
+        }
+    }
+
+    private static long createPipeline(
+            VulkanContext context,
+            MemoryStack stack,
+            long pipelineLayout,
+            String shaderResource,
+            String label) {
+        long shader = VulkanShaderModules.create(context, stack, shaderResource);
+        try {
+            VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .stage(COMPUTE_STAGE)
+                    .module(shader)
+                    .pName(stack.UTF8("main"));
+            VkComputePipelineCreateInfo.Buffer info = VkComputePipelineCreateInfo.calloc(1, stack);
+            info.get(0).sType$Default().stage(stage).layout(pipelineLayout);
+            LongBuffer pointer = stack.mallocLong(1);
+            context.createComputePipeline(info, pointer, label);
+            return pointer.get(0);
+        } finally {
+            VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
+        }
+    }
+
+    void capture(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
+        this.prepareSnapshots(commandBuffer, initialization);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VK12.vkCmdBindPipeline(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.capturePipeline);
+            VK12.vkCmdBindDescriptorSets(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.pipelineLayout,
+                    0,
+                    stack.longs(this.descriptorSet),
+                    null);
+            VK12.vkCmdDispatch(
+                    commandBuffer,
+                    this.captureDispatchX,
+                    this.captureDispatchY,
+                    1);
+        }
+    }
+
+    private void prepareSnapshots(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
+        VulkanImage[] images = {
+            this.rawMaterial,
+            this.rawSpecularMaterial,
+            this.rawTransportMetadata
+        };
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageMemoryBarrier2.Buffer barriers =
+                    VkImageMemoryBarrier2.calloc(images.length, stack);
+            for (int index = 0; index < images.length; index++) {
+                VulkanImage image = images[index];
+                boolean initialized = initialization.prepare(image);
+                barriers.get(index).sType$Default()
+                        .srcStageMask(initialized
+                                ? VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+                                : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
+                        .srcAccessMask(initialized
+                                ? VK12.VK_ACCESS_MEMORY_READ_BIT
+                                        | VK12.VK_ACCESS_MEMORY_WRITE_BIT
+                                : 0L)
+                        .dstStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+                        .dstAccessMask(VK12.VK_ACCESS_SHADER_WRITE_BIT)
+                        .oldLayout(initialized
+                                ? VK12.VK_IMAGE_LAYOUT_GENERAL
+                                : VK12.VK_IMAGE_LAYOUT_UNDEFINED)
+                        .newLayout(VK12.VK_IMAGE_LAYOUT_GENERAL)
+                        .srcQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
+                        .dstQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
+                        .image(image.image());
+                barriers.get(index).subresourceRange()
+                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .baseMipLevel(0)
+                        .levelCount(1)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+            }
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
+                    commandBuffer,
+                    VkDependencyInfo.calloc(stack)
+                            .sType$Default()
+                            .pImageMemoryBarriers(barriers));
         }
     }
 
@@ -232,8 +383,12 @@ final class DlssRrDebugPass implements Destroyable {
         if (this.destroyed) return;
         this.destroyed = true;
         VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
+        VK12.vkDestroyPipeline(this.context.vkDevice(), this.capturePipeline, null);
         VK12.vkDestroyPipeline(this.context.vkDevice(), this.pipeline, null);
         VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
         VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
+        this.rawTransportMetadata.destroy();
+        this.rawSpecularMaterial.destroy();
+        this.rawMaterial.destroy();
     }
 }

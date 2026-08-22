@@ -111,8 +111,23 @@ final class TracePipelinesContractTest {
                 new int[] {0, 1, 2, 4, 6, 7, 8, 9, 10, 20, 21},
                 RealtimeRayTracingPipeline.primaryInputImageIndices());
         assertArrayEquals(
-                new int[] {0, 1, 2, 5, 6, 7, 9, 10, 11, 12, 17, 18, 21},
+                new int[] {
+                    0, 1, 2, 4, 5, 6, 7, 8, 9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 21, 22
+                },
                 RealtimeRayTracingPipeline.nextStepInputImageIndices());
+        assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeWavefrontGroups.PRIMARY_CHAIN));
+        assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeWavefrontGroups.PRIMARY_LANDING_SECONDARY));
+        assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeWavefrontGroups.PRIMARY_LANDING_ADVANCE));
+        assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeWavefrontGroups.NONE));
+        assertFalse(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeWavefrontGroups.PRIMARY_LANDING_CLASSIFY));
+        assertFalse(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeWavefrontGroups.CLASSIFY));
     }
 
     @Test
@@ -146,6 +161,19 @@ final class TracePipelinesContractTest {
         assertThrows(IllegalArgumentException.class, () -> RaygenSchedule.of(
                 List.of("module"), new int[] {1}, new int[] {0}));
         assertThrows(IllegalArgumentException.class, () -> RaygenSchedule.single("", 0));
+    }
+
+    @Test
+    void rrHandoffDiagnosticsShareOneExactDescriptorLayout() throws IOException {
+        Set<Integer> display = descriptorBindings(
+                List.of("rr_debug.comp.spv"), 0);
+        Set<Integer> expectedDisplay = java.util.stream.IntStream.rangeClosed(0, 18)
+                .boxed()
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(expectedDisplay, display);
+        assertEquals(
+                Set.of(1, 5, 6, 14, 15, 16),
+                descriptorBindings(List.of("rr_debug_capture.comp.spv"), 0));
     }
 
     @Test
@@ -364,21 +392,22 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void primaryLandingClassificationUsesSerQueueCompactionOnlyWhenAvailable()
+    void laneVaryingQueuePartitionsUseScalarReservation()
             throws IOException {
-        Set<Integer> scalar = parse(
-                wavefrontShader("realtime", "primary_landing", "")).opcodes;
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_ELECT));
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT));
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
-
-        Set<Integer> ser = parse(
-                wavefrontShader("realtime", "primary_landing", "_ser")).opcodes;
-        assertTrue(ser.contains(OP_GROUP_NON_UNIFORM_ELECT));
-        assertTrue(ser.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
-        assertTrue(ser.contains(OP_GROUP_NON_UNIFORM_BALLOT));
-        assertTrue(ser.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
+        for (String suffix : List.of("", "_ser")) {
+            for (String stage : List.of("primary_landing", "steady_classify")) {
+                Set<Integer> opcodes = parse(
+                        wavefrontShader("realtime", stage, suffix)).opcodes;
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_ELECT),
+                        stage + suffix);
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST),
+                        stage + suffix);
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_BALLOT),
+                        stage + suffix);
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT),
+                        stage + suffix);
+            }
+        }
     }
 
     @Test

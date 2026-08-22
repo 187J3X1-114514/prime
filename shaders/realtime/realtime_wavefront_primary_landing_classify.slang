@@ -21,8 +21,10 @@ void primeWavefrontPrimaryLandingClassify(uint launchIndex) {
     uint queue = lightEvent.type == PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY
             ? PRIME_WAVEFRONT_TRACE_QUEUE_0
             : PRIME_WAVEFRONT_AREA_QUEUE;
+    // The event partition is lane-varying. A subgroup reservation would reserve only the
+    // elected lane's queue, then reuse its offset while other lanes write different queues.
     primeAppendWavefrontContinuation(
-            PrimeWavefrontContinuationAppender(),
+            PrimeScalarWavefrontContinuationAppender(),
             queue,
             recordIndex,
             true);

@@ -219,6 +219,13 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         token.recorded = true;
         TemporalReconstructionState.Plan temporal =
                 token.temporal.claimForExecution();
+        DlssRrDebugPass activeDebugPass = null;
+        if (token.debugView != DlssRrDebugView.OFF) {
+            activeDebugPass = this.debugPass();
+            allCommandsToCompute(commandBuffer);
+            activeDebugPass.capture(commandBuffer, initialization);
+            captureToPrepare(commandBuffer);
+        }
         this.preparePass.record(
                 commandBuffer,
                 temporal.camera(),
@@ -259,9 +266,9 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 false,
                 display,
                 initialization);
-        if (token.debugView != DlssRrDebugView.OFF) {
+        if (activeDebugPass != null) {
             allCommandsToCompute(commandBuffer);
-            this.debugPass().record(
+            activeDebugPass.record(
                     commandBuffer,
                     token.debugView,
                     token.debugFullscreen,
@@ -294,6 +301,17 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK12.VK_ACCESS_MEMORY_WRITE_BIT,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+    }
+
+    private static void captureToPrepare(VkCommandBuffer commandBuffer) {
+        // Capture reads the aliased material/metadata images immediately before RR preparation
+        // mutates them. This execution dependency preserves that diagnostic boundary.
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
     }

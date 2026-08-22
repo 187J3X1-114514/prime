@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.vulkan.dlss.DlssRrProfile;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -30,6 +31,54 @@ final class ReconstructionModesTest {
         assertEquals(DlssRrDebugView.values().length, shaderIds.size());
         assertEquals(0, DlssRrDebugView.OFF.shaderId());
         assertEquals(12, DlssRrDebugView.RR_OUTPUT.shaderId());
+        assertEquals(13, DlssRrDebugView.WAVEFRONT_OVERVIEW.shaderId());
+        assertEquals(14, DlssRrDebugView.HANDOFF_OVERVIEW.shaderId());
+        assertEquals(15, DlssRrDebugView.GUIDE_RESOLVE_OVERVIEW.shaderId());
+    }
+
+    @Test
+    void rrHandoffDiagnosticsPublishTheirPanelSemantics() {
+        List<String> handoff = DlssRrDebugStatus.lines(
+                ReconstructionQualityMode.PERFORMANCE,
+                960,
+                540,
+                1920,
+                1080,
+                true,
+                false,
+                DlssRrDebugView.HANDOFF_OVERVIEW,
+                true);
+        assertTrue(handoff.contains(
+                "Columns normal roughness diffuse-albedo specular-albedo specular-hit"));
+        assertTrue(handoff.contains("Top RR-submitted / Bottom wavefront-scratch"));
+        List<String> guideResolve = DlssRrDebugStatus.lines(
+                ReconstructionQualityMode.PERFORMANCE,
+                960,
+                540,
+                1920,
+                1080,
+                true,
+                false,
+                DlssRrDebugView.GUIDE_RESOLVE_OVERVIEW,
+                true);
+        assertTrue(guideResolve.contains(
+                "Columns visible final-trans first-owned-trans selected flags"));
+        assertTrue(guideResolve.contains(
+                "Rows normal roughness diffuse-albedo specular-albedo"));
+        assertTrue(guideResolve.contains(
+                "Flags bottom: final reached / primary-bounce-zero / fallback (RGB)"));
+        assertEquals(
+                List.of(),
+                DlssRrDebugStatus.lines(
+                        ReconstructionQualityMode.PERFORMANCE,
+                        960,
+                        540,
+                        1920,
+                        1080,
+                        true,
+                        false,
+                        DlssRrDebugView.OFF,
+                        true));
     }
 
     @Test

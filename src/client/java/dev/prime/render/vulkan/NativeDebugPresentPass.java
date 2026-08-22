@@ -10,12 +10,9 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
@@ -79,29 +76,20 @@ final class NativeDebugPresentPass implements Destroyable {
                     .descriptorCount(1).stageFlags(COMPUTE_STAGE);
             bindings.get(1).binding(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                     .descriptorCount(1).stageFlags(COMPUTE_STAGE);
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorSetLayout(
-                            context.vkDevice(),
-                            VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default()
-                                    .pBindings(bindings),
-                            null,
-                            pointer),
+            setLayout = VulkanDescriptors.createSetLayout(
+                    context,
+                    stack,
+                    bindings,
                     "create native-debug presentation descriptor layout");
-            setLayout = pointer.get(0);
             VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
                     .stageFlags(COMPUTE_STAGE).offset(0).size(PUSH_SIZE);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreatePipelineLayout(
-                            context.vkDevice(),
-                            VkPipelineLayoutCreateInfo.calloc(stack).sType$Default()
-                                    .pSetLayouts(stack.longs(setLayout))
-                                    .pPushConstantRanges(pushRange),
-                            null,
-                            pointer),
+            pipelineLayout = VulkanDescriptors.createPipelineLayout(
+                    context,
+                    stack,
+                    setLayout,
+                    pushRange,
                     "create native-debug presentation pipeline layout");
-            pipelineLayout = pointer.get(0);
+            LongBuffer pointer = stack.mallocLong(1);
             long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
@@ -121,17 +109,12 @@ final class NativeDebugPresentPass implements Destroyable {
                     .descriptorCount(sources.length);
             poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                     .descriptorCount(sources.length);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorPool(
-                            context.vkDevice(),
-                            VkDescriptorPoolCreateInfo.calloc(stack).sType$Default()
-                                    .maxSets(sources.length).pPoolSizes(poolSizes),
-                            null,
-                            pointer),
+            descriptorPool = VulkanDescriptors.createPool(
+                    context,
+                    stack,
+                    sources.length,
+                    poolSizes,
                     "create native-debug presentation descriptor pool");
-            descriptorPool = pointer.get(0);
-            pointer.clear();
             LongBuffer setLayouts = stack.mallocLong(sources.length);
             for (int index = 0; index < sources.length; index++) {
                 setLayouts.put(setLayout);

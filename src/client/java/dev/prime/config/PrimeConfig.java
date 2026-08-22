@@ -430,23 +430,26 @@ public final class PrimeConfig {
         }
         settings = new PrimeSettings(
                 pathTracingEnabled,
+                sharcEnabled,
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps,
                 postProcessingMode,
                 quality,
                 new AstronomySettings(latitudeDegrees, solarLongitudeDegrees),
-                sunQuarterSteps,
-                starQuarterSteps,
-                blockLightQuarterSteps,
-                finalExposureQuarterSteps,
-                autoExposureCompensationSteps,
-                defaultRoughnessSteps,
-                seamlessGlass,
-                airGap,
-                0L,
-                0L,
-                sharcEnabled,
-                vanillaPbrPresets);
+                new LightingSettings.Snapshot(
+                        sunQuarterSteps,
+                        starQuarterSteps,
+                        blockLightQuarterSteps,
+                        0L),
+                new DisplaySettings.Snapshot(
+                        finalExposureQuarterSteps,
+                        autoExposureCompensationSteps),
+                new MaterialSettings.Snapshot(
+                        defaultRoughnessSteps,
+                        seamlessGlass,
+                        airGap,
+                        vanillaPbrPresets,
+                        0L));
         scatterCount = loadedScatterCount;
         primaryChainLimit = loadedPrimaryChainLimit;
         terrainWorkerPercentage = loadedTerrainWorkerPercentage;

@@ -5,16 +5,13 @@ import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.VulkanSharedPrograms.SharedComputeProgram;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
@@ -74,34 +71,24 @@ final class HdrPresentPass implements Destroyable {
                 poolSizes.get(1)
                         .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                         .descriptorCount(1);
-                LongBuffer pointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorPool(
-                                context.vkDevice(),
-                                VkDescriptorPoolCreateInfo.calloc(stack)
-                                        .sType$Default()
-                                        .maxSets(1)
-                                        .pPoolSizes(poolSizes),
-                                null,
-                                pointer),
+                descriptorPool = VulkanDescriptors.createPool(
+                        context,
+                        stack,
+                        1,
+                        poolSizes,
                         "create HDR-present descriptor pool");
-                descriptorPool = pointer.get(0);
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkAllocateDescriptorSets(
-                                context.vkDevice(),
-                                VkDescriptorSetAllocateInfo.calloc(stack)
-                                        .sType$Default()
-                                        .descriptorPool(descriptorPool)
-                                        .pSetLayouts(stack.longs(program.descriptorSetLayout())),
-                                pointer),
+                long descriptorSet = VulkanDescriptors.allocateSet(
+                        context,
+                        stack,
+                        descriptorPool,
+                        program.descriptorSetLayout(),
                         "allocate HDR-present descriptor set");
                 return new HdrPresentPass(
                         context,
                         program,
                         output,
                         descriptorPool,
-                        pointer.get(0),
+                        descriptorSet,
                         width,
                         height);
             }

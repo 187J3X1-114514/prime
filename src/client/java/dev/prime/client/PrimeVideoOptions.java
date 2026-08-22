@@ -40,7 +40,46 @@ public final class PrimeVideoOptions {
     private PrimeVideoOptions() {
     }
 
-    public static OptionInstance<Boolean> pathTracingEnabled() {
+    public static OptionSet create(Consumer<Boolean> sharcChanged) {
+        return new OptionSet(
+                new Rendering(
+                        pathTracingEnabled(),
+                        sharcEnabled(sharcChanged),
+                        scatterCount(),
+                        primaryChainLimit(),
+                        terrainWorkerPercentage(),
+                        voxelTextureSurfaces(),
+                        voxelTextureSurfaceStrength(),
+                        screenshotMode(),
+                        postProcessingMode(),
+                        qualityMode()),
+                new Lighting(
+                        latitude(),
+                        season(),
+                        sunExposure(),
+                        starExposure(),
+                        blockLightExposure()),
+                new Display(
+                        hdr(),
+                        referenceWhiteNits(),
+                        autoExposureCompensation(),
+                        finalExposure()),
+                new Material(
+                        defaultRoughness(),
+                        seamlessGlass(),
+                        airGap(),
+                        vanillaPbrPresets()),
+                new Diagnostics(
+                        triangleDebug(),
+                        rendererDiagnostics(),
+                        rawOutput(),
+                        nrdDebugView(),
+                        fsrDebugView(),
+                        dlssRrDebugView(),
+                        dlssRrDebugFullscreen()));
+    }
+
+    private static OptionInstance<Boolean> pathTracingEnabled() {
         return OptionInstance.createBoolean(
                 "prime.options.path_tracing",
                 OptionInstance.cachedConstantTooltip(
@@ -49,11 +88,7 @@ public final class PrimeVideoOptions {
                 PrimeVideoOptions::setPathTracingEnabled);
     }
 
-    public static OptionInstance<Boolean> sharcEnabled() {
-        return sharcEnabled(ignored -> {});
-    }
-
-    public static OptionInstance<Boolean> sharcEnabled(Consumer<Boolean> changed) {
+    private static OptionInstance<Boolean> sharcEnabled(Consumer<Boolean> changed) {
         return OptionInstance.createBoolean(
                 "prime.options.sharc",
                 OptionInstance.cachedConstantTooltip(
@@ -65,7 +100,7 @@ public final class PrimeVideoOptions {
                 });
     }
 
-    public static OptionInstance<Integer> scatterCount() {
+    private static OptionInstance<Integer> scatterCount() {
         return new OptionInstance<>(
                 "prime.options.scatter_count",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -79,7 +114,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setScatterCount);
     }
 
-    public static OptionInstance<Integer> primaryChainLimit() {
+    private static OptionInstance<Integer> primaryChainLimit() {
         return new OptionInstance<>(
                 "prime.options.primary_chain_limit",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -93,7 +128,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setPrimaryChainLimit);
     }
 
-    public static OptionInstance<Integer> terrainWorkerPercentage() {
+    private static OptionInstance<Integer> terrainWorkerPercentage() {
         return new OptionInstance<>(
                 "prime.options.terrain_worker_percentage",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -107,7 +142,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setTerrainWorkerPercentage);
     }
 
-    public static OptionInstance<Boolean> voxelTextureSurfaces() {
+    private static OptionInstance<Boolean> voxelTextureSurfaces() {
         return OptionInstance.createBoolean(
                 "prime.options.experimental.voxel_texture_surfaces",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -116,7 +151,7 @@ public final class PrimeVideoOptions {
                 PrimeVideoOptions::setVoxelTextureSurfaces);
     }
 
-    public static OptionInstance<Integer> voxelTextureSurfaceStrength() {
+    private static OptionInstance<Integer> voxelTextureSurfaceStrength() {
         return new OptionInstance<>(
                 "prime.options.experimental.voxel_texture_surface_strength",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -131,7 +166,7 @@ public final class PrimeVideoOptions {
                 PrimeVideoOptions::setVoxelTextureSurfaceStrengthSteps);
     }
 
-    public static OptionInstance<Boolean> screenshotMode() {
+    private static OptionInstance<Boolean> screenshotMode() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.screenshot_mode",
@@ -141,7 +176,7 @@ public final class PrimeVideoOptions {
                 runtime::requestScreenshot);
     }
 
-    public static OptionInstance<PostProcessingMode> postProcessingMode() {
+    private static OptionInstance<PostProcessingMode> postProcessingMode() {
         return new OptionInstance<>(
                 "prime.options.post_processing.mode",
                 OptionInstance.cachedConstantTooltip(
@@ -155,7 +190,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setPostProcessingMode);
     }
 
-    public static OptionInstance<Boolean> triangleDebug() {
+    private static OptionInstance<Boolean> triangleDebug() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.debug.triangle_distribution",
@@ -165,7 +200,7 @@ public final class PrimeVideoOptions {
                 runtime::setTriangleDebug);
     }
 
-    public static OptionInstance<Boolean> rendererDiagnostics() {
+    private static OptionInstance<Boolean> rendererDiagnostics() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.debug.renderer_diagnostics",
@@ -175,7 +210,7 @@ public final class PrimeVideoOptions {
                 runtime::setRendererDiagnostics);
     }
 
-    public static OptionInstance<Boolean> rawOutput() {
+    private static OptionInstance<Boolean> rawOutput() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.debug.raw_output",
@@ -185,7 +220,7 @@ public final class PrimeVideoOptions {
                 runtime::setRawOutput);
     }
 
-    public static OptionInstance<ReconstructionQualityMode> qualityMode() {
+    private static OptionInstance<ReconstructionQualityMode> qualityMode() {
         return new OptionInstance<>(
                 "prime.options.post_processing.quality",
                 OptionInstance.cachedConstantTooltip(
@@ -202,7 +237,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setReconstructionQualityMode);
     }
 
-    public static OptionInstance<Integer> latitude() {
+    private static OptionInstance<Integer> latitude() {
         return new OptionInstance<>(
                 "prime.options.astronomy.latitude",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -216,7 +251,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setLatitudeDegrees);
     }
 
-    public static OptionInstance<Integer> season() {
+    private static OptionInstance<Integer> season() {
         return new OptionInstance<>(
                 "prime.options.astronomy.season",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -230,7 +265,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setSolarLongitudeDegrees);
     }
 
-    public static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
+    private static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.dlss_rr.debug_view",
@@ -245,7 +280,7 @@ public final class PrimeVideoOptions {
                 runtime::setRrDebugView);
     }
 
-    public static OptionInstance<Boolean> dlssRrDebugFullscreen() {
+    private static OptionInstance<Boolean> dlssRrDebugFullscreen() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.dlss_rr.debug_fullscreen",
@@ -255,7 +290,7 @@ public final class PrimeVideoOptions {
                 runtime::setRrDebugFullscreen);
     }
 
-    public static OptionInstance<Integer> sunExposure() {
+    private static OptionInstance<Integer> sunExposure() {
         return exposureOption(
                 "prime.options.lighting.sun_ev",
                 "prime.options.lighting.sun_ev.tooltip",
@@ -265,7 +300,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setSunQuarterSteps);
     }
 
-    public static OptionInstance<Integer> starExposure() {
+    private static OptionInstance<Integer> starExposure() {
         return exposureOption(
                 "prime.options.lighting.star_ev",
                 "prime.options.lighting.star_ev.tooltip",
@@ -275,7 +310,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setStarQuarterSteps);
     }
 
-    public static OptionInstance<Integer> blockLightExposure() {
+    private static OptionInstance<Integer> blockLightExposure() {
         return exposureOption(
                 "prime.options.lighting.block_light_ev",
                 "prime.options.lighting.block_light_ev.tooltip",
@@ -285,7 +320,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setBlockLightQuarterSteps);
     }
 
-    public static OptionInstance<Integer> finalExposure() {
+    private static OptionInstance<Integer> finalExposure() {
         return exposureOption(
                 "prime.options.display.final_exposure_ev",
                 "prime.options.display.final_exposure_ev.tooltip",
@@ -295,7 +330,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setFinalExposureQuarterSteps);
     }
 
-    public static OptionInstance<Integer> autoExposureCompensation() {
+    private static OptionInstance<Integer> autoExposureCompensation() {
         return new OptionInstance<>(
                 "prime.options.display.auto_exposure_compensation",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -310,7 +345,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setAutoExposureCompensationSteps);
     }
 
-    public static OptionInstance<Integer> referenceWhiteNits() {
+    private static OptionInstance<Integer> referenceWhiteNits() {
         HdrOutput.Capability capability = HdrOutput.capability();
         int maximumNits = Math.max(
                 1,
@@ -337,7 +372,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setReferenceWhiteNits);
     }
 
-    public static OptionInstance<Integer> defaultRoughness() {
+    private static OptionInstance<Integer> defaultRoughness() {
         return new OptionInstance<>(
                 "prime.options.material.default_roughness",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -352,7 +387,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setDefaultRoughnessSteps);
     }
 
-    public static OptionInstance<Boolean> seamlessGlass() {
+    private static OptionInstance<Boolean> seamlessGlass() {
         return OptionInstance.createBoolean(
                 "prime.options.material.seamless_glass",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -361,7 +396,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setSeamlessGlass);
     }
 
-    public static OptionInstance<Boolean> airGap() {
+    private static OptionInstance<Boolean> airGap() {
         return OptionInstance.createBoolean(
                 "prime.options.material.air_gap",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -370,7 +405,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setAirGap);
     }
 
-    public static OptionInstance<Boolean> vanillaPbrPresets() {
+    private static OptionInstance<Boolean> vanillaPbrPresets() {
         return OptionInstance.createBoolean(
                 "prime.options.material.vanilla_pbr_presets",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -379,7 +414,7 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setVanillaPbrPresets);
     }
 
-    public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
+    private static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.nrd.debug_view",
@@ -394,7 +429,7 @@ public final class PrimeVideoOptions {
                 runtime::setNrdDebugView);
     }
 
-    public static OptionInstance<FsrDebugView> fsrDebugView() {
+    private static OptionInstance<FsrDebugView> fsrDebugView() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.fsr.debug_view",
@@ -460,27 +495,6 @@ public final class PrimeVideoOptions {
         }
     }
 
-    private static OptionInstance<Integer> decimalOption(
-            String captionKey,
-            String tooltipKey,
-            int initialSteps,
-            int minimumSteps,
-            int maximumSteps,
-            OptionInstance.ValueUpdateListener<Integer> listener) {
-        return new OptionInstance<>(
-                captionKey,
-                OptionInstance.cachedConstantTooltip(Component.translatable(tooltipKey)),
-                (caption, steps) -> Options.genericValueLabel(
-                        caption,
-                        Component.literal(String.format(
-                                Locale.ROOT,
-                                "%.2f",
-                                steps / (float) DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))),
-                new OptionInstance.IntRange(minimumSteps, maximumSteps),
-                initialSteps,
-                listener);
-    }
-
     static String formatExposure(int quarterSteps) {
         float ev = LightingSettings.exposureValue(quarterSteps);
         if (quarterSteps == 0) {
@@ -529,7 +543,7 @@ public final class PrimeVideoOptions {
         return String.format(Locale.ROOT, "%.2f", MaterialSettings.linearRoughness(steps));
     }
 
-    public static OptionInstance<Boolean> hdr() {
+    private static OptionInstance<Boolean> hdr() {
         return OptionInstance.createBoolean(
                 "prime.options.display.hdr",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -544,5 +558,58 @@ public final class PrimeVideoOptions {
         PrimeConfig.setHdrEnabled(enabled);
         Minecraft minecraft = Minecraft.getInstance();
         ((MinecraftAccessor) minecraft).prime$setWindowSurfaceNeedsReconfiguring(true);
+    }
+
+    public record OptionSet(
+            Rendering rendering,
+            Lighting lighting,
+            Display display,
+            Material material,
+            Diagnostics diagnostics) {
+    }
+
+    public record Rendering(
+            OptionInstance<Boolean> pathTracingEnabled,
+            OptionInstance<Boolean> sharcEnabled,
+            OptionInstance<Integer> scatterCount,
+            OptionInstance<Integer> primaryChainLimit,
+            OptionInstance<Integer> terrainWorkerPercentage,
+            OptionInstance<Boolean> voxelTextureSurfaces,
+            OptionInstance<Integer> voxelTextureSurfaceStrength,
+            OptionInstance<Boolean> screenshotMode,
+            OptionInstance<PostProcessingMode> postProcessingMode,
+            OptionInstance<ReconstructionQualityMode> qualityMode) {
+    }
+
+    public record Lighting(
+            OptionInstance<Integer> latitude,
+            OptionInstance<Integer> season,
+            OptionInstance<Integer> sunExposure,
+            OptionInstance<Integer> starExposure,
+            OptionInstance<Integer> blockLightExposure) {
+    }
+
+    public record Display(
+            OptionInstance<Boolean> hdr,
+            OptionInstance<Integer> referenceWhiteNits,
+            OptionInstance<Integer> autoExposureCompensation,
+            OptionInstance<Integer> finalExposure) {
+    }
+
+    public record Material(
+            OptionInstance<Integer> defaultRoughness,
+            OptionInstance<Boolean> seamlessGlass,
+            OptionInstance<Boolean> airGap,
+            OptionInstance<Boolean> vanillaPbrPresets) {
+    }
+
+    public record Diagnostics(
+            OptionInstance<Boolean> triangleDebug,
+            OptionInstance<Boolean> rendererDiagnostics,
+            OptionInstance<Boolean> rawOutput,
+            OptionInstance<NrdDiagnostics.Mode> nrdDebugView,
+            OptionInstance<FsrDebugView> fsrDebugView,
+            OptionInstance<DlssRrDebugView> rrDebugView,
+            OptionInstance<Boolean> rrDebugFullscreen) {
     }
 }

@@ -9,67 +9,21 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.util.Objects;
 
-/** Immutable product settings and renderer revision markers owned by {@link PrimeConfig}. */
+/** Immutable product settings grouped by renderer concern. */
 public record PrimeSettings(
         boolean pathTracingEnabled,
+        boolean sharcEnabled,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
         AstronomySettings astronomy,
-        int sunQuarterSteps,
-        int starQuarterSteps,
-        int blockLightQuarterSteps,
-        int finalExposureQuarterSteps,
-        int autoExposureCompensationSteps,
-        int defaultRoughnessSteps,
-        boolean seamlessGlass,
-        boolean airGap,
-        long lightingRevision,
-        long materialRevision,
-        boolean sharcEnabled,
-        boolean vanillaPbrPresets) {
-    public PrimeSettings(
-            boolean pathTracingEnabled,
-            boolean voxelTextureSurfaces,
-            int voxelTextureSurfaceStrengthSteps,
-            PostProcessingMode postProcessingMode,
-            ReconstructionQualityMode reconstructionQuality,
-            AstronomySettings astronomy,
-            int sunQuarterSteps,
-            int starQuarterSteps,
-            int blockLightQuarterSteps,
-            int finalExposureQuarterSteps,
-            int autoExposureCompensationSteps,
-            int defaultRoughnessSteps,
-            boolean seamlessGlass,
-            boolean airGap,
-            long lightingRevision,
-            long materialRevision,
-            boolean sharcEnabled) {
-        this(
-                pathTracingEnabled,
-                voxelTextureSurfaces,
-                voxelTextureSurfaceStrengthSteps,
-                postProcessingMode,
-                reconstructionQuality,
-                astronomy,
-                sunQuarterSteps,
-                starQuarterSteps,
-                blockLightQuarterSteps,
-                finalExposureQuarterSteps,
-                autoExposureCompensationSteps,
-                defaultRoughnessSteps,
-                seamlessGlass,
-                airGap,
-                lightingRevision,
-                materialRevision,
-                sharcEnabled,
-                MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
-    }
-
+        LightingSettings.Snapshot lighting,
+        DisplaySettings.Snapshot display,
+        MaterialSettings.Snapshot material) {
     public PrimeSettings {
-        postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
+        postProcessingMode = Objects.requireNonNull(
+                postProcessingMode, "postProcessingMode");
         if (postProcessingMode == PostProcessingMode.DISABLED) {
             throw new IllegalArgumentException(
                     "Raw output is a non-persistent session diagnostic");
@@ -77,38 +31,35 @@ public record PrimeSettings(
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
         astronomy = Objects.requireNonNull(astronomy, "astronomy");
-        LightingSettings.linearMultiplier(sunQuarterSteps);
-        LightingSettings.starLinearMultiplier(starQuarterSteps);
-        LightingSettings.linearMultiplier(blockLightQuarterSteps);
-        DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
-        DisplaySettings.autoExposureCompensation(autoExposureCompensationSteps);
-        MaterialSettings.linearRoughness(defaultRoughnessSteps);
+        lighting = Objects.requireNonNull(lighting, "lighting");
+        display = Objects.requireNonNull(display, "display");
+        material = Objects.requireNonNull(material, "material");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
-        if (lightingRevision < 0L || materialRevision < 0L) {
-            throw new IllegalArgumentException("Prime setting revisions must not be negative");
-        }
     }
 
     public static PrimeSettings defaults() {
         return new PrimeSettings(
+                true,
                 true,
                 false,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 PostProcessingMode.DEFAULT,
                 ReconstructionQualityMode.DEFAULT,
                 AstronomySettings.defaults(),
-                LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
-                LightingSettings.DEFAULT_STAR_QUARTER_STEPS,
-                LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
-                DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
-                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS,
-                MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
-                MaterialSettings.DEFAULT_SEAMLESS_GLASS,
-                MaterialSettings.DEFAULT_AIR_GAP,
-                0L,
-                0L,
-                true,
-                MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
+                new LightingSettings.Snapshot(
+                        LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
+                        LightingSettings.DEFAULT_STAR_QUARTER_STEPS,
+                        LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
+                        0L),
+                new DisplaySettings.Snapshot(
+                        DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
+                        DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS),
+                new MaterialSettings.Snapshot(
+                        MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
+                        MaterialSettings.DEFAULT_SEAMLESS_GLASS,
+                        MaterialSettings.DEFAULT_AIR_GAP,
+                        MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS,
+                        0L));
     }
 
     public PrimeSettings withPathTracingEnabled(boolean value) {
@@ -116,23 +67,15 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         value,
+                        this.sharcEnabled,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        this.lighting,
+                        this.display,
+                        this.material);
     }
 
     public PrimeSettings withSharcEnabled(boolean value) {
@@ -140,23 +83,15 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        value,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        value,
-                        this.vanillaPbrPresets);
+                        this.lighting,
+                        this.display,
+                        this.material);
     }
 
     public PrimeSettings withVoxelTextureSurfaces(boolean value) {
@@ -164,23 +99,15 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.sharcEnabled,
                         value,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        this.lighting,
+                        this.display,
+                        this.material);
     }
 
     public PrimeSettings withVoxelTextureSurfaceStrengthSteps(int value) {
@@ -189,23 +116,15 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.sharcEnabled,
                         this.voxelTextureSurfaces,
                         value,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        this.lighting,
+                        this.display,
+                        this.material);
     }
 
     public PrimeSettings withPostProcessingMode(PostProcessingMode value) {
@@ -214,23 +133,15 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.sharcEnabled,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         value,
                         this.reconstructionQuality,
                         this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        this.lighting,
+                        this.display,
+                        this.material);
     }
 
     public PrimeSettings withReconstructionQuality(ReconstructionQualityMode value) {
@@ -239,318 +150,221 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.sharcEnabled,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         value,
                         this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        this.lighting,
+                        this.display,
+                        this.material);
     }
 
     public PrimeSettings withLatitudeDegrees(int value) {
-        AstronomySettings replacement = this.astronomy.withLatitudeDegrees(value);
-        return replacement == this.astronomy
-                ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        replacement,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        Math.incrementExact(this.lightingRevision),
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+        return withAstronomy(this.astronomy.withLatitudeDegrees(value));
     }
 
     public PrimeSettings withSolarLongitudeDegrees(int value) {
-        AstronomySettings replacement =
-                this.astronomy.withSolarLongitudeDegrees(value);
-        return replacement == this.astronomy
-                ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        replacement,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        Math.incrementExact(this.lightingRevision),
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+        return withAstronomy(this.astronomy.withSolarLongitudeDegrees(value));
     }
 
     public PrimeSettings withSunQuarterSteps(int value) {
         LightingSettings.linearMultiplier(value);
-        return value == this.sunQuarterSteps
+        return value == sunQuarterSteps()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
+                : withLighting(new LightingSettings.Snapshot(
                         value,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        Math.incrementExact(this.lightingRevision),
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        starQuarterSteps(),
+                        blockLightQuarterSteps(),
+                        Math.incrementExact(lightingRevision())));
     }
 
     public PrimeSettings withStarQuarterSteps(int value) {
         LightingSettings.starLinearMultiplier(value);
-        return value == this.starQuarterSteps
+        return value == starQuarterSteps()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
+                : withLighting(new LightingSettings.Snapshot(
+                        sunQuarterSteps(),
                         value,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        Math.incrementExact(this.lightingRevision),
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        blockLightQuarterSteps(),
+                        Math.incrementExact(lightingRevision())));
     }
 
     public PrimeSettings withBlockLightQuarterSteps(int value) {
         LightingSettings.linearMultiplier(value);
-        return value == this.blockLightQuarterSteps
+        return value == blockLightQuarterSteps()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
+                : withLighting(new LightingSettings.Snapshot(
+                        sunQuarterSteps(),
+                        starQuarterSteps(),
                         value,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        Math.incrementExact(this.lightingRevision),
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        Math.incrementExact(lightingRevision())));
     }
 
     public PrimeSettings withFinalExposureQuarterSteps(int value) {
-        DisplaySettings.finalExposureMultiplier(value);
-        return value == this.finalExposureQuarterSteps
+        return value == finalExposureQuarterSteps()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        value,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                : withDisplay(new DisplaySettings.Snapshot(
+                        value, autoExposureCompensationSteps()));
     }
 
     public PrimeSettings withAutoExposureCompensationSteps(int value) {
-        DisplaySettings.autoExposureCompensation(value);
-        return value == this.autoExposureCompensationSteps
+        return value == autoExposureCompensationSteps()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        value,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                : withDisplay(new DisplaySettings.Snapshot(
+                        finalExposureQuarterSteps(), value));
     }
 
     public PrimeSettings withDefaultRoughnessSteps(int value) {
         MaterialSettings.linearRoughness(value);
-        return value == this.defaultRoughnessSteps
+        return value == defaultRoughnessSteps()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
+                : withMaterial(new MaterialSettings.Snapshot(
                         value,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        Math.incrementExact(this.materialRevision),
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        seamlessGlass(),
+                        airGap(),
+                        vanillaPbrPresets(),
+                        Math.incrementExact(materialRevision())));
     }
 
     public PrimeSettings withSeamlessGlass(boolean value) {
-        return value == this.seamlessGlass
+        return value == seamlessGlass()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
+                : withMaterial(new MaterialSettings.Snapshot(
+                        defaultRoughnessSteps(),
                         value,
-                        this.airGap,
-                        this.lightingRevision,
-                        Math.incrementExact(this.materialRevision),
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        airGap(),
+                        vanillaPbrPresets(),
+                        Math.incrementExact(materialRevision())));
     }
 
     public PrimeSettings withAirGap(boolean value) {
-        return value == this.airGap
+        return value == airGap()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
+                : withMaterial(new MaterialSettings.Snapshot(
+                        defaultRoughnessSteps(),
+                        seamlessGlass(),
                         value,
-                        this.lightingRevision,
-                        Math.incrementExact(this.materialRevision),
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
+                        vanillaPbrPresets(),
+                        Math.incrementExact(materialRevision())));
     }
 
     public PrimeSettings withVanillaPbrPresets(boolean value) {
-        return value == this.vanillaPbrPresets
+        return value == vanillaPbrPresets()
                 ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        Math.incrementExact(this.materialRevision),
-                        this.sharcEnabled,
-                        value);
+                : withMaterial(new MaterialSettings.Snapshot(
+                        defaultRoughnessSteps(),
+                        seamlessGlass(),
+                        airGap(),
+                        value,
+                        Math.incrementExact(materialRevision())));
     }
 
-    public LightingSettings.Snapshot lighting() {
-        return new LightingSettings.Snapshot(
-                this.sunQuarterSteps,
-                this.starQuarterSteps,
-                this.blockLightQuarterSteps,
-                this.lightingRevision);
+    public int sunQuarterSteps() {
+        return this.lighting.sunQuarterSteps();
     }
 
-    public MaterialSettings.Snapshot material() {
-        return new MaterialSettings.Snapshot(
-                this.defaultRoughnessSteps,
-                this.seamlessGlass,
-                this.airGap,
-                this.vanillaPbrPresets,
-                this.materialRevision);
+    public int starQuarterSteps() {
+        return this.lighting.starQuarterSteps();
     }
 
-    public DisplaySettings.Snapshot display() {
-        return new DisplaySettings.Snapshot(
-                this.finalExposureQuarterSteps,
-                this.autoExposureCompensationSteps);
+    public int blockLightQuarterSteps() {
+        return this.lighting.blockLightQuarterSteps();
+    }
+
+    public long lightingRevision() {
+        return this.lighting.revision();
+    }
+
+    public int finalExposureQuarterSteps() {
+        return this.display.finalExposureQuarterSteps();
+    }
+
+    public int autoExposureCompensationSteps() {
+        return this.display.autoExposureCompensationSteps();
+    }
+
+    public int defaultRoughnessSteps() {
+        return this.material.roughnessSteps();
+    }
+
+    public boolean seamlessGlass() {
+        return this.material.seamlessGlass();
+    }
+
+    public boolean airGap() {
+        return this.material.airGap();
+    }
+
+    public boolean vanillaPbrPresets() {
+        return this.material.vanillaPbrPresets();
+    }
+
+    public long materialRevision() {
+        return this.material.revision();
+    }
+
+    private PrimeSettings withAstronomy(AstronomySettings value) {
+        if (value == this.astronomy) {
+            return this;
+        }
+        return new PrimeSettings(
+                this.pathTracingEnabled,
+                this.sharcEnabled,
+                this.voxelTextureSurfaces,
+                this.voxelTextureSurfaceStrengthSteps,
+                this.postProcessingMode,
+                this.reconstructionQuality,
+                value,
+                new LightingSettings.Snapshot(
+                        sunQuarterSteps(),
+                        starQuarterSteps(),
+                        blockLightQuarterSteps(),
+                        Math.incrementExact(lightingRevision())),
+                this.display,
+                this.material);
+    }
+
+    private PrimeSettings withLighting(LightingSettings.Snapshot value) {
+        return new PrimeSettings(
+                this.pathTracingEnabled,
+                this.sharcEnabled,
+                this.voxelTextureSurfaces,
+                this.voxelTextureSurfaceStrengthSteps,
+                this.postProcessingMode,
+                this.reconstructionQuality,
+                this.astronomy,
+                value,
+                this.display,
+                this.material);
+    }
+
+    private PrimeSettings withDisplay(DisplaySettings.Snapshot value) {
+        return new PrimeSettings(
+                this.pathTracingEnabled,
+                this.sharcEnabled,
+                this.voxelTextureSurfaces,
+                this.voxelTextureSurfaceStrengthSteps,
+                this.postProcessingMode,
+                this.reconstructionQuality,
+                this.astronomy,
+                this.lighting,
+                value,
+                this.material);
+    }
+
+    private PrimeSettings withMaterial(MaterialSettings.Snapshot value) {
+        return new PrimeSettings(
+                this.pathTracingEnabled,
+                this.sharcEnabled,
+                this.voxelTextureSurfaces,
+                this.voxelTextureSurfaceStrengthSteps,
+                this.postProcessingMode,
+                this.reconstructionQuality,
+                this.astronomy,
+                this.lighting,
+                this.display,
+                value);
     }
 }

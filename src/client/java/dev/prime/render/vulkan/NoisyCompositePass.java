@@ -13,12 +13,8 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
@@ -88,29 +84,20 @@ final class NoisyCompositePass implements Destroyable {
                         .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                         .descriptorCount(1).stageFlags(COMPUTE_STAGE);
             }
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorSetLayout(
-                            context.vkDevice(),
-                            VkDescriptorSetLayoutCreateInfo.calloc(stack)
-                                    .sType$Default().pBindings(bindings),
-                            null,
-                            pointer),
+            setLayout = VulkanDescriptors.createSetLayout(
+                    context,
+                    stack,
+                    bindings,
                     "create noisy-composite descriptor layout");
-            setLayout = pointer.get(0);
             VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
                     .stageFlags(COMPUTE_STAGE).offset(0).size(PUSH_SIZE);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreatePipelineLayout(
-                            context.vkDevice(),
-                            VkPipelineLayoutCreateInfo.calloc(stack).sType$Default()
-                                    .pSetLayouts(stack.longs(setLayout))
-                                    .pPushConstantRanges(pushRange),
-                            null,
-                            pointer),
+            pipelineLayout = VulkanDescriptors.createPipelineLayout(
+                    context,
+                    stack,
+                    setLayout,
+                    pushRange,
                     "create noisy-composite pipeline layout");
-            pipelineLayout = pointer.get(0);
+            LongBuffer pointer = stack.mallocLong(1);
             long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
@@ -127,26 +114,18 @@ final class NoisyCompositePass implements Destroyable {
             VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(1, stack);
             poolSize.get(0).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                     .descriptorCount(IMAGE_COUNT);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorPool(
-                            context.vkDevice(),
-                            VkDescriptorPoolCreateInfo.calloc(stack).sType$Default()
-                                    .maxSets(1).pPoolSizes(poolSize),
-                            null,
-                            pointer),
+            descriptorPool = VulkanDescriptors.createPool(
+                    context,
+                    stack,
+                    1,
+                    poolSize,
                     "create noisy-composite descriptor pool");
-            descriptorPool = pointer.get(0);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkAllocateDescriptorSets(
-                            context.vkDevice(),
-                            VkDescriptorSetAllocateInfo.calloc(stack).sType$Default()
-                                    .descriptorPool(descriptorPool)
-                                    .pSetLayouts(stack.longs(setLayout)),
-                            pointer),
+            long descriptorSet = VulkanDescriptors.allocateSet(
+                    context,
+                    stack,
+                    descriptorPool,
+                    setLayout,
                     "allocate noisy-composite descriptor set");
-            long descriptorSet = pointer.get(0);
             VkDescriptorImageInfo.Buffer imageInfos =
                     VkDescriptorImageInfo.calloc(IMAGE_COUNT, stack);
             VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(IMAGE_COUNT, stack);

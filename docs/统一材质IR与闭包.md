@@ -53,9 +53,9 @@ visible-emission。静态 emitter 最大索引为 `0xFFFFFE`，dynamic scene tex
 CPU 打包边界负责验证。raster composite 仅在两层 canonical recipe 与 builtin class 完全
 相同时成立，否则必须保留通用 overlay relation。
 
-持久 cluster codec 当前为 v10。读取 v9 时会在内存中迁移普通、voxel 和嵌套
-overlay/bilateral primitive；超过 v10 emitter 上限的缓存明确失效并重建。dynamic primitive
-只存在于帧内，不参与版本迁移。
+cluster 编码仅是测试源码集内的当前格式回放工具，用于证明 CPU scene compiler 的完整上传
+输入可稳定往返；它不是持久化 API，也不承诺跨版本读取。dynamic primitive 只存在于帧内，
+不会进入该测试编码。
 
 ## Canonical shader IR
 
@@ -152,7 +152,7 @@ NEE 查询 SOLID_ANGLE 支持，guide/deterministic 分支只判断是否 discre
 
 ## 验证门禁
 
-改动材质链时至少验证 primitive 三种模式的穷举往返、codec v9→v10、composer 的 preset 与
+改动材质链时至少验证 primitive 三种模式的穷举往返、当前测试编码往返、composer 的 preset 与
 LabPBR 覆盖、玻璃 alpha 阈值与空气微缝矩阵、overlay 两层独立 preset、闭包 measure/sample
 一致性、dummy image 不可观察性，以及 32/80/96 字节 ABI。最终还需运行 shader include、
 `verifyRoboCuteReference`、production/test shader 编译、Java 测试和 Vulkan shader property tests。

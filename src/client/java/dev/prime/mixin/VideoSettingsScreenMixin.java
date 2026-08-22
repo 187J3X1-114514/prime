@@ -50,120 +50,59 @@ public abstract class VideoSettingsScreenMixin {
             Component.translatable("prime.options.header.material");
     private static final Component PRIME$DIAGNOSTICS_HEADER =
             Component.translatable("prime.options.header.diagnostics");
-    @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
-    @Unique private OptionInstance<Boolean> prime$sharcEnabled;
-    @Unique private OptionInstance<Integer> prime$scatterCount;
-    @Unique private OptionInstance<Integer> prime$primaryChainLimit;
-    @Unique private OptionInstance<Integer> prime$terrainWorkerPercentage;
-    @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
-    @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
-    @Unique private OptionInstance<Boolean> prime$screenshotMode;
-    @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
-    @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
-    @Unique private OptionInstance<Integer> prime$latitude;
-    @Unique private OptionInstance<Integer> prime$season;
-    @Unique private OptionInstance<Integer> prime$sunExposure;
-    @Unique private OptionInstance<Integer> prime$starExposure;
-    @Unique private OptionInstance<Integer> prime$blockLightExposure;
-    @Unique private OptionInstance<Integer> prime$finalExposure;
-    @Unique private OptionInstance<Integer> prime$autoExposureCompensation;
-    @Unique private OptionInstance<Integer> prime$referenceWhiteNits;
-    @Unique private OptionInstance<Boolean> prime$hdr;
-    @Unique private OptionInstance<Integer> prime$defaultRoughness;
-    @Unique private OptionInstance<Boolean> prime$seamlessGlass;
-    @Unique private OptionInstance<Boolean> prime$airGap;
-    @Unique private OptionInstance<Boolean> prime$vanillaPbrPresets;
-    @Unique private OptionInstance<Boolean> prime$triangleDebug;
-    @Unique private OptionInstance<Boolean> prime$rendererDiagnostics;
-    @Unique private OptionInstance<Boolean> prime$rawOutput;
-    @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
-    @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
-    @Unique private OptionInstance<DlssRrDebugView> prime$rrDebugView;
-    @Unique private OptionInstance<Boolean> prime$rrDebugFullscreen;
+    @Unique private PrimeVideoOptions.OptionSet prime$options;
 
     @Inject(method = "addOptions", at = @At("TAIL"))
     private void prime$addOptions(CallbackInfo callbackInfo) {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
-            this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
-            this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled(
+            this.prime$options = PrimeVideoOptions.create(
                     ignored -> this.prime$updatePrimaryChainAvailability());
-            this.prime$scatterCount = PrimeVideoOptions.scatterCount();
-            this.prime$primaryChainLimit = PrimeVideoOptions.primaryChainLimit();
-            this.prime$terrainWorkerPercentage =
-                    PrimeVideoOptions.terrainWorkerPercentage();
-            this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
-            this.prime$voxelTextureSurfaceStrength =
-                    PrimeVideoOptions.voxelTextureSurfaceStrength();
-            this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
-            this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
-            this.prime$qualityMode = PrimeVideoOptions.qualityMode();
-            this.prime$latitude = PrimeVideoOptions.latitude();
-            this.prime$season = PrimeVideoOptions.season();
-            this.prime$sunExposure = PrimeVideoOptions.sunExposure();
-            this.prime$starExposure = PrimeVideoOptions.starExposure();
-            this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
-            this.prime$finalExposure = PrimeVideoOptions.finalExposure();
-            this.prime$autoExposureCompensation =
-                    PrimeVideoOptions.autoExposureCompensation();
-            this.prime$referenceWhiteNits = PrimeVideoOptions.referenceWhiteNits();
-            this.prime$hdr = PrimeVideoOptions.hdr();
-            this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
-            this.prime$seamlessGlass = PrimeVideoOptions.seamlessGlass();
-            this.prime$airGap = PrimeVideoOptions.airGap();
-            this.prime$vanillaPbrPresets = PrimeVideoOptions.vanillaPbrPresets();
-            this.prime$triangleDebug = PrimeVideoOptions.triangleDebug();
-            this.prime$rendererDiagnostics = PrimeVideoOptions.rendererDiagnostics();
-            this.prime$rawOutput = PrimeVideoOptions.rawOutput();
-            this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
-            this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
-            this.prime$rrDebugView = PrimeVideoOptions.dlssRrDebugView();
-            this.prime$rrDebugFullscreen = PrimeVideoOptions.dlssRrDebugFullscreen();
             list.addHeader(PRIME$HEADER);
             list.addBig(Button.builder(
                             Component.translatable("prime.options.restore_defaults"),
                             button -> this.prime$restoreDefaults())
                     .build());
             list.addHeader(PRIME$RENDERING_HEADER);
-            list.addBig(this.prime$pathTracingEnabled);
-            list.addBig(this.prime$screenshotMode);
-            list.addBig(this.prime$sharcEnabled);
-            list.addBig(this.prime$scatterCount);
-            list.addBig(this.prime$primaryChainLimit);
+            list.addBig(this.prime$options.rendering().pathTracingEnabled());
+            list.addBig(this.prime$options.rendering().screenshotMode());
+            list.addBig(this.prime$options.rendering().sharcEnabled());
+            list.addBig(this.prime$options.rendering().scatterCount());
+            list.addBig(this.prime$options.rendering().primaryChainLimit());
             this.prime$updatePrimaryChainAvailability();
-            list.addBig(this.prime$terrainWorkerPercentage);
+            list.addBig(this.prime$options.rendering().terrainWorkerPercentage());
             list.addSmall(
-                    this.prime$voxelTextureSurfaces,
-                    this.prime$voxelTextureSurfaceStrength);
-            list.addSmall(this.prime$postProcessingMode, this.prime$qualityMode);
+                    this.prime$options.rendering().voxelTextureSurfaces(),
+                    this.prime$options.rendering().voxelTextureSurfaceStrength());
+            list.addSmall(this.prime$options.rendering().postProcessingMode(), this.prime$options.rendering().qualityMode());
             list.addHeader(PRIME$LIGHTING_HEADER);
-            list.addSmall(this.prime$latitude, this.prime$season);
-            list.addBig(this.prime$sunExposure);
-            list.addBig(this.prime$starExposure);
-            list.addBig(this.prime$blockLightExposure);
+            list.addSmall(this.prime$options.lighting().latitude(), this.prime$options.lighting().season());
+            list.addBig(this.prime$options.lighting().sunExposure());
+            list.addBig(this.prime$options.lighting().starExposure());
+            list.addBig(this.prime$options.lighting().blockLightExposure());
             list.addHeader(PRIME$DISPLAY_HEADER);
-            list.addBig(this.prime$hdr);
-            AbstractWidget hdrWidget = list.findOption(this.prime$hdr);
+            list.addBig(this.prime$options.display().hdr());
+            AbstractWidget hdrWidget = list.findOption(this.prime$options.display().hdr());
             if (hdrWidget != null) {
                 hdrWidget.active = HdrOutput.capability().supported();
             }
-            list.addBig(this.prime$referenceWhiteNits);
+            list.addBig(this.prime$options.display().referenceWhiteNits());
             AbstractWidget referenceWhiteWidget =
-                    list.findOption(this.prime$referenceWhiteNits);
+                    list.findOption(this.prime$options.display().referenceWhiteNits());
             if (referenceWhiteWidget != null) {
                 referenceWhiteWidget.active = HdrOutput.capability().supported();
             }
-            list.addBig(this.prime$autoExposureCompensation);
-            list.addBig(this.prime$finalExposure);
+            list.addBig(this.prime$options.display().autoExposureCompensation());
+            list.addBig(this.prime$options.display().finalExposure());
             list.addHeader(PRIME$MATERIAL_HEADER);
-            list.addSmall(this.prime$defaultRoughness, this.prime$seamlessGlass);
-            list.addSmall(this.prime$airGap, this.prime$vanillaPbrPresets);
+            list.addSmall(this.prime$options.material().defaultRoughness(), this.prime$options.material().seamlessGlass());
+            list.addSmall(this.prime$options.material().airGap(), this.prime$options.material().vanillaPbrPresets());
             list.addHeader(PRIME$DIAGNOSTICS_HEADER);
-            list.addBig(this.prime$triangleDebug);
-            list.addBig(this.prime$rendererDiagnostics);
-            list.addBig(this.prime$rawOutput);
-            list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
-            list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
+            list.addBig(this.prime$options.diagnostics().triangleDebug());
+            list.addBig(this.prime$options.diagnostics().rendererDiagnostics());
+            list.addBig(this.prime$options.diagnostics().rawOutput());
+            list.addSmall(this.prime$options.diagnostics().nrdDebugView(), this.prime$options.diagnostics().fsrDebugView());
+            list.addSmall(this.prime$options.diagnostics().rrDebugView(), this.prime$options.diagnostics().rrDebugFullscreen());
             list.addBig(Button.builder(
                             Component.translatable("prime.options.open_repository"),
                             ConfirmLinkScreen.confirmLink(
@@ -192,89 +131,89 @@ public abstract class VideoSettingsScreenMixin {
                     current.voxelTextureSurfaces(),
                     current.voxelTextureSurfaceStrengthSteps());
         }
-        this.prime$refresh(this.prime$pathTracingEnabled, true);
-        this.prime$refresh(this.prime$sharcEnabled, true);
+        this.prime$refresh(this.prime$options.rendering().pathTracingEnabled(), true);
+        this.prime$refresh(this.prime$options.rendering().sharcEnabled(), true);
         this.prime$refresh(
-                this.prime$scatterCount,
+                this.prime$options.rendering().scatterCount(),
                 ScatterSettings.DEFAULT_COUNT);
         this.prime$refresh(
-                this.prime$primaryChainLimit,
+                this.prime$options.rendering().primaryChainLimit(),
                 PrimaryChainSettings.DEFAULT_LIMIT);
         this.prime$updatePrimaryChainAvailability();
         this.prime$refresh(
-                this.prime$terrainWorkerPercentage,
+                this.prime$options.rendering().terrainWorkerPercentage(),
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);
-        this.prime$refresh(this.prime$voxelTextureSurfaces, false);
+        this.prime$refresh(this.prime$options.rendering().voxelTextureSurfaces(), false);
         this.prime$refresh(
-                this.prime$voxelTextureSurfaceStrength,
+                this.prime$options.rendering().voxelTextureSurfaceStrength(),
                 VoxelSurfaceSettings.DEFAULT_STEPS);
-        this.prime$refresh(this.prime$screenshotMode, false);
-        this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
-        this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);
+        this.prime$refresh(this.prime$options.rendering().screenshotMode(), false);
+        this.prime$refresh(this.prime$options.rendering().postProcessingMode(), PostProcessingMode.DEFAULT);
+        this.prime$refresh(this.prime$options.rendering().qualityMode(), ReconstructionQualityMode.DEFAULT);
         this.prime$refresh(
-                this.prime$latitude,
+                this.prime$options.lighting().latitude(),
                 AstronomySettings.DEFAULT_LATITUDE_DEGREES);
         this.prime$refresh(
-                this.prime$season,
+                this.prime$options.lighting().season(),
                 AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES);
         this.prime$refresh(
-                this.prime$sunExposure,
+                this.prime$options.lighting().sunExposure(),
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         this.prime$refresh(
-                this.prime$starExposure,
+                this.prime$options.lighting().starExposure(),
                 LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
         this.prime$refresh(
-                this.prime$blockLightExposure,
+                this.prime$options.lighting().blockLightExposure(),
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
         this.prime$refresh(
-                this.prime$finalExposure,
+                this.prime$options.display().finalExposure(),
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);
         this.prime$refresh(
-                this.prime$autoExposureCompensation,
+                this.prime$options.display().autoExposureCompensation(),
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
         this.prime$refresh(
-                this.prime$referenceWhiteNits,
+                this.prime$options.display().referenceWhiteNits(),
                 HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
-        this.prime$refresh(this.prime$hdr, false);
+        this.prime$refresh(this.prime$options.display().hdr(), false);
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
-        AbstractWidget hdrWidget = list.findOption(this.prime$hdr);
+        AbstractWidget hdrWidget = list.findOption(this.prime$options.display().hdr());
         if (hdrWidget != null) {
             hdrWidget.active = HdrOutput.capability().supported();
         }
         AbstractWidget referenceWhiteWidget =
-                list.findOption(this.prime$referenceWhiteNits);
+                list.findOption(this.prime$options.display().referenceWhiteNits());
         if (referenceWhiteWidget != null) {
             referenceWhiteWidget.active = HdrOutput.capability().supported();
         }
         this.prime$refresh(
-                this.prime$defaultRoughness,
+                this.prime$options.material().defaultRoughness(),
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
         this.prime$refresh(
-                this.prime$seamlessGlass,
+                this.prime$options.material().seamlessGlass(),
                 MaterialSettings.DEFAULT_SEAMLESS_GLASS);
-        this.prime$refresh(this.prime$airGap, MaterialSettings.DEFAULT_AIR_GAP);
+        this.prime$refresh(this.prime$options.material().airGap(), MaterialSettings.DEFAULT_AIR_GAP);
         this.prime$refresh(
-                this.prime$vanillaPbrPresets,
+                this.prime$options.material().vanillaPbrPresets(),
                 MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
-        this.prime$refresh(this.prime$triangleDebug, false);
-        this.prime$refresh(this.prime$rendererDiagnostics, false);
-        this.prime$refresh(this.prime$rawOutput, false);
-        this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);
-        this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);
-        this.prime$refresh(this.prime$rrDebugView, DlssRrDebugView.OFF);
-        this.prime$refresh(this.prime$rrDebugFullscreen, false);
+        this.prime$refresh(this.prime$options.diagnostics().triangleDebug(), false);
+        this.prime$refresh(this.prime$options.diagnostics().rendererDiagnostics(), false);
+        this.prime$refresh(this.prime$options.diagnostics().rawOutput(), false);
+        this.prime$refresh(this.prime$options.diagnostics().nrdDebugView(), NrdDiagnostics.Mode.OFF);
+        this.prime$refresh(this.prime$options.diagnostics().fsrDebugView(), FsrDebugView.OFF);
+        this.prime$refresh(this.prime$options.diagnostics().rrDebugView(), DlssRrDebugView.OFF);
+        this.prime$refresh(this.prime$options.diagnostics().rrDebugFullscreen(), false);
     }
 
     @Unique
     private void prime$updatePrimaryChainAvailability() {
-        if (this.prime$primaryChainLimit == null) {
+        if (this.prime$options == null) {
             return;
         }
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list == null) {
             return;
         }
-        AbstractWidget widget = list.findOption(this.prime$primaryChainLimit);
+        AbstractWidget widget = list.findOption(this.prime$options.rendering().primaryChainLimit());
         if (widget != null) {
             widget.active = !PrimeConfig.settings().sharcEnabled();
         }

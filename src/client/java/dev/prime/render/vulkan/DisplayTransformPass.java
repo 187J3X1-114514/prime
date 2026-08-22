@@ -8,15 +8,12 @@ import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.VulkanSharedPrograms.SharedComputeProgram;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Prime's common linear Rec.2020 HDR to selectable sRGB Rec.709 display boundary. */
@@ -126,33 +123,22 @@ public final class DisplayTransformPass implements Destroyable {
                     "Prime HDR display output");
             program = context.acquireDisplayTransformProgram();
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                LongBuffer pointer = stack.mallocLong(1);
                 VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.calloc(3, stack);
                 poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE).descriptorCount(1);
                 poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(2);
                 poolSizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1);
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorPool(
-                                context.vkDevice(),
-                                VkDescriptorPoolCreateInfo.calloc(stack)
-                                        .sType$Default().maxSets(1).pPoolSizes(poolSizes),
-                                null,
-                                pointer),
+                descriptorPool = VulkanDescriptors.createPool(
+                        context,
+                        stack,
+                        1,
+                        poolSizes,
                         "create common display-transform descriptor pool");
-                descriptorPool = pointer.get(0);
-
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkAllocateDescriptorSets(
-                                context.vkDevice(),
-                                VkDescriptorSetAllocateInfo.calloc(stack)
-                                        .sType$Default()
-                                        .descriptorPool(descriptorPool)
-                                        .pSetLayouts(stack.longs(program.descriptorSetLayout())),
-                                pointer),
+                long descriptorSet = VulkanDescriptors.allocateSet(
+                        context,
+                        stack,
+                        descriptorPool,
+                        program.descriptorSetLayout(),
                         "allocate common display-transform descriptor set");
-                long descriptorSet = pointer.get(0);
                 VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(3, stack);
                 imageInfos.get(0).imageView(linearInput.view())
                         .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);

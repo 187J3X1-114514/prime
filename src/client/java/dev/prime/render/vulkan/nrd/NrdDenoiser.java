@@ -10,7 +10,6 @@ import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
-import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.ParallelPipelineCreation;
 import dev.prime.render.vulkan.VulkanBuffer;
@@ -64,13 +63,9 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
  */
 public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     static final int MOTION_NRD_BINDING = 0;
     static final int MOTION_FSR_BINDING = 23;
     static final int MOTION_BINDING_COUNT = 24;
-    private static final int MOTION_PUSH_SIZE = ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE;
-    private static final int COMPOSITE_BINDING_COUNT = 31;
-    private static final int COMPOSITE_PUSH_SIZE = 32;
     // Wavefront resolve writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -79,7 +74,7 @@ public final class NrdDenoiser implements Destroyable {
     private final int height;
     private final NrdNative.Instance nativeInstance;
     private final NrdNative.Description description;
-    private final Images images;
+    private final NrdImages images;
     private final RawWavefrontFrame rawFrame;
     private final PreparedNrdFrame preparedFrame;
     private final NrdCompositeFrame compositeFrame;
@@ -87,8 +82,8 @@ public final class NrdDenoiser implements Destroyable {
     private final long nearestSampler;
     private final long linearSampler;
     private final ComputePipeline[] pipelines;
-    private final InputPreparationPipeline inputPreparationPipeline;
-    private final CompositePipeline composite;
+    private final NrdInputPreparationPass inputPreparationPipeline;
+    private final NrdCompositePass composite;
     private final Matrix4f currentNrdProjection = new Matrix4f();
     private final Matrix4f previousNrdProjection = new Matrix4f();
     private final Matrix4f previousWorldToView = new Matrix4f();
@@ -103,14 +98,14 @@ public final class NrdDenoiser implements Destroyable {
             int width,
             int height,
             NrdNative.Instance nativeInstance,
-            Images images,
+            NrdImages images,
             VulkanImage output,
             AtmospherePipeline atmosphere,
             long nearestSampler,
             long linearSampler,
             ComputePipeline[] pipelines,
-            InputPreparationPipeline inputPreparationPipeline,
-            CompositePipeline composite) {
+            NrdInputPreparationPass inputPreparationPipeline,
+            NrdCompositePass composite) {
         this.context = context;
         this.width = width;
         this.height = height;
@@ -170,16 +165,16 @@ public final class NrdDenoiser implements Destroyable {
             AtmospherePipeline atmosphere) {
         String debugPrefix = "Prime NRD";
         NrdNative.Instance nativeInstance = NrdNative.create(width, height);
-        Images images = null;
+        NrdImages images = null;
         long nearestSampler = 0L;
         long linearSampler = 0L;
         ComputePipeline[] pipelines = null;
-        InputPreparationPipeline inputPreparationPipeline = null;
-        CompositePipeline composite = null;
+        NrdInputPreparationPass inputPreparationPipeline = null;
+        NrdCompositePass composite = null;
         try {
             NrdNative.Description description = nativeInstance.description();
             validateNativeContract(description);
-            images = Images.create(
+            images = NrdImages.create(
                     context,
                     width,
                     height,
@@ -188,9 +183,9 @@ public final class NrdDenoiser implements Destroyable {
             nearestSampler = createSampler(context, false, debugPrefix + " nearest-clamp sampler");
             linearSampler = createSampler(context, true, debugPrefix + " linear-clamp sampler");
             pipelines = createPipelines(context, description, nearestSampler, linearSampler);
-            inputPreparationPipeline = InputPreparationPipeline.create(
+            inputPreparationPipeline = NrdInputPreparationPass.create(
                     context, images, "/prime/shaders/nrd_motion.comp.spv", debugPrefix);
-            composite = CompositePipeline.create(
+            composite = NrdCompositePass.create(
                     context, output, stableAccumulation, images, atmosphere);
             return new NrdDenoiser(
                     context,
@@ -679,56 +674,6 @@ public final class NrdDenoiser implements Destroyable {
         KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
     }
 
-    private static int vkFormat(int nrdFormat) {
-        return switch (nrdFormat) {
-            case 0 -> VK12.VK_FORMAT_R8_UNORM;
-            case 1 -> VK12.VK_FORMAT_R8_SNORM;
-            case 2 -> VK12.VK_FORMAT_R8_UINT;
-            case 3 -> VK12.VK_FORMAT_R8_SINT;
-            case 4 -> VK12.VK_FORMAT_R8G8_UNORM;
-            case 5 -> VK12.VK_FORMAT_R8G8_SNORM;
-            case 6 -> VK12.VK_FORMAT_R8G8_UINT;
-            case 7 -> VK12.VK_FORMAT_R8G8_SINT;
-            case 8 -> VK12.VK_FORMAT_R8G8B8A8_UNORM;
-            case 9 -> VK12.VK_FORMAT_R8G8B8A8_SNORM;
-            case 10 -> VK12.VK_FORMAT_R8G8B8A8_UINT;
-            case 11 -> VK12.VK_FORMAT_R8G8B8A8_SINT;
-            case 12 -> VK12.VK_FORMAT_R8G8B8A8_SRGB;
-            case 13 -> VK12.VK_FORMAT_R16_UNORM;
-            case 14 -> VK12.VK_FORMAT_R16_SNORM;
-            case 15 -> VK12.VK_FORMAT_R16_UINT;
-            case 16 -> VK12.VK_FORMAT_R16_SINT;
-            case 17 -> VK12.VK_FORMAT_R16_SFLOAT;
-            case 18 -> VK12.VK_FORMAT_R16G16_UNORM;
-            case 19 -> VK12.VK_FORMAT_R16G16_SNORM;
-            case 20 -> VK12.VK_FORMAT_R16G16_UINT;
-            case 21 -> VK12.VK_FORMAT_R16G16_SINT;
-            case 22 -> VK12.VK_FORMAT_R16G16_SFLOAT;
-            case 23 -> VK12.VK_FORMAT_R16G16B16A16_UNORM;
-            case 24 -> VK12.VK_FORMAT_R16G16B16A16_SNORM;
-            case 25 -> VK12.VK_FORMAT_R16G16B16A16_UINT;
-            case 26 -> VK12.VK_FORMAT_R16G16B16A16_SINT;
-            case 27 -> VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
-            case 28 -> VK12.VK_FORMAT_R32_UINT;
-            case 29 -> VK12.VK_FORMAT_R32_SINT;
-            case 30 -> VK12.VK_FORMAT_R32_SFLOAT;
-            case 31 -> VK12.VK_FORMAT_R32G32_UINT;
-            case 32 -> VK12.VK_FORMAT_R32G32_SINT;
-            case 33 -> VK12.VK_FORMAT_R32G32_SFLOAT;
-            case 34 -> VK12.VK_FORMAT_R32G32B32_UINT;
-            case 35 -> VK12.VK_FORMAT_R32G32B32_SINT;
-            case 36 -> VK12.VK_FORMAT_R32G32B32_SFLOAT;
-            case 37 -> VK12.VK_FORMAT_R32G32B32A32_UINT;
-            case 38 -> VK12.VK_FORMAT_R32G32B32A32_SINT;
-            case 39 -> VK12.VK_FORMAT_R32G32B32A32_SFLOAT;
-            case 40 -> VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-            case 41 -> VK12.VK_FORMAT_A2B10G10R10_UINT_PACK32;
-            case 42 -> VK12.VK_FORMAT_B10G11R11_UFLOAT_PACK32;
-            case 43 -> VK12.VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
-            default -> throw new IllegalStateException("Unsupported NRD texture format " + nrdFormat);
-        };
-    }
-
     /** One command-stream version after input preparation and before native reconstruction. */
     public static final class PreparedFrame {
         private final NrdDenoiser owner;
@@ -813,9 +758,9 @@ public final class NrdDenoiser implements Destroyable {
 
     /** Raw raygen view kept separate from the in-place prepared NRD view. */
     private static final class RawSignals implements RawWavefrontFrame {
-        private final Images images;
+        private final NrdImages images;
 
-        private RawSignals(Images images) {
+        private RawSignals(NrdImages images) {
             this.images = images;
         }
 
@@ -859,363 +804,6 @@ public final class NrdDenoiser implements Destroyable {
         @Override public boolean usesShInputs() { return true; }
         @Override public VulkanImage rawNumericalDiagnostic() {
             return this.images.reprojectionError;
-        }
-    }
-
-    private static final class Images implements Destroyable {
-        private final VulkanImage noisyDiffuse;
-        private final VulkanImage noisySpecular;
-        private final VulkanImage noisyDiffuseSh1;
-        private final VulkanImage noisySpecularSh1;
-        private final VulkanImage normalRoughness;
-        private final VulkanImage viewZ;
-        private final VulkanImage motion;
-        private final VulkanImage fsrMotion;
-        private final VulkanImage fsrDepth;
-        private final VulkanImage material;
-        private final VulkanImage specularMaterial;
-        private final VulkanImage primaryPosition;
-        private final VulkanImage sunLighting;
-        private final VulkanImage sunPenumbra;
-        private final VulkanImage sunShadow;
-        private final VulkanImage reprojectionError;
-        private final VulkanImage validation;
-        private final VulkanImage denoisedDiffuse;
-        private final VulkanImage denoisedSpecular;
-        private final VulkanImage denoisedDiffuseSh1;
-        private final VulkanImage denoisedSpecularSh1;
-        private final VulkanImage reflectionNoisyDiffuse;
-        private final VulkanImage reflectionNoisySpecular;
-        private final VulkanImage reflectionNoisyDiffuseSh1;
-        private final VulkanImage reflectionNoisySpecularSh1;
-        private final VulkanImage reflectionNormalRoughness;
-        private final VulkanImage reflectionViewZ;
-        private final VulkanImage reflectionMotion;
-        private final VulkanImage reflectionMaterial;
-        private final VulkanImage reflectionSpecularMaterial;
-        private final VulkanImage reflectionPosition;
-        private final VulkanImage reflectionDenoisedDiffuse;
-        private final VulkanImage reflectionDenoisedSpecular;
-        private final VulkanImage reflectionDenoisedDiffuseSh1;
-        private final VulkanImage reflectionDenoisedSpecularSh1;
-        private final VulkanImage displayPosition;
-        private final VulkanImage fsrReactiveMask;
-        private final VulkanImage fsrTransparencyCompositionMask;
-        private final VulkanImage[] permanentPool;
-        private final VulkanImage[] transientPool;
-        private final VulkanImage[] ownedImages;
-        private boolean destroyed;
-
-        private Images(
-                VulkanImage noisyDiffuse,
-                VulkanImage noisySpecular,
-                VulkanImage noisyDiffuseSh1,
-                VulkanImage noisySpecularSh1,
-                VulkanImage normalRoughness,
-                VulkanImage viewZ,
-                VulkanImage motion,
-                VulkanImage fsrMotion,
-                VulkanImage fsrDepth,
-                VulkanImage material,
-                VulkanImage specularMaterial,
-                VulkanImage primaryPosition,
-                VulkanImage sunLighting,
-                VulkanImage sunPenumbra,
-                VulkanImage sunShadow,
-                VulkanImage reprojectionError,
-                VulkanImage validation,
-                VulkanImage denoisedDiffuse,
-                VulkanImage denoisedSpecular,
-                VulkanImage denoisedDiffuseSh1,
-                VulkanImage denoisedSpecularSh1,
-                VulkanImage reflectionNoisyDiffuse,
-                VulkanImage reflectionNoisySpecular,
-                VulkanImage reflectionNoisyDiffuseSh1,
-                VulkanImage reflectionNoisySpecularSh1,
-                VulkanImage reflectionNormalRoughness,
-                VulkanImage reflectionViewZ,
-                VulkanImage reflectionMotion,
-                VulkanImage reflectionMaterial,
-                VulkanImage reflectionSpecularMaterial,
-                VulkanImage reflectionPosition,
-                VulkanImage reflectionDenoisedDiffuse,
-                VulkanImage reflectionDenoisedSpecular,
-                VulkanImage reflectionDenoisedDiffuseSh1,
-                VulkanImage reflectionDenoisedSpecularSh1,
-                VulkanImage displayPosition,
-                VulkanImage fsrReactiveMask,
-                VulkanImage fsrTransparencyCompositionMask,
-                VulkanImage[] permanentPool,
-                VulkanImage[] transientPool,
-                VulkanImage[] ownedImages) {
-            this.noisyDiffuse = noisyDiffuse;
-            this.noisySpecular = noisySpecular;
-            this.noisyDiffuseSh1 = noisyDiffuseSh1;
-            this.noisySpecularSh1 = noisySpecularSh1;
-            this.normalRoughness = normalRoughness;
-            this.viewZ = viewZ;
-            this.motion = motion;
-            this.fsrMotion = fsrMotion;
-            this.fsrDepth = fsrDepth;
-            this.material = material;
-            this.specularMaterial = specularMaterial;
-            this.primaryPosition = primaryPosition;
-            this.sunLighting = sunLighting;
-            this.sunPenumbra = sunPenumbra;
-            this.sunShadow = sunShadow;
-            this.reprojectionError = reprojectionError;
-            this.validation = validation;
-            this.denoisedDiffuse = denoisedDiffuse;
-            this.denoisedSpecular = denoisedSpecular;
-            this.denoisedDiffuseSh1 = denoisedDiffuseSh1;
-            this.denoisedSpecularSh1 = denoisedSpecularSh1;
-            this.reflectionNoisyDiffuse = reflectionNoisyDiffuse;
-            this.reflectionNoisySpecular = reflectionNoisySpecular;
-            this.reflectionNoisyDiffuseSh1 = reflectionNoisyDiffuseSh1;
-            this.reflectionNoisySpecularSh1 = reflectionNoisySpecularSh1;
-            this.reflectionNormalRoughness = reflectionNormalRoughness;
-            this.reflectionViewZ = reflectionViewZ;
-            this.reflectionMotion = reflectionMotion;
-            this.reflectionMaterial = reflectionMaterial;
-            this.reflectionSpecularMaterial = reflectionSpecularMaterial;
-            this.reflectionPosition = reflectionPosition;
-            this.reflectionDenoisedDiffuse = reflectionDenoisedDiffuse;
-            this.reflectionDenoisedSpecular = reflectionDenoisedSpecular;
-            this.reflectionDenoisedDiffuseSh1 = reflectionDenoisedDiffuseSh1;
-            this.reflectionDenoisedSpecularSh1 = reflectionDenoisedSpecularSh1;
-            this.displayPosition = displayPosition;
-            this.fsrReactiveMask = fsrReactiveMask;
-            this.fsrTransparencyCompositionMask = fsrTransparencyCompositionMask;
-            this.permanentPool = permanentPool;
-            this.transientPool = transientPool;
-            this.ownedImages = ownedImages;
-        }
-
-        private static Images create(
-                VulkanContext context,
-                int width,
-                int height,
-                NrdNative.Description description,
-                String debugPrefix) {
-            ArrayList<VulkanImage> created = new ArrayList<>();
-            try {
-                VulkanImage noisy = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " noisy diffuse");
-                VulkanImage noisySpecular = createImage(
-                        context,
-                        created,
-                        width,
-                        height,
-                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " noisy specular");
-                VulkanImage noisyDiffuseSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " noisy diffuse SH1");
-                VulkanImage noisySpecularSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " noisy specular SH1");
-                VulkanImage normal = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, debugPrefix + " normal roughness");
-                VulkanImage viewZ = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, debugPrefix + " view Z");
-                VulkanImage motion = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " 2.5D screen motion");
-                VulkanImage fsrMotion = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " visible-surface FSR motion");
-                VulkanImage fsrDepth = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, debugPrefix + " FSR depth");
-                VulkanImage material = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " material metadata");
-                VulkanImage specularMaterial = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " specular material or virtual guide");
-                VulkanImage primaryPosition = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, debugPrefix + " primary or virtual position");
-                VulkanImage sunLighting = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " unshadowed sun lighting");
-                VulkanImage sunPenumbra = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " noisy sun penumbra");
-                VulkanImage sunShadow = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " SIGMA sun shadow");
-                VulkanImage reprojectionError = createImage(
-                        context,
-                        created,
-                        width,
-                        height,
-                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reprojection error");
-                VulkanImage validation = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, debugPrefix + " validation output");
-                VulkanImage denoised = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " denoised diffuse");
-                VulkanImage denoisedSpecular = createImage(
-                        context,
-                        created,
-                        width,
-                        height,
-                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " denoised specular");
-                VulkanImage denoisedDiffuseSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " denoised diffuse SH1");
-                VulkanImage denoisedSpecularSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " denoised specular SH1");
-                VulkanImage reflectionNoisyDiffuse = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection noisy diffuse");
-                VulkanImage reflectionNoisySpecular = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection noisy specular");
-                VulkanImage reflectionNoisyDiffuseSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection noisy diffuse SH1");
-                VulkanImage reflectionNoisySpecularSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection noisy specular SH1");
-                VulkanImage reflectionNormalRoughness = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32,
-                        debugPrefix + " reflection normal roughness");
-                VulkanImage reflectionViewZ = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT,
-                        debugPrefix + " reflection view Z");
-                VulkanImage reflectionMotion = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection 2.5D motion");
-                VulkanImage reflectionMaterial = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection material");
-                VulkanImage reflectionSpecularMaterial = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection specular material");
-                VulkanImage reflectionPosition = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
-                        debugPrefix + " reflection virtual position");
-                VulkanImage reflectionDenoisedDiffuse = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection denoised diffuse");
-                VulkanImage reflectionDenoisedSpecular = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection denoised specular");
-                VulkanImage reflectionDenoisedDiffuseSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection denoised diffuse SH1");
-                VulkanImage reflectionDenoisedSpecularSh1 = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " reflection denoised specular SH1");
-                VulkanImage displayPosition = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
-                        debugPrefix + " visible primary position");
-                VulkanImage fsrReactiveMask = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR reactive mask");
-                VulkanImage fsrTransparencyCompositionMask = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR transparency mask");
-                VulkanImage[] permanent = createPool(
-                        context, created, width, height, description.permanentPool(), debugPrefix + " permanent");
-                VulkanImage[] transientImages = createPool(
-                        context, created, width, height, description.transientPool(), debugPrefix + " transient");
-                return new Images(
-                        noisy,
-                        noisySpecular,
-                        noisyDiffuseSh1,
-                        noisySpecularSh1,
-                        normal,
-                        viewZ,
-                        motion,
-                        fsrMotion,
-                        fsrDepth,
-                        material,
-                        specularMaterial,
-                        primaryPosition,
-                        sunLighting,
-                        sunPenumbra,
-                        sunShadow,
-                        reprojectionError,
-                        validation,
-                        denoised,
-                        denoisedSpecular,
-                        denoisedDiffuseSh1,
-                        denoisedSpecularSh1,
-                        reflectionNoisyDiffuse,
-                        reflectionNoisySpecular,
-                        reflectionNoisyDiffuseSh1,
-                        reflectionNoisySpecularSh1,
-                        reflectionNormalRoughness,
-                        reflectionViewZ,
-                        reflectionMotion,
-                        reflectionMaterial,
-                        reflectionSpecularMaterial,
-                        reflectionPosition,
-                        reflectionDenoisedDiffuse,
-                        reflectionDenoisedSpecular,
-                        reflectionDenoisedDiffuseSh1,
-                        reflectionDenoisedSpecularSh1,
-                        displayPosition,
-                        fsrReactiveMask,
-                        fsrTransparencyCompositionMask,
-                        permanent,
-                        transientImages,
-                        created.toArray(VulkanImage[]::new));
-            } catch (RuntimeException exception) {
-                for (int index = created.size() - 1; index >= 0; index--) {
-                    created.get(index).destroy();
-                }
-                throw exception;
-            }
-        }
-
-        private static VulkanImage[] createPool(
-                VulkanContext context,
-                List<VulkanImage> created,
-                int width,
-                int height,
-                List<NrdNative.TextureInfo> descriptions,
-                String poolName) {
-            VulkanImage[] pool = new VulkanImage[descriptions.size()];
-            for (int index = 0; index < pool.length; index++) {
-                NrdNative.TextureInfo texture = descriptions.get(index);
-                int factor = texture.downsampleFactor();
-                if (factor <= 0) {
-                    throw new IllegalStateException("NRD returned a non-positive downsample factor");
-                }
-                int textureWidth = (width + factor - 1) / factor;
-                int textureHeight = (height + factor - 1) / factor;
-                pool[index] = createImage(
-                        context,
-                        created,
-                        textureWidth,
-                        textureHeight,
-                        vkFormat(texture.format()),
-                        "Prime NRD " + poolName + " " + index);
-            }
-            return pool;
-        }
-
-        private static VulkanImage createImage(
-                VulkanContext context,
-                List<VulkanImage> created,
-                int width,
-                int height,
-                int format,
-                String label) {
-            VulkanImage image = context.createImage2D(width, height, format, IMAGE_USAGE, label);
-            created.add(image);
-            return image;
-        }
-
-        private VulkanImage[] allImages() {
-            return this.ownedImages;
-        }
-
-        @Override
-        public void destroy() {
-            if (this.destroyed) {
-                return;
-            }
-            this.destroyed = true;
-            VulkanImage[] owned = this.allImages();
-            for (int index = owned.length - 1; index >= 0; index--) {
-                owned[index].destroy();
-            }
         }
     }
 
@@ -1684,496 +1272,5 @@ public final class NrdDenoiser implements Destroyable {
                         this.owner.context.vkDevice(), this.descriptorPool, null);
             }
         }
-    }
-
-    private static final class InputPreparationPipeline implements Destroyable {
-        private final VulkanContext context;
-        private final long descriptorSetLayout;
-        private final long descriptorPool;
-        private final long descriptorSet;
-        private final long pipelineLayout;
-        private final long pipeline;
-        private final Matrix4f currentClipToWorld = new Matrix4f();
-        private final Matrix4f previousWorldToClip = new Matrix4f();
-        private final Matrix4f previousRenderedWorldToClip = new Matrix4f();
-        private final Matrix4f worldToViewScratch = new Matrix4f();
-        private boolean destroyed;
-
-        private InputPreparationPipeline(
-                VulkanContext context,
-                long descriptorSetLayout,
-                long descriptorPool,
-                long descriptorSet,
-                long pipelineLayout,
-                long pipeline) {
-            this.context = context;
-            this.descriptorSetLayout = descriptorSetLayout;
-            this.descriptorPool = descriptorPool;
-            this.descriptorSet = descriptorSet;
-            this.pipelineLayout = pipelineLayout;
-            this.pipeline = pipeline;
-        }
-
-        private static InputPreparationPipeline create(
-                VulkanContext context,
-                Images images,
-                String shaderResource,
-                String debugPrefix) {
-            long descriptorSetLayout = 0L;
-            long descriptorPool = 0L;
-            long descriptorSet = 0L;
-            long pipelineLayout = 0L;
-            long pipeline = 0L;
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorSetLayoutBinding.Buffer bindings =
-                        VkDescriptorSetLayoutBinding.calloc(MOTION_BINDING_COUNT, stack);
-                for (int index = 0; index < MOTION_BINDING_COUNT; index++) {
-                    bindings.get(index)
-                            .binding(index)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                            .descriptorCount(1)
-                            .stageFlags(COMPUTE_STAGE);
-                }
-                VkDescriptorSetLayoutCreateInfo setLayoutInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .pBindings(bindings);
-                LongBuffer pointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorSetLayout(
-                                context.vkDevice(), setLayoutInfo, null, pointer),
-                        "create " + debugPrefix + " motion descriptor layout");
-                descriptorSetLayout = pointer.get(0);
-
-                VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
-                        .stageFlags(COMPUTE_STAGE)
-                        .offset(0)
-                        .size(MOTION_PUSH_SIZE);
-                VkPipelineLayoutCreateInfo pipelineLayoutInfo = VkPipelineLayoutCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .pSetLayouts(stack.longs(descriptorSetLayout))
-                        .pPushConstantRanges(pushRange);
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreatePipelineLayout(
-                                context.vkDevice(), pipelineLayoutInfo, null, pointer),
-                        "create " + debugPrefix + " motion pipeline layout");
-                pipelineLayout = pointer.get(0);
-
-                long shaderModule = createResourceShaderModule(
-                        context, stack, shaderResource);
-                try {
-                    VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
-                            .sType$Default()
-                            .stage(COMPUTE_STAGE)
-                            .module(shaderModule)
-                            .pName(stack.UTF8("main"));
-                    VkComputePipelineCreateInfo.Buffer pipelineInfo =
-                            VkComputePipelineCreateInfo.calloc(1, stack);
-                    pipelineInfo.get(0)
-                            .sType$Default()
-                            .stage(stage)
-                            .layout(pipelineLayout);
-                    pointer.clear();
-                    context.createComputePipeline(
-                            pipelineInfo, pointer, debugPrefix + " motion");
-                    pipeline = pointer.get(0);
-                } finally {
-                    VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);
-                }
-
-                VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(1, stack)
-                        .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                        .descriptorCount(MOTION_BINDING_COUNT);
-                VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .maxSets(1)
-                        .pPoolSizes(poolSize);
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorPool(context.vkDevice(), poolInfo, null, pointer),
-                        "create " + debugPrefix + " motion descriptor pool");
-                descriptorPool = pointer.get(0);
-
-                VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
-                        .sType$Default()
-                        .descriptorPool(descriptorPool)
-                        .pSetLayouts(stack.longs(descriptorSetLayout));
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkAllocateDescriptorSets(context.vkDevice(), allocateInfo, pointer),
-                        "allocate " + debugPrefix + " motion descriptor set");
-                descriptorSet = pointer.get(0);
-
-                VulkanImage[] descriptorImages = new VulkanImage[] {
-                    images.motion,
-                    images.viewZ,
-                    images.primaryPosition,
-                    images.reprojectionError,
-                    images.fsrDepth,
-                    images.noisyDiffuse,
-                    images.noisySpecular,
-                    images.normalRoughness,
-                    images.material,
-                    images.specularMaterial,
-                    images.noisyDiffuseSh1,
-                    images.noisySpecularSh1,
-                    images.reflectionMotion,
-                    images.reflectionViewZ,
-                    images.reflectionPosition,
-                    images.reflectionNoisyDiffuse,
-                    images.reflectionNoisySpecular,
-                    images.reflectionNormalRoughness,
-                    images.reflectionMaterial,
-                    images.reflectionSpecularMaterial,
-                    images.reflectionNoisyDiffuseSh1,
-                    images.reflectionNoisySpecularSh1,
-                    images.displayPosition,
-                    images.fsrMotion
-                };
-                validateMotionBindings(
-                        descriptorImages, images.motion, images.fsrMotion);
-                VkDescriptorImageInfo.Buffer imageInfos =
-                        VkDescriptorImageInfo.calloc(MOTION_BINDING_COUNT, stack);
-                VkWriteDescriptorSet.Buffer writes =
-                        VkWriteDescriptorSet.calloc(MOTION_BINDING_COUNT, stack);
-                for (int index = 0; index < MOTION_BINDING_COUNT; index++) {
-                    imageInfos.get(index)
-                            .imageView(descriptorImages[index].view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    writes.get(index)
-                            .sType$Default()
-                            .dstSet(descriptorSet)
-                            .dstBinding(index)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                            .pImageInfo(VkDescriptorImageInfo.create(
-                                    imageInfos.get(index).address(), 1));
-                }
-                VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
-                return new InputPreparationPipeline(
-                        context,
-                        descriptorSetLayout,
-                        descriptorPool,
-                        descriptorSet,
-                        pipelineLayout,
-                        pipeline);
-            } catch (RuntimeException exception) {
-                if (descriptorPool != 0L) {
-                    VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
-                }
-                if (pipeline != 0L) {
-                    VK12.vkDestroyPipeline(context.vkDevice(), pipeline, null);
-                }
-                if (pipelineLayout != 0L) {
-                    VK12.vkDestroyPipelineLayout(context.vkDevice(), pipelineLayout, null);
-                }
-                if (descriptorSetLayout != 0L) {
-                    VK12.vkDestroyDescriptorSetLayout(
-                            context.vkDevice(), descriptorSetLayout, null);
-                }
-                throw exception;
-            }
-        }
-
-        private PreparedNrdFrame record(
-                VkCommandBuffer commandBuffer,
-                FrameCamera camera,
-                FrameCamera previous,
-                int width,
-                int height,
-                int diagnosticMode,
-                float cameraJitterX,
-                float cameraJitterY,
-                PreparedNrdFrame output) {
-            NrdCameraTransform.currentClipToWorld(camera, this.currentClipToWorld);
-            NrdCameraTransform.previousWorldToClip(
-                    camera, previous, this.previousWorldToClip, this.worldToViewScratch);
-            NrdCameraTransform.previousRenderedWorldToClip(
-                    camera, previous, this.previousRenderedWorldToClip);
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VK12.vkCmdBindPipeline(
-                        commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
-                VK12.vkCmdBindDescriptorSets(
-                        commandBuffer,
-                        VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
-                        this.pipelineLayout,
-                        0,
-                        stack.longs(this.descriptorSet),
-                        null);
-                ByteBuffer push = stack.malloc(MOTION_PUSH_SIZE).order(ByteOrder.nativeOrder());
-                NrdMotionConstants.write(
-                        push,
-                        this.currentClipToWorld,
-                        this.previousWorldToClip,
-                        this.previousRenderedWorldToClip,
-                        diagnosticMode,
-                        cameraJitterX,
-                        cameraJitterY);
-                VK12.vkCmdPushConstants(
-                        commandBuffer,
-                        this.pipelineLayout,
-                        COMPUTE_STAGE,
-                        0,
-                        push);
-                VK12.vkCmdDispatch(commandBuffer, (width + 7) / 8, (height + 7) / 8, 1);
-            }
-            return output;
-        }
-
-        @Override
-        public void destroy() {
-            if (!this.destroyed) {
-                this.destroyed = true;
-                VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
-                VK12.vkDestroyPipeline(this.context.vkDevice(), this.pipeline, null);
-                VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
-                VK12.vkDestroyDescriptorSetLayout(
-                        this.context.vkDevice(), this.descriptorSetLayout, null);
-            }
-        }
-    }
-
-    private static final class CompositePipeline implements Destroyable {
-        private final VulkanContext context;
-        private final long descriptorSetLayout;
-        private final long descriptorPool;
-        private final long descriptorSet;
-        private final long pipelineLayout;
-        private final long pipeline;
-        private boolean destroyed;
-
-        private CompositePipeline(
-                VulkanContext context,
-                long descriptorSetLayout,
-                long descriptorPool,
-                long descriptorSet,
-                long pipelineLayout,
-                long pipeline) {
-            this.context = context;
-            this.descriptorSetLayout = descriptorSetLayout;
-            this.descriptorPool = descriptorPool;
-            this.descriptorSet = descriptorSet;
-            this.pipelineLayout = pipelineLayout;
-            this.pipeline = pipeline;
-        }
-
-        private static CompositePipeline create(
-                VulkanContext context,
-                VulkanImage output,
-                VulkanImage stableAccumulation,
-                Images images,
-                AtmospherePipeline atmosphere) {
-            long descriptorSetLayout = 0L;
-            long descriptorPool = 0L;
-            long descriptorSet = 0L;
-            long pipelineLayout = 0L;
-            long pipeline = 0L;
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorSetLayoutBinding.Buffer bindings =
-                        VkDescriptorSetLayoutBinding.calloc(COMPOSITE_BINDING_COUNT, stack);
-                for (int index = 0; index < COMPOSITE_BINDING_COUNT; index++) {
-                    bindings.get(index)
-                            .binding(index)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                            .descriptorCount(1)
-                            .stageFlags(COMPUTE_STAGE);
-                }
-                VkDescriptorSetLayoutCreateInfo setLayoutInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .pBindings(bindings);
-                LongBuffer pointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorSetLayout(context.vkDevice(), setLayoutInfo, null, pointer),
-                        "create Prime NRD composite descriptor layout");
-                descriptorSetLayout = pointer.get(0);
-
-                VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
-                        .stageFlags(COMPUTE_STAGE)
-                        .offset(0)
-                        .size(COMPOSITE_PUSH_SIZE);
-                VkPipelineLayoutCreateInfo pipelineLayoutInfo = VkPipelineLayoutCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .pSetLayouts(stack.longs(descriptorSetLayout))
-                        .pPushConstantRanges(pushRange);
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreatePipelineLayout(context.vkDevice(), pipelineLayoutInfo, null, pointer),
-                        "create Prime NRD composite pipeline layout");
-                pipelineLayout = pointer.get(0);
-
-                long shaderModule = createResourceShaderModule(
-                        context, stack, "/prime/shaders/nrd_composite.comp.spv");
-                try {
-                    VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
-                            .sType$Default()
-                            .stage(COMPUTE_STAGE)
-                            .module(shaderModule)
-                            .pName(stack.UTF8("main"));
-                    VkComputePipelineCreateInfo.Buffer pipelineInfo = VkComputePipelineCreateInfo.calloc(1, stack);
-                    pipelineInfo.get(0)
-                            .sType$Default()
-                            .stage(stage)
-                            .layout(pipelineLayout);
-                    pointer.clear();
-                    context.createComputePipeline(
-                            pipelineInfo, pointer, "Prime NRD composite");
-                    pipeline = pointer.get(0);
-                } finally {
-                    VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);
-                }
-
-                VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(1, stack)
-                        .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                        .descriptorCount(COMPOSITE_BINDING_COUNT);
-                VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .maxSets(1)
-                        .pPoolSizes(poolSize);
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorPool(context.vkDevice(), poolInfo, null, pointer),
-                        "create Prime NRD composite descriptor pool");
-                descriptorPool = pointer.get(0);
-                VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
-                        .sType$Default()
-                        .descriptorPool(descriptorPool)
-                        .pSetLayouts(stack.longs(descriptorSetLayout));
-                pointer.clear();
-                VulkanContext.check(
-                        VK12.vkAllocateDescriptorSets(context.vkDevice(), allocateInfo, pointer),
-                        "allocate Prime NRD composite descriptor set");
-                descriptorSet = pointer.get(0);
-
-                VulkanImage[] descriptorImages = new VulkanImage[] {
-                    output,
-                    images.denoisedDiffuse,
-                    images.denoisedSpecular,
-                    images.material,
-                    images.specularMaterial,
-                    stableAccumulation,
-                    atmosphere.aerialRadiance(),
-                    atmosphere.aerialTransmittance(),
-                    images.validation,
-                    images.reprojectionError,
-                    images.motion,
-                    images.fsrReactiveMask,
-                    images.fsrTransparencyCompositionMask,
-                    images.sunLighting,
-                    images.sunShadow,
-                    images.denoisedDiffuseSh1,
-                    images.denoisedSpecularSh1,
-                    images.normalRoughness,
-                    images.viewZ,
-                    images.primaryPosition,
-                    images.noisySpecular,
-                    images.reflectionDenoisedDiffuse,
-                    images.reflectionDenoisedSpecular,
-                    images.reflectionMaterial,
-                    images.reflectionSpecularMaterial,
-                    images.reflectionDenoisedDiffuseSh1,
-                    images.reflectionDenoisedSpecularSh1,
-                    images.reflectionNormalRoughness,
-                    images.reflectionViewZ,
-                    images.reflectionPosition,
-                    images.displayPosition
-                };
-                VkDescriptorImageInfo.Buffer imageInfos =
-                        VkDescriptorImageInfo.calloc(COMPOSITE_BINDING_COUNT, stack);
-                VkWriteDescriptorSet.Buffer writes =
-                        VkWriteDescriptorSet.calloc(COMPOSITE_BINDING_COUNT, stack);
-                for (int index = 0; index < COMPOSITE_BINDING_COUNT; index++) {
-                    imageInfos.get(index)
-                            .imageView(descriptorImages[index].view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    writes.get(index)
-                            .sType$Default()
-                            .dstSet(descriptorSet)
-                            .dstBinding(index)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                            .pImageInfo(VkDescriptorImageInfo.create(
-                                    imageInfos.get(index).address(), 1));
-                }
-                VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
-                return new CompositePipeline(
-                        context,
-                        descriptorSetLayout,
-                        descriptorPool,
-                        descriptorSet,
-                        pipelineLayout,
-                        pipeline);
-            } catch (RuntimeException exception) {
-                if (descriptorPool != 0L) {
-                    VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
-                }
-                if (pipeline != 0L) {
-                    VK12.vkDestroyPipeline(context.vkDevice(), pipeline, null);
-                }
-                if (pipelineLayout != 0L) {
-                    VK12.vkDestroyPipelineLayout(context.vkDevice(), pipelineLayout, null);
-                }
-                if (descriptorSetLayout != 0L) {
-                    VK12.vkDestroyDescriptorSetLayout(context.vkDevice(), descriptorSetLayout, null);
-                }
-                throw exception;
-            }
-        }
-
-        private void record(
-                VkCommandBuffer commandBuffer,
-                int width,
-                int height,
-                int diagnosticMode,
-                float sunRadianceMultiplier,
-                float cameraJitterX,
-                float cameraJitterY,
-                float epipoleX,
-                float epipoleY) {
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VK12.vkCmdBindPipeline(
-                        commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
-                VK12.vkCmdBindDescriptorSets(
-                        commandBuffer,
-                        VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
-                        this.pipelineLayout,
-                        0,
-                        stack.longs(this.descriptorSet),
-                        null);
-                ByteBuffer push = stack.malloc(COMPOSITE_PUSH_SIZE).order(ByteOrder.nativeOrder());
-                push.putInt(0, width);
-                push.putInt(4, height);
-                push.putInt(8, diagnosticMode);
-                push.putFloat(12, sunRadianceMultiplier);
-                push.putFloat(16, cameraJitterX);
-                push.putFloat(20, cameraJitterY);
-                push.putFloat(24, epipoleX);
-                push.putFloat(28, epipoleY);
-                VK12.vkCmdPushConstants(
-                        commandBuffer,
-                        this.pipelineLayout,
-                        COMPUTE_STAGE,
-                        0,
-                        push);
-                VK12.vkCmdDispatch(commandBuffer, (width + 7) / 8, (height + 7) / 8, 1);
-            }
-        }
-
-        @Override
-        public void destroy() {
-            if (!this.destroyed) {
-                this.destroyed = true;
-                VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
-                VK12.vkDestroyPipeline(this.context.vkDevice(), this.pipeline, null);
-                VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
-                VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
-            }
-        }
-    }
-
-    private static long createResourceShaderModule(
-            VulkanContext context,
-            MemoryStack stack,
-            String resourceName) {
-        return VulkanShaderModules.create(context, stack, resourceName);
     }
 }

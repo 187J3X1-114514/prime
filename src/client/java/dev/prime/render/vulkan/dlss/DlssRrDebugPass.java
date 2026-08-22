@@ -5,6 +5,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
+import dev.prime.render.vulkan.VulkanDescriptors;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.DispatchMath;
@@ -20,14 +21,10 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
-import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
@@ -152,30 +149,19 @@ final class DlssRrDebugPass implements Destroyable {
             bindings.get(IMAGE_COUNT).binding(IMAGE_COUNT)
                     .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(1).stageFlags(COMPUTE_STAGE);
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorSetLayout(
-                            context.vkDevice(),
-                            VkDescriptorSetLayoutCreateInfo.calloc(stack)
-                                    .sType$Default().pBindings(bindings),
-                            null,
-                            pointer),
+            setLayout = VulkanDescriptors.createSetLayout(
+                    context,
+                    stack,
+                    bindings,
                     "create RR debug descriptor layout");
-            setLayout = pointer.get(0);
             VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
                     .stageFlags(COMPUTE_STAGE).offset(0).size(PUSH_SIZE);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreatePipelineLayout(
-                            context.vkDevice(),
-                            VkPipelineLayoutCreateInfo.calloc(stack)
-                                    .sType$Default()
-                                    .pSetLayouts(stack.longs(setLayout))
-                                    .pPushConstantRanges(pushRange),
-                            null,
-                            pointer),
+            pipelineLayout = VulkanDescriptors.createPipelineLayout(
+                    context,
+                    stack,
+                    setLayout,
+                    pushRange,
                     "create RR debug pipeline layout");
-            pipelineLayout = pointer.get(0);
             pipeline = createPipeline(
                     context, stack, pipelineLayout, SHADER, "RR debug");
             capturePipeline = createPipeline(
@@ -185,27 +171,18 @@ final class DlssRrDebugPass implements Destroyable {
                     .descriptorCount(IMAGE_COUNT);
             poolSize.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .descriptorCount(1);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorPool(
-                            context.vkDevice(),
-                            VkDescriptorPoolCreateInfo.calloc(stack)
-                                    .sType$Default().maxSets(1).pPoolSizes(poolSize),
-                            null,
-                            pointer),
+            descriptorPool = VulkanDescriptors.createPool(
+                    context,
+                    stack,
+                    1,
+                    poolSize,
                     "create RR debug descriptor pool");
-            descriptorPool = pointer.get(0);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkAllocateDescriptorSets(
-                            context.vkDevice(),
-                            VkDescriptorSetAllocateInfo.calloc(stack)
-                                    .sType$Default()
-                                    .descriptorPool(descriptorPool)
-                                    .pSetLayouts(stack.longs(setLayout)),
-                            pointer),
+            long descriptorSet = VulkanDescriptors.allocateSet(
+                    context,
+                    stack,
+                    descriptorPool,
+                    setLayout,
                     "allocate RR debug descriptor set");
-            long descriptorSet = pointer.get(0);
             VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(IMAGE_COUNT, stack);
             VkWriteDescriptorSet.Buffer writes =
                     VkWriteDescriptorSet.calloc(IMAGE_COUNT + 1, stack);

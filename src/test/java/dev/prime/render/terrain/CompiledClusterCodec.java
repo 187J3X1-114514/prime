@@ -6,8 +6,8 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Objects;
 
-/** Versioned canonical binary encoding of one {@link CompiledCluster}. */
-public final class CompiledClusterCodec {
+/** Current-format binary replay used by behavior tests. */
+final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
     private static final int VERSION = 16;
     private static final int MAX_SEGMENTS = 4_096;
@@ -18,7 +18,7 @@ public final class CompiledClusterCodec {
     private CompiledClusterCodec() {
     }
 
-    public static byte[] encode(CompiledCluster cluster) {
+    static byte[] encode(CompiledCluster cluster) {
         Objects.requireNonNull(cluster, "cluster");
         if (cluster.dynamic()) {
             throw new IllegalArgumentException(
@@ -89,7 +89,7 @@ public final class CompiledClusterCodec {
         return output.array();
     }
 
-    public static CompiledCluster decode(byte[] encoded) {
+    static CompiledCluster decode(byte[] encoded) {
         Objects.requireNonNull(encoded, "encoded");
         if (encoded.length > MAX_ENCODED_BYTES) {
             throw new IllegalArgumentException("Compiled-cluster replay exceeds the size limit");
@@ -100,8 +100,7 @@ public final class CompiledClusterCodec {
                 throw new IllegalArgumentException(
                         "Unsupported compiled-cluster replay header");
             }
-            int version = input.getInt();
-            if (version < 1 || version > VERSION) {
+            if (input.getInt() != VERSION) {
                 throw new IllegalArgumentException(
                         "Unsupported compiled-cluster replay header");
             }
@@ -124,16 +123,12 @@ public final class CompiledClusterCodec {
                         input.getInt(), "segment cutout triangle count");
                 int segmentTransmissive = nonnegative(
                         input.getInt(), "segment transmissive triangle count");
-                int segmentOpaqueMacro = version >= 5
-                        ? nonnegative(input.getInt(), "segment opaque macro triangle count")
-                        : 0;
-                int segmentCutoutMacro = version >= 5
-                        ? nonnegative(input.getInt(), "segment cutout macro triangle count")
-                        : 0;
-                int segmentTransmissiveMacro = version >= 5
-                        ? nonnegative(
-                                input.getInt(), "segment transmissive macro triangle count")
-                        : 0;
+                int segmentOpaqueMacro = nonnegative(
+                        input.getInt(), "segment opaque macro triangle count");
+                int segmentCutoutMacro = nonnegative(
+                        input.getInt(), "segment cutout macro triangle count");
+                int segmentTransmissiveMacro = nonnegative(
+                        input.getInt(), "segment transmissive macro triangle count");
                 requireMacroCount(segmentOpaque, segmentOpaqueMacro);
                 requireMacroCount(segmentCutout, segmentCutoutMacro);
                 requireMacroCount(segmentTransmissive, segmentTransmissiveMacro);
@@ -157,33 +152,8 @@ public final class CompiledClusterCodec {
                         Math.multiplyExact(
                                 primitiveCount, CpuSectionMesh.PRIMITIVE_WORDS),
                         "segment primitive records");
-                if (version < 4) {
-                    upgradePrimitivePacking(primitives);
-                }
-                if (version < 7) {
-                    upgradeUvPacking(primitives);
-                }
-                int[] encodedRelations = version >= 8
-                        ? getInts(
-                                input,
-                                version >= 9
-                                        ? "segment surface-relation records"
-                                        : "segment medium-boundary records")
-                        : new int[0];
-                int[] surfaceRelations = version >= 9
-                        ? encodedRelations
-                        : upgradeMediumBoundaries(
-                                encodedRelations,
-                                segmentOpaque,
-                                segmentCutout,
-                                segmentTransmissive,
-                                segmentOpaqueMacro,
-                                segmentCutoutMacro,
-                                segmentTransmissiveMacro);
-                if (version < 10) {
-                    upgradeMaterialEncoding(primitives);
-                    upgradeSurfaceRelations(surfaceRelations, primitiveCount);
-                }
+                int[] surfaceRelations = getInts(
+                        input, "segment surface-relation records");
                 segments.add(new CpuClusterMesh.Segment(
                         positions,
                         primitives,
@@ -203,22 +173,19 @@ public final class CompiledClusterCodec {
                     input, "opacity subdivision levels");
             int[] opacityTriangles = getInts(
                     input, "opacity triangle indices");
-            OpacityMicromapData opacity = version < 7
-                    ? OpacityMicromapData.fullyUnknown(Math.toIntExact(cutout))
-                    : OpacityMicromapData.fromEncoded(
-                            opacityBlocks,
-                            opacityOffsets,
-                            opacityFormats,
-                            opacitySubdivisions,
-                            opacityTriangles);
+            OpacityMicromapData opacity = OpacityMicromapData.fromEncoded(
+                    opacityBlocks,
+                    opacityOffsets,
+                    opacityFormats,
+                    opacitySubdivisions,
+                    opacityTriangles);
 
             ArrayList<CpuVoxelMesh> voxelMeshes = new ArrayList<>();
             CpuVoxelInstances voxelInstances = CpuVoxelInstances.EMPTY;
-            if (version >= 2) {
-                int voxelMeshCount = boundedCount(
-                        input.getInt(), MAX_VOXEL_MESHES, "voxel mesh count");
-                voxelMeshes.ensureCapacity(voxelMeshCount);
-                for (int index = 0; index < voxelMeshCount; index++) {
+            int voxelMeshCount = boundedCount(
+                    input.getInt(), MAX_VOXEL_MESHES, "voxel mesh count");
+            voxelMeshes.ensureCapacity(voxelMeshCount);
+            for (int index = 0; index < voxelMeshCount; index++) {
                     int meshOpaque = nonnegative(
                             input.getInt(), "voxel mesh opaque triangle count");
                     int meshCutout = nonnegative(
@@ -237,19 +204,7 @@ public final class CompiledClusterCodec {
                             Math.multiplyExact(
                                     triangles, CpuSectionMesh.PRIMITIVE_WORDS),
                             "voxel mesh primitive records");
-                    if (version < 4) {
-                        upgradePrimitivePacking(meshPrimitives);
-                    }
-                    if (version < 7) {
-                        upgradeUvPacking(meshPrimitives);
-                    }
-                    if (version < 10) {
-                        upgradeMaterialEncoding(meshPrimitives);
-                    }
                     OpacityMicromapData meshOpacity = getOpacity(input);
-                    if (version < 7) {
-                        meshOpacity = OpacityMicromapData.fullyUnknown(meshCutout);
-                    }
                     voxelMeshes.add(new CpuVoxelMesh(
                             meshPositions,
                             meshPrimitives,
@@ -257,20 +212,19 @@ public final class CompiledClusterCodec {
                             meshCutout,
                             meshTransmissive,
                             meshOpacity));
-                }
-                int[] meshIndices = getInts(input, "voxel instance mesh indices");
-                if (meshIndices.length > MAX_VOXEL_INSTANCES) {
-                    throw new IllegalArgumentException(
-                            "Compiled-cluster voxel instance count is invalid");
-                }
-                int[] packedTints = getInts(input, "voxel instance tints");
-                float[] translations = getFloats(
-                        input,
-                        Math.multiplyExact(meshIndices.length, 3),
-                        "voxel instance translations");
-                voxelInstances = new CpuVoxelInstances(
-                        meshIndices, packedTints, translations);
             }
+            int[] meshIndices = getInts(input, "voxel instance mesh indices");
+            if (meshIndices.length > MAX_VOXEL_INSTANCES) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster voxel instance count is invalid");
+            }
+            int[] packedTints = getInts(input, "voxel instance tints");
+            float[] translations = getFloats(
+                    input,
+                    Math.multiplyExact(meshIndices.length, 3),
+                    "voxel instance translations");
+            voxelInstances = new CpuVoxelInstances(
+                    meshIndices, packedTints, translations);
 
             int lightEmitterCount = nonnegative(input.getInt(), "light emitter count");
             float lightMinX = input.getFloat();
@@ -280,7 +234,7 @@ public final class CompiledClusterCodec {
             float lightMaxY = input.getFloat();
             float lightMaxZ = input.getFloat();
             float lightPower = input.getFloat();
-            int packedLightDirection = version >= 6 ? input.getInt() : LightDirection.FULL;
+            int packedLightDirection = input.getInt();
             CompiledClusterLights.Summary lightSummary = new CompiledClusterLights.Summary(
                     lightEmitterCount,
                     lightMinX,
@@ -292,24 +246,6 @@ public final class CompiledClusterCodec {
                     lightPower,
                     packedLightDirection);
             int[] encodedLights = getInts(input, "compiled light words");
-            if (version < 6 && lightEmitterCount != 0) {
-                encodedLights = CompiledClusterLights.addFullDirectionStream(encodedLights);
-            }
-            if (version < 7 && lightEmitterCount != 0) {
-                encodedLights = CompiledClusterLights.upgradeUvPacking(
-                        encodedLights, lightEmitterCount);
-            }
-            if (version < 13 && lightEmitterCount != 0) {
-                encodedLights = CompiledClusterLights.upgradeTreeLayout(
-                        encodedLights, lightEmitterCount, packedLightDirection);
-            }
-            if (version >= 13 && version < 15 && lightEmitterCount != 0) {
-                encodedLights = CompiledClusterLights.compactTreeNodes(encodedLights);
-            }
-            if (version >= 14 && version < 16 && lightEmitterCount != 0) {
-                encodedLights = CompiledClusterLights.removeEmitterAliasTable(
-                        encodedLights, lightEmitterCount);
-            }
             CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                     encodedLights, lightSummary);
             if (input.hasRemaining()) {
@@ -378,150 +314,6 @@ public final class CompiledClusterCodec {
                     "Compiled cluster is too large for the replay format");
         }
         return result;
-    }
-
-    private static void upgradePrimitivePacking(int[] records) {
-        for (int record = 0;
-                record < records.length;
-                record += CpuSectionMesh.PRIMITIVE_WORDS) {
-            int oldPacked = records[record + 5];
-            int flags = records[record + 3] >>> 24
-                    | (oldPacked & 1) << 8;
-            if ((oldPacked & PrimitivePacking.DYNAMIC_TEXTURE_FLAG) != 0) {
-                int textureIndex = oldPacked >>> 1 & 0x1fff_ffff;
-                boolean visibleEmission =
-                        (oldPacked & 1 << 30) != 0;
-                records[record + 5] = flags >>> 8
-                        | textureIndex << 3
-                        | (visibleEmission ? 1 << 30 : 0)
-                        | PrimitivePacking.DYNAMIC_TEXTURE_FLAG;
-            } else {
-                int encodedEmitter = oldPacked >>> 1;
-                records[record + 5] = flags >>> 8 | encodedEmitter << 3;
-            }
-        }
-    }
-
-    private static void upgradeMaterialEncoding(int[] records) {
-        for (int record = 0;
-                record < records.length;
-                record += CpuSectionMesh.PRIMITIVE_WORDS) {
-            int packedTint = records[record + 3];
-            int packedPayload = records[record + 5];
-            int legacyFlags = packedTint >>> 24 | (packedPayload & 7) << 8;
-            int control = upgradeLegacyFlags(legacyFlags);
-            records[record + 3] = PrimitivePacking.packTintControl(packedTint, control);
-            if ((packedPayload & PrimitivePacking.DYNAMIC_TEXTURE_FLAG) != 0) {
-                int textureIndex = packedPayload >>> 3 & 0x03ff_ffff;
-                if (textureIndex > PrimitivePacking.DYNAMIC_TEXTURE_INDEX_MASK) {
-                    throw new IllegalArgumentException(
-                            "Legacy dynamic texture exceeds the v10 ABI field");
-                }
-                records[record + 5] = PrimitivePacking.packDynamicControl(
-                        control,
-                        textureIndex,
-                        (packedPayload & 1 << 30) != 0,
-                        (packedPayload & 1 << 29) != 0);
-            } else if ((legacyFlags & 1 << 10) != 0) {
-                records[record + 5] = PrimitivePacking.packRasterCompositeControl(
-                        control, packedPayload >>> 3 & 0x00ff_ffff);
-            } else {
-                int encodedEmitter = packedPayload >>> 3 & 0x07ff_ffff;
-                int emitterIndex = encodedEmitter == 0
-                        ? PrimitivePacking.NO_EMITTER_INDEX
-                        : encodedEmitter - 1;
-                records[record + 5] = PrimitivePacking.packControlEmitter(
-                        control, emitterIndex);
-            }
-        }
-    }
-
-    private static int upgradeLegacyFlags(int flags) {
-        boolean cutout = (flags & 1) != 0;
-        boolean animated = (flags & 1 << 1) != 0;
-        boolean transmissive = (flags & 1 << 2) != 0;
-        boolean thin = (flags & 1 << 3) != 0;
-        boolean water = (flags & 1 << 4) != 0;
-        boolean foliage = (flags & 1 << 5) != 0;
-        int control = PrimitivePacking.encodeLegacySemantics(
-                cutout, animated, transmissive, thin, water, foliage);
-        control = PrimitivePacking.withMaterialDetails(
-                control,
-                (flags & 1 << 6) != 0,
-                (flags & 1 << 7) != 0,
-                (flags & 1 << 8) != 0);
-        if ((flags & 1 << 9) != 0) {
-            control |= PrimitivePacking.CONTROL_FRONT_FACE_ONLY;
-        }
-        if ((flags & 1 << 10) != 0) {
-            control |= PrimitivePacking.CONTROL_RASTER_COMPOSITE;
-        }
-        PrimitivePacking.requireValidControl(control);
-        return control;
-    }
-
-    private static void upgradeSurfaceRelations(int[] table, int primitiveCount) {
-        if (table.length == 0) {
-            return;
-        }
-        boolean[] upgraded = new boolean[table.length];
-        for (int primitive = 0; primitive < primitiveCount; primitive++) {
-            int offset = table[primitive];
-            if (offset == 0 || upgraded[offset]) {
-                continue;
-            }
-            upgraded[offset] = true;
-            int legacyControl = table[offset];
-            int kind = legacyControl & CpuSectionMesh.SURFACE_RELATION_KIND_MASK;
-            if (kind == CpuSectionMesh.SURFACE_RELATION_BOUNDARY) {
-                boolean water = (legacyControl & 1 << 4) != 0;
-                boolean optical = (legacyControl & 1 << 5) != 0;
-                int recipe = PrimitivePacking.encodeLegacySemantics(
-                        false, false, true, false, water, false);
-                recipe = PrimitivePacking.withMaterialDetails(
-                        recipe, false, optical, false);
-                table[offset] = kind
-                        | CpuSectionMesh.SURFACE_RELATION_MICRO_GAP_ELIGIBLE
-                        | PrimitivePacking.materialRecipeControl(recipe) << 8;
-            } else if (kind == CpuSectionMesh.SURFACE_RELATION_OVERLAY) {
-                int recipe = upgradeLegacyFlags(legacyControl >>> 8);
-                table[offset] = kind
-                        | (legacyControl & 1 << 4)
-                        | PrimitivePacking.materialRecipeControl(recipe) << 8;
-                upgradeMaterialEncodingAt(table, offset + 1);
-            } else if (kind == CpuSectionMesh.SURFACE_RELATION_BILATERAL) {
-                upgradeMaterialEncodingAt(table, offset + 1);
-            } else {
-                throw new IllegalArgumentException(
-                        "Legacy surface relation has an unknown kind");
-            }
-        }
-    }
-
-    private static void upgradeMaterialEncodingAt(int[] table, int offset) {
-        int[] material = new int[CpuSectionMesh.PRIMITIVE_WORDS];
-        System.arraycopy(table, offset, material, 0, material.length);
-        upgradeMaterialEncoding(material);
-        System.arraycopy(material, 0, table, offset, material.length);
-    }
-
-    private static void upgradeUvPacking(int[] records) {
-        for (int record = 0;
-                record < records.length;
-                record += CpuSectionMesh.PRIMITIVE_WORDS) {
-            int flags = records[record + 3] >>> 24
-                    | (records[record + 5] & 7) << 8;
-            boolean rasterComposite = (flags & 1 << 10) != 0;
-            boolean constantUv = !rasterComposite
-                    && records[record + 6] == PrimitivePacking.CONSTANT_UV_DENSITY;
-            if (constantUv) {
-                continue;
-            }
-            for (int vertex = 0; vertex < 3; vertex++) {
-                records[record + vertex] = PrimitivePacking.upgradeHalfUv(
-                        records[record + vertex]);
-            }
-        }
     }
 
     private static long opacityEncodedByteSize(
@@ -634,55 +426,6 @@ public final class CompiledClusterCodec {
                     0,
                     0);
         }
-    }
-
-    private static int[] upgradeMediumBoundaries(
-            int[] records,
-            int opaqueTriangles,
-            int cutoutTriangles,
-            int transmissiveTriangles,
-            int opaqueMacroTriangles,
-            int cutoutMacroTriangles,
-            int transmissiveMacroTriangles) {
-        if (records.length == 0) {
-            return records;
-        }
-        int opaquePrimitives = CpuSectionMesh.primitiveCount(
-                opaqueTriangles, opaqueMacroTriangles);
-        int cutoutPrimitives = CpuSectionMesh.primitiveCount(
-                cutoutTriangles, cutoutMacroTriangles);
-        int transmissivePrimitives = CpuSectionMesh.primitiveCount(
-                transmissiveTriangles, transmissiveMacroTriangles);
-        if (records.length != transmissivePrimitives * 3) {
-            throw new IllegalArgumentException(
-                    "Legacy medium-boundary table has an invalid length");
-        }
-        ArrayList<int[]> relations = new ArrayList<>(
-                opaquePrimitives + cutoutPrimitives + transmissivePrimitives);
-        for (int primitive = 0;
-                primitive < opaquePrimitives + cutoutPrimitives;
-                primitive++) {
-            relations.add(null);
-        }
-        for (int primitive = 0; primitive < transmissivePrimitives; primitive++) {
-            int offset = primitive * 3;
-            int oldControl = records[offset + 2];
-            if (oldControl == 0) {
-                relations.add(null);
-                continue;
-            }
-            int control = CpuSectionMesh.SURFACE_RELATION_BOUNDARY
-                    | ((oldControl & 2) != 0
-                            ? 1 << 4
-                            : 0)
-                    | ((oldControl & 4) != 0
-                            ? 1 << 5
-                            : 0);
-            relations.add(new int[] {
-                control, records[offset], records[offset + 1]
-            });
-        }
-        return SurfaceRelationTable.encode(relations);
     }
 
     private static void validatePrimitiveRecords(

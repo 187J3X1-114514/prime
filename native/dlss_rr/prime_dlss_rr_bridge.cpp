@@ -19,7 +19,8 @@
 
 namespace {
 
-constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 6;
+constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 7;
+constexpr auto PRIME_DLSS_RR_RENDER_PRESET = NVSDK_NGX_RayReconstruction_Hint_Render_Preset_F;
 constexpr char PROJECT_ID[] = "7bc01faf-de5e-4c7c-9936-43cb5c301232";
 constexpr std::uint32_t EXTENSION_NAME_STRIDE = 256;
 
@@ -232,6 +233,10 @@ PRIME_EXPORT std::uint32_t primeDlssRrGetAbiVersion() {
     return PRIME_DLSS_RR_ABI_VERSION;
 }
 
+PRIME_EXPORT std::uint32_t primeDlssRrGetRenderPreset() {
+    return static_cast<std::uint32_t>(PRIME_DLSS_RR_RENDER_PRESET);
+}
+
 PRIME_EXPORT int primeDlssRrGetInstanceExtensions(PrimeExtensionQuery* query) {
     if (query == nullptr) {
         return -1;
@@ -392,12 +397,11 @@ PRIME_EXPORT int primeDlssRrCreateFeature(PrimeFeatureDescription* description) 
         delete feature;
         return static_cast<int>(result);
     }
-    constexpr auto preset = NVSDK_NGX_RayReconstruction_Hint_Render_Preset_Default;
-    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_DLAA, preset);
-    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Quality, preset);
-    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Balanced, preset);
-    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Performance, preset);
-    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_UltraPerformance, preset);
+    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_DLAA, PRIME_DLSS_RR_RENDER_PRESET);
+    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Quality, PRIME_DLSS_RR_RENDER_PRESET);
+    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Balanced, PRIME_DLSS_RR_RENDER_PRESET);
+    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Performance, PRIME_DLSS_RR_RENDER_PRESET);
+    NVSDK_NGX_Parameter_SetUI(feature->parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_UltraPerformance, PRIME_DLSS_RR_RENDER_PRESET);
 
     NVSDK_NGX_DLSSD_Create_Params create{};
     create.InDenoiseMode = NVSDK_NGX_DLSS_Denoise_Mode_DLUnified;

@@ -25,7 +25,7 @@ public final class DlssRrDebugStatus {
                 "Input " + renderWidth + "x" + renderHeight
                         + "  Output " + outputWidth + "x" + outputHeight,
                 "NGX " + (available ? "available" : "unavailable")
-                        + "  Preset Default  Reset " + (reset ? "yes" : "no"),
+                        + "  Preset F  Reset " + (reset ? "yes" : "no"),
                 "View " + view.id()
                         + "  " + (fullscreen ? "fullscreen" : "top-right panel"),
                 "Ctrl+Alt+F12 view  Ctrl+Alt+F11 layout"));

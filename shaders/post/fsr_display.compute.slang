@@ -6,9 +6,8 @@ struct PrimeFsrDisplayPushConstants
     uint2 outputExtent;
     uint debugView;
     float finalExposureMultiplier;
-    float agxMaximumLogCoordinate;
-    float agxOutputPeak;
-    float agxShoulderCoefficient;
+    float reinhardOutputPeak;
+    float reinhardCurvePeak;
 };
 
 [[vk::binding(0, 0)]] Texture2D<float4> primeFsrLinearOutput;
@@ -28,7 +27,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (any(pixel >= primeFsrDisplayPush.outputExtent)) return;
 
     float3 radiance = primeFsrLinearOutput.Load(int3(pixel, 0)).rgb;
-    bool hdrActive = primeFsrDisplayPush.agxOutputPeak > 1.0;
+    bool hdrActive = primeFsrDisplayPush.reinhardOutputPeak > 1.0;
     if (primeFsrDisplayPush.debugView != 0) {
         float3 debugColor = clamp(radiance, 0.0, 1.0);
         primeDisplayOutput.Store(pixel, float4(debugColor, 1.0));
@@ -43,9 +42,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         float3 hdr = primeDisplayTransformToSrgb(
                 nonnegative,
                 exposure,
-                primeFsrDisplayPush.agxMaximumLogCoordinate,
-                primeFsrDisplayPush.agxOutputPeak,
-                primeFsrDisplayPush.agxShoulderCoefficient);
+                primeFsrDisplayPush.reinhardOutputPeak,
+                primeFsrDisplayPush.reinhardCurvePeak);
         primeHdrDisplayOutput.Store(pixel, float4(hdr, 1.0));
     }
     // HDR presentation uses zero alpha as an exact coverage accumulator for vanilla UI.

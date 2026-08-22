@@ -9,6 +9,9 @@ package dev.prime.render;
 public final class HdrOutput {
     public static final int AUTOMATIC_REFERENCE_WHITE_NITS = 0;
     public static final int MAXIMUM_REFERENCE_WHITE_NITS = 10_000;
+    public static final float MINIMUM_HEADROOM = 1.0F;
+    // Covers a 1-nit manual reference white through the HDR absolute luminance ceiling.
+    public static final float MAXIMUM_HEADROOM = 10_000.0F;
     // Windows advanced-color scRGB defines linear 1.0 as exactly 80 nits. This is a unit
     // conversion, not an artistic gain, and must cover the world and every composited overlay.
     public static final float SCRGB_NITS_PER_UNIT = 80.0F;
@@ -73,8 +76,8 @@ public final class HdrOutput {
                 : Math.min((float) configuredWhite, current.maximumNits());
         float headroom = Math.clamp(
                 current.maximumNits() / white,
-                AgxHsvOutput.MINIMUM_HEADROOM,
-                AgxHsvOutput.MAXIMUM_HEADROOM);
+                MINIMUM_HEADROOM,
+                MAXIMUM_HEADROOM);
         return new Calibration(
                 true,
                 white,
@@ -134,7 +137,7 @@ public final class HdrOutput {
                 false,
                 SCRGB_NITS_PER_UNIT,
                 SCRGB_NITS_PER_UNIT,
-                AgxHsvOutput.MINIMUM_HEADROOM,
+                MINIMUM_HEADROOM,
                 1.0F);
 
         public Calibration {
@@ -144,8 +147,8 @@ public final class HdrOutput {
                     || !Float.isFinite(scRgbScale)
                     || referenceWhiteNits <= 0.0F
                     || maximumNits < referenceWhiteNits
-                    || headroom < AgxHsvOutput.MINIMUM_HEADROOM
-                    || headroom > AgxHsvOutput.MAXIMUM_HEADROOM
+                    || headroom < MINIMUM_HEADROOM
+                    || headroom > MAXIMUM_HEADROOM
                     || scRgbScale <= 0.0F) {
                 throw new IllegalArgumentException("Invalid HDR output calibration");
             }

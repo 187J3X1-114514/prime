@@ -1155,6 +1155,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     }
     if (surface.hitKind == PRIME_HIT_NONE) {
         if (guideEnabled && !transmissionBranch && !hasGuide
+                && !guideProbeFallback
                 && primeQueuedPsrCount(psrState) > 0u
                 && !primeQueuedPsrOverflowed(psrState)) {
             float3 direction =
@@ -1197,7 +1198,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     bool discreteContinuation = discreteOnlyInterface;
     bool primarySurfaceReplacement =
-            guideEnabled && !hasGuide && !discreteContinuation;
+            observesIndependentGuide && !discreteContinuation;
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;

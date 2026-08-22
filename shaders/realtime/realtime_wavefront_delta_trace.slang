@@ -32,12 +32,17 @@ SurfaceInteraction primeFusedDeltaWavefrontTrace(
             : primeWavefrontTransmissionBranch(traceControl) ? 2u : 1u;
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, bounce);
-    return primeTraceSurfaceClassified(
+    SurfaceInteraction surface = primeTraceSurfaceClassified(
             PrimeSurfaceTracePolicy(),
             physicalOrigin,
             rayDirection,
             sourcePrimitive,
             pathClass);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    primeStoreWavefrontTransmissionMissDiagnostic(
+            recordIndex, record, traceControl, surface);
+    return surface;
 }
 
 #endif

@@ -72,6 +72,7 @@ void primeWavefrontTransparentShade<AreaNee>(
             primeLoadWavefrontSunFamilyProbability(recordIndex),
             false,
             recordIndex);
+    bool integratedContinuation = continuation;
     continuation = continuation && path.bounce < primeMaximumBounces();
     PrimeWavefrontTransportRecord updatedRecord =
             primeMakeUpdatedTransparentWavefrontRecord(context.diagnostics,
@@ -100,6 +101,13 @@ void primeWavefrontTransparentShade<AreaNee>(
             !hadDirectionalGuide && directionalGuide,
             (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
             branchResult);
+    if (transmissionBranch && guideEnabled && !hasGuide && !continuation
+            && surface.hitKind != PRIME_HIT_NONE) {
+        uint stopReason = integratedContinuation
+                ? PRIME_GUIDE_STOP_BOUNCE_LIMIT
+                : PRIME_GUIDE_STOP_SURFACE;
+        primeStoreUnownedTransmissionGuideDiagnostic(pixel, stopReason);
+    }
 
     uint targetQueue = sourceQueue == PRIME_WAVEFRONT_TRACE_QUEUE_0
             ? PRIME_WAVEFRONT_TRACE_QUEUE_1

@@ -16,6 +16,7 @@ import "integrator/integration_result.slang";
 import "integrator/path_contract.slang";
 import "lighting/hit_emission.slang";
 import "rt/shadow_payload.slang";
+import "rt/surface_trace_diagnostic.slang";
 
 #include "bsdf/adapter/bsdf.slang"
 
@@ -141,7 +142,9 @@ SurfaceInteraction primeSurfaceInteractionFromPayload() {
     surface.opticalControl = primeSurfacePayload.opticalControl;
     surface.motionZFlags = primeSurfacePayload.positionReserved;
     surface.adjacentBaseColor = primeSurfacePayload.adjacentBaseColor;
-    surface.adjacentInterfaceControl = primeSurfacePayload.adjacentInterfaceControl;
+    surface.adjacentInterfaceControl = surface.hitKind == PRIME_HIT_NONE
+            ? packedHitKind & PRIME_TRACE_DIAGNOSTIC_MASK
+            : primeSurfacePayload.adjacentInterfaceControl;
     return surface;
 }
 

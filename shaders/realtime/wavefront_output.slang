@@ -199,10 +199,16 @@ void primeWriteRealtimeOutput(
                 diagnostics,
                 primeClassifyRawOutput(sampleResult),
                 PRIME_NUMERICAL_FIELD_OUTPUT);
-        primeImageStoreWriteOnly(
-                primeRawNumericalDiagnostic,
-                int2(pixel),
-                primeRawNumericalMetadata(diagnostics));
+        // RR guide overview remaps one sampled source pixel into every 5x4 destination cell.
+        // A native-coordinate metadata store from another invocation would race those remapped
+        // writes and manufacture black/blue speckles in the diagnostic itself.
+        if (primeTransparentGuideMode()
+                != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR) {
+            primeImageStoreWriteOnly(
+                    primeRawNumericalDiagnostic,
+                    int2(pixel),
+                    primeRawNumericalMetadata(diagnostics));
+        }
     }
     bool nrdShInputs = primeWritesNrdShInputs();
     bool hasTransmissionGuide = sampleResult.transparentPrimary

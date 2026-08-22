@@ -13,9 +13,10 @@ void primePublishPrimaryLanding(
                 & PRIME_WAVEFRONT_PSR_CONTROL_MASK;
         PrimeQueuedPsrState psrState = primeEmptyQueuedPsrState();
         psrState.control = psrControl;
+        uint control = asuint(record.rayDirectionAndDenoiserControl.w);
         bool invalidGuide = primeQueuedPsrOverflowed(psrState)
-                || primeWavefrontGuideProbeFallback(
-                        record.sourceAndPathControl.w);
+                && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u
+                && !primeWavefrontDirectionalGuide(control);
         if (transparent && invalidGuide) {
             primeInvalidatePrimaryChainGuide(recordIndex, record);
         }

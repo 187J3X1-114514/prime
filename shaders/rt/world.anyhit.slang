@@ -4,6 +4,7 @@ import "core/packed_geometry.slang";
 import "material/default_material.slang";
 import "material/material.slang";
 import "rt/hit_common.slang";
+import "rt/surface_trace_diagnostic.slang";
 
 layout(location = 0) rayPayloadInEXT TracePayload primePayload;
 
@@ -16,11 +17,16 @@ void main(in BuiltInTriangleIntersectionAttributes attributes) {
     SectionRecord section = primeSection();
     uint triangleIndex = primeGlobalTriangleIndex(section);
     bool sameSourceSection = InstanceID() == primePayload.sectionIndex;
+    if (sameSourceSection && triangleIndex == primePayload.positionReserved) {
+        primePayload.hitKind |= PRIME_TRACE_IGNORED_EXACT_SOURCE;
+        IgnoreHit();
+        return;
+    }
     if (sameSourceSection
-            && (triangleIndex == primePayload.positionReserved
-                    || primeGlobalPrimitiveIndex(section)
-                            == primeGlobalPrimitiveIndexFromTriangle(
-                                    section, primePayload.positionReserved))) {
+            && primeGlobalPrimitiveIndex(section)
+                    == primeGlobalPrimitiveIndexFromTriangle(
+                            section, primePayload.positionReserved)) {
+        primePayload.hitKind |= PRIME_TRACE_IGNORED_SOURCE_PRIMITIVE;
         IgnoreHit();
         return;
     }
@@ -61,6 +67,7 @@ void main(in BuiltInTriangleIntersectionAttributes attributes) {
             primeInterpolateUv(
                     section, primitive, barycentrics, hit.localPosition, normal));
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+        primePayload.hitKind |= PRIME_TRACE_IGNORED_CUTOUT;
         IgnoreHit();
     }
 }

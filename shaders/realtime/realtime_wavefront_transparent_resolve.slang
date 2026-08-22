@@ -107,13 +107,23 @@ void primeWavefrontTransparentResolve(
             primaryRecord.rayDirectionAndDenoiserControl.w)
             >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
             & PRIME_WAVEFRONT_BYTE_MASK;
-    float3 transmissionGuideStatus = float3(
-            transmissionGuideReached ? 1.0 : 0.0,
-            transmissionGuideReached && transmissionGuideBounce == 0u ? 1.0 : 0.0,
-            primeWavefrontGuideProbeFallback(primaryPathControl) ? 1.0 : 0.0);
+    bool transmissionActive = primeWavefrontActive(primaryRecord);
+    float3 transmissionGuideStatus = transmissionGuideReached
+            ? float3(
+                    1.0,
+                    transmissionGuideBounce == 0u ? 1.0 : 0.0,
+                    primeWavefrontGuideProbeFallback(primaryPathControl)
+                            ? 1.0
+                            : 0.0)
+            : primeGuideStopDiagnosticColor(
+                    result.transparentReflectionOnly
+                            ? PRIME_GUIDE_STOP_REFLECTION_ONLY
+                            : (transmissionActive
+                                    ? PRIME_GUIDE_STOP_DISPATCH_LIMIT
+                                    : PRIME_GUIDE_STOP_INACTIVE_UNCLASSIFIED));
     if (guideModeEnabled
             && !transmissionGuideReached
-            && primeWavefrontActive(primaryRecord)) {
+            && transmissionActive) {
         primeStoreUnownedTransmissionGuideDiagnostic(
                 pixel, PRIME_GUIDE_STOP_DISPATCH_LIMIT);
     }

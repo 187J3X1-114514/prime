@@ -39,6 +39,13 @@ public final class DlssRrDebugStatus {
             result.add("Columns visible final-trans first-owned-trans selected flags");
             result.add("Rows normal roughness diffuse-albedo specular-albedo");
             result.add("Flags bottom: final reached / primary-bounce-zero / fallback (RGB)");
+            result.add("Trace miss: blue no-candidate / cyan exact-source / magenta paired-source");
+            result.add("Trace miss: orange cutout / yellow mixed / orange SER-only");
+            result.add("Unresolved col 3 rows: source / trace / discrete chain / terminal direction");
+            result.add("Source: cyan solid-enter / blue bad-direction / orange unexpected-thin");
+            result.add("Discrete chain: black 0 / red 1 / green 2 / yellow 3 / blue 4+ / magenta overflow");
+            result.add("Terminal direction: green aligned / cyan forward / yellow backward / red reverse / magenta invalid");
+            result.add("Flags bottom unresolved: pink reflection-only / gray inactive");
         }
         return List.copyOf(result);
     }

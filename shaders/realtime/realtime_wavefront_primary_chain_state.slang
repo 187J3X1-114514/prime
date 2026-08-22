@@ -111,7 +111,9 @@ bool primeAdvanceTransparentPrimaryDelta(
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
-        uint control) {
+        uint control,
+        uint completedTransitions,
+        uint limit) {
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
@@ -120,17 +122,21 @@ bool primeAdvanceTransparentPrimaryDelta(
             (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
     bool hadGuide =
             (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
+    bool guideProbeFallback = primeWavefrontGuideProbeFallback(
+            record.sourceAndPathControl.w);
+    bool observesGuide = guideEnabled
+            && !hadGuide
+            && !guideProbeFallback;
     bool diffusePath =
             (control & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
     uint guideBounce =
             (control >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
                     & PRIME_WAVEFRONT_BYTE_MASK;
     bool directionalGuide = primeWavefrontDirectionalGuide(control);
-    bool guideProbeFallback = false;
     PrimeTransparentBranchResult result =
             primeLoadTransparentBranchActiveIntermediate(
                     pixel, transmissionBranch, control);
-    PrimeQueuedPsrState psrState = guideEnabled && !hadGuide
+    PrimeQueuedPsrState psrState = observesGuide
             ? primeLoadWavefrontPsrState(recordIndex, record)
             : primeEmptyQueuedPsrState();
 
@@ -159,6 +165,9 @@ bool primeAdvanceTransparentPrimaryDelta(
             primeEvaluateDeltaHitEmission(context, path, surface));
     float3 viewDirection = -path.rayDirection;
     float surfaceLinearRoughness = primeSurfaceLinearRoughness(surface);
+    float3 guidePreviousPosition = path.physicalOrigin;
+    float3 guideThroughput = path.throughput;
+    uint forkBounce = path.bounce;
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     primeSetNumericalContext(
@@ -173,6 +182,29 @@ bool primeAdvanceTransparentPrimaryDelta(
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             volumeStack);
     BsdfSample bsdf = scatter.bsdf;
+    PrimePathScatter guideScatter;
+    guideScatter.bsdf = primeInvalidBsdfSample();
+    guideScatter.volumeStack = volumeStack;
+    bool comparesGuide = primeTransparentGuideNeedsCanonicalComparison(
+            observesGuide,
+            primeMaterialIsTransmissive(surface.materialControl),
+            bsdf);
+    if (comparesGuide) {
+        guideScatter = primeSamplePrimaryChainGuideContinuation(
+                context, surface, viewDirection, volumeStack);
+    }
+    bool guideReusable = !comparesGuide
+            || primeTransparentGuideContinuationReusable(
+                    scatter.bsdf,
+                    scatter.volumeStack,
+                    guideScatter.bsdf,
+                    guideScatter.volumeStack);
+    bool forkGuide = primeTransparentGuideForkRequired(
+            observesGuide,
+            primeSurfaceHasMotion(surface),
+            comparesGuide,
+            guideReusable);
+    guideProbeFallback = guideProbeFallback || forkGuide;
     if (!primeHasScatter(bsdf)) {
         return false;
     }
@@ -180,7 +212,7 @@ bool primeAdvanceTransparentPrimaryDelta(
     primeRecordNonnegative(context.diagnostics, bsdf.response);
     primeRecordNonnegative(context.diagnostics, bsdf.pdf);
     primeRecordNonnegative(context.diagnostics, bsdf.relativeEta);
-    if (guideEnabled && !hadGuide) {
+    if (observesGuide && !forkGuide) {
         psrState = primeAppendQueuedPsrDiscrete(
                 psrState, path.physicalOrigin, surface, bsdf);
     }
@@ -211,7 +243,7 @@ bool primeAdvanceTransparentPrimaryDelta(
                     guideProbeFallback,
                     true);
     primeStoreWavefrontTransportRecord(recordIndex, updated);
-    if (guideEnabled && !hadGuide) {
+    if (observesGuide && !forkGuide) {
         primeStoreWavefrontPsrState(recordIndex, psrState);
     } else {
         primeStoreWavefrontPreviousLightNormal(
@@ -224,6 +256,20 @@ bool primeAdvanceTransparentPrimaryDelta(
             false,
             (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
             result);
+    if (forkGuide && !primeSurfaceHasMotion(surface)) {
+        primeTracePrimaryChainGuideFork(
+                context,
+                recordIndex,
+                control,
+                guidePreviousPosition,
+                guideThroughput,
+                forkBounce,
+                surface,
+                guideScatter,
+                psrState,
+                completedTransitions,
+                limit);
+    }
     return true;
 }
 

@@ -60,7 +60,13 @@ void primeProcessPrimaryChainBranch(
 
         // Limit one permits the transition already completed by PRIMARY and its landing trace.
         if (transitions >= limit) {
-            if (transparent) {
+            bool guidePending = transparent
+                    && primeWavefrontGuideEnabled(control)
+                    && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u
+                    && !primeWavefrontDirectionalGuide(control)
+                    && !primeWavefrontGuideProbeFallback(
+                            record.sourceAndPathControl.w);
+            if (guidePending) {
                 if (primeWavefrontTransmissionBranch(control)
                         && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
                     primeStoreUnownedTransmissionGuideDiagnostic(
@@ -81,7 +87,9 @@ void primeProcessPrimaryChainBranch(
                         recordIndex,
                         record,
                         surface,
-                        control)
+                        control,
+                        transitions,
+                        limit)
                 : primeAdvanceOrdinaryPrimaryDelta(
                         context,
                         recordIndex,
@@ -113,10 +121,10 @@ void primeWavefrontPrimaryChain(
             primeLoadWavefrontTransportRecord(primeWavefrontIndex(pixel, 0u));
     bool branchedPrimary = primeWavefrontTransparentBranch(
             asuint(first.rayDirectionAndDenoiserControl.w));
-    primeProcessPrimaryChainBranch(
-            context, primeWavefrontIndex(pixel, 0u), limit);
-    if (branchedPrimary) {
+    uint branchCount = branchedPrimary ? 2u : 1u;
+    [loop]
+    for (uint branch = 0u; branch < branchCount; ++branch) {
         primeProcessPrimaryChainBranch(
-                context, primeWavefrontIndex(pixel, 1u), limit);
+                context, primeWavefrontIndex(pixel, branch), limit);
     }
 }

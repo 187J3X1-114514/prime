@@ -257,11 +257,37 @@ void primeCheckRoulette(
             invalid, transportStack, invalid, guideStack);
     bool rejectsOneSidedTermination = !primeTransparentGuideContinuationReusable(
             transport, transportStack, invalid, guideStack);
+    bool transmissionReusesWithoutCanonical =
+            !primeTransparentGuideNeedsCanonicalComparison(
+                    true, true, transport);
+    transport.eventFlags = PRIME_BSDF_EVENT_REFLECTION
+            | PRIME_BSDF_EVENT_DISCRETE;
+    bool reflectionRequestsCanonical =
+            primeTransparentGuideNeedsCanonicalComparison(
+                    true, true, transport);
+    bool opaqueReflectionSkipsCanonical =
+            !primeTransparentGuideNeedsCanonicalComparison(
+                    true, false, transport);
+    bool fresnelForks = primeTransparentGuideForkRequired(
+            true, false, true, false);
+    bool tirReuses = !primeTransparentGuideForkRequired(
+            true, false, true, true);
+    bool motionForks = primeTransparentGuideForkRequired(
+            true, true, false, true);
+    bool disabledGuideNeverForks = !primeTransparentGuideForkRequired(
+            false, true, true, false);
     if (!ignoresContinuousState
             || !rejectsDifferentEvent
             || !rejectsDifferentTransition
             || !matchesTermination
-            || !rejectsOneSidedTermination) {
+            || !rejectsOneSidedTermination
+            || !transmissionReusesWithoutCanonical
+            || !reflectionRequestsCanonical
+            || !opaqueReflectionSkipsCanonical
+            || !fresnelForks
+            || !tirReuses
+            || !motionForks
+            || !disabledGuideNeverForks) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
     result.first = float4(throughput, survival);

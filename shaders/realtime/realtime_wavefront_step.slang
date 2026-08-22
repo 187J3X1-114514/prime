@@ -134,6 +134,10 @@ void primeWavefrontStep<AreaNee>(
     SurfaceInteraction surface = primeTraceSurfaceClassified(
             PrimeSurfaceTracePolicy(),
             physicalOrigin, rayDirection, sourcePrimitive, pathClass);
+    PrimeWavefrontTransportRecord tracedRecord =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    primeStoreWavefrontTransmissionMissDiagnostic(
+            recordIndex, tracedRecord, traceControl, surface);
     primeStoreWavefrontSurface(recordIndex, surface);
     bool skipLight = false;
     if (surface.hitKind == PRIME_HIT_SURFACE

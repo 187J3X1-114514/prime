@@ -1,5 +1,4 @@
 #define PRIME_TWO_STAGE_WAVEFRONT 1
-#define PRIME_WAVEFRONT_LIGHT_EVENT_ONLY 1
 #define PRIME_WAVEFRONT_CLASSIFY_ONLY 1
 #include "realtime/realtime_wavefront_bounce.slang"
 

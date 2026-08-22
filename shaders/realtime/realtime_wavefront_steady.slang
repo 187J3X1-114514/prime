@@ -1,6 +1,5 @@
 #define PRIME_TWO_STAGE_WAVEFRONT 1
 #define PRIME_STEADY_WAVEFRONT 1
-#define PRIME_WAVEFRONT_LIGHT_EVENT_ONLY 1
 #include "realtime/realtime_wavefront_bounce.slang"
 
 static const uint PRIME_STEADY_EVENT_NONE = 0u;
@@ -17,17 +16,12 @@ uint primeSteadyEventQueue(uint eventType) {
     return PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1;
 }
 
-void primeWavefrontSteadyClassify(
-        inout PrimeIntegratorContext context, uint launchIndex) {
-    uint recordIndex = primeWavefrontQueuedPath(
-            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0, launchIndex);
-    PrimeWavefrontTransportRecord record =
-            primeLoadWavefrontTransportRecord(recordIndex);
+void primeQueueSteadyEvent(
+        inout PrimeIntegratorContext context,
+        uint recordIndex,
+        PrimeWavefrontTransportRecord record,
+        SurfaceInteraction surface) {
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    SurfaceInteraction surface = primeFusedWavefrontTrace(
-            context,
-            recordIndex,
-            primeWavefrontTransparentBranch(control));
     PrimeTransparentLightEvent lightEvent =
             primeClassifyTransparentLightEvent(
                     recordIndex, record, surface, control);
@@ -49,13 +43,98 @@ void primeWavefrontSteadyClassify(
             true);
 }
 
-uint primeShadeSteadyEvent(
+void primeWavefrontSteadyClassify(
+        inout PrimeIntegratorContext context, uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0, launchIndex);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    SurfaceInteraction surface = primeFusedWavefrontTrace(
+            context,
+            recordIndex,
+            primeWavefrontTransparentBranch(control));
+    primeQueueSteadyEvent(context, recordIndex, record, surface);
+}
+
+bool primeTryReuseSteadyIndirect<IndirectReuse, SharcTraining>(
+        IndirectReuse indirectReuse,
+        SharcTraining sharcTraining,
+        inout PrimeIntegratorContext context,
+        uint recordIndex,
+        inout PrimeWavefrontTransportRecord record,
+        SurfaceInteraction surface)
+    where IndirectReuse : IPrimeIndirectReuse
+    where SharcTraining : IPrimeWavefrontSharcTraining
+{
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    if (surface.hitKind != PRIME_HIT_SURFACE
+            || primeWavefrontTransparentBranch(control)) {
+        return false;
+    }
+    uint2 pixel = primeWavefrontPixel(recordIndex);
+    PathState path = primeWavefrontPath(pixel, record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
+        return false;
+    }
+    PrimeIndirectReuseResult reuse = indirectReuse.query(
+            context, path, surface, true);
+    if (!reuse.hit) {
+        return false;
+    }
+    if (any(reuse.contribution > float3(0.0))) {
+        primeAccumulateDeferredDirectLight(
+                context, pixel, control, reuse.contribution);
+    }
+    sharcTraining.finish(path);
+    record = primeWavefrontWithActive(record, false);
+    primeStoreWavefrontTransportRecord(recordIndex, record);
+    primeStoreWavefrontSurface(recordIndex, surface);
+    primeStoreWavefrontSunFamilyProbability(recordIndex, 0u);
+    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
+    return true;
+}
+
+void primeWavefrontSharcSteadyClassify<IndirectReuse, SharcTraining>(
+        IndirectReuse indirectReuse,
+        SharcTraining sharcTraining,
+        inout PrimeIntegratorContext context,
+        uint launchIndex)
+    where IndirectReuse : IPrimeIndirectReuse
+    where SharcTraining : IPrimeWavefrontSharcTraining
+{
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0, launchIndex);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    SurfaceInteraction surface = primeFusedWavefrontTrace(
+            context,
+            recordIndex,
+            primeWavefrontTransparentBranch(control));
+    if (primeTryReuseSteadyIndirect(
+            indirectReuse,
+            sharcTraining,
+            context,
+            recordIndex,
+            record,
+            surface)) {
+        return;
+    }
+    primeQueueSteadyEvent(context, recordIndex, record, surface);
+}
+
+uint primeShadeSteadyEvent<SharcTraining>(
+        SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint eventType,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
-        uint storedSunProbability) {
+        uint storedSunProbability)
+    where SharcTraining : IPrimeWavefrontSharcTraining
+{
     PrimeTransparentLightEvent lightEvent;
     lightEvent.type = eventType == PRIME_STEADY_EVENT_SUN
             ? PRIME_TRANSPARENT_LIGHT_EVENT_SUN
@@ -67,6 +146,7 @@ uint primeShadeSteadyEvent(
         PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
         PrimeFusedWavefrontLightResult light =
                 primeShadeTransparentSunLightEvent(
+                        sharcTraining,
                         context, recordIndex, record, surface, lightEvent);
         if (!light.diagnosticsCommitted) {
             context.diagnostics = shadeDiagnostics;
@@ -74,6 +154,18 @@ uint primeShadeSteadyEvent(
         return light.storedSunProbability;
     }
     if (eventType != PRIME_STEADY_EVENT_AREA) {
+        uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+        if (surface.hitKind == PRIME_HIT_SURFACE
+                && !primeWavefrontTransparentBranch(control)) {
+            PathState path = primeWavefrontPath(
+                    primeWavefrontPixel(recordIndex), record);
+            PrimeOpenPbrVolumeStack volumeStack =
+                    primeWavefrontVolumeStack(record);
+            if (primeApplySegmentMedium(context, path, surface, volumeStack)) {
+                sharcTraining.recordHit(
+                        context, path, surface, float3(0.0));
+            }
+        }
         return 0u;
     }
 
@@ -96,6 +188,7 @@ uint primeShadeSteadyEvent(
     }
     PrimeFusedWavefrontLightResult light =
             primeShadeTransparentAreaLightEvent(
+                    sharcTraining,
                     context,
                     recordIndex,
                     record,
@@ -110,11 +203,14 @@ uint primeShadeSteadyEvent(
     return light.storedSunProbability;
 }
 
-void primeWavefrontSteadyConsume(
+void primeWavefrontSteadyConsume<SharcTraining>(
+        SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint eventType,
         uint sourceQueue,
-        uint launchIndex) {
+        uint launchIndex)
+    where SharcTraining : IPrimeWavefrontSharcTraining
+{
     uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
@@ -122,13 +218,25 @@ void primeWavefrontSteadyConsume(
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     uint storedSunProbability = primeShadeSteadyEvent(
+            sharcTraining,
             context,
             eventType,
             recordIndex,
             record,
             surface,
             primeLoadWavefrontSunFamilyProbability(recordIndex));
-    bool continuation = primeWavefrontTransparentBranch(control)
+    bool transparent = primeWavefrontTransparentBranch(control);
+    if (!transparent && surface.hitKind == PRIME_HIT_NONE) {
+        PathState path = primeWavefrontPath(
+                primeWavefrontPixel(recordIndex), record);
+        IntegratorRecord integrator;
+        integrator.sunDirectionIntensity = float4(
+                primePush.sunDirection,
+                ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+        integrator.environmentRadiance = float4(0.0);
+        sharcTraining.recordMiss(context, path, integrator);
+    }
+    bool continuation = transparent
             ? primeAdvanceTransparentWavefrontRecord(
                     context,
                     recordIndex,
@@ -145,6 +253,12 @@ void primeWavefrontSteadyConsume(
                     control,
                     storedSunProbability,
                     false);
+    if (!transparent && !continuation) {
+        PrimeWavefrontTransportRecord finished =
+                primeLoadWavefrontTransportRecord(recordIndex);
+        sharcTraining.finish(primeWavefrontPath(
+                primeWavefrontPixel(recordIndex), finished));
+    }
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,

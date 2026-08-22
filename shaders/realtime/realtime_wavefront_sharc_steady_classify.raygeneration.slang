@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront_bounce.slang"
+#include "realtime/realtime_wavefront_steady.slang"
 #include "realtime/sharc_query_policy.slang"
 #include "realtime/sharc_training_policy.slang"
 
@@ -7,14 +7,12 @@ void main()
 {
     uint launchIndex = DispatchRaysIndex().x;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
-    uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 0xffu;
     if (launchIndex == 0u) {
-        primeResetWavefrontQueue(sourceQueue);
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0);
     }
-    primeWavefrontOrdinaryBounce(
+    primeWavefrontSharcSteadyClassify(
             PrimeSharcIndirectReuse(),
             PrimeIntegratedSharcTraining(),
             context,
-            launchIndex,
-            sourceQueue);
+            launchIndex);
 }

@@ -25,7 +25,7 @@ final class RealtimeSharc implements Destroyable {
     static final long ACCUMULATION_BYTES = (long) CAPACITY * 32L;
     static final long RESOLVED_BYTES = (long) CAPACITY * 24L;
     static final long CACHE_BYTES = HASH_BYTES + ACCUMULATION_BYTES + RESOLVED_BYTES;
-    static final int TRAINING_ANCHOR_COUNT = 6;
+    static final int TRAINING_ANCHOR_COUNT = 4;
     static final int TRAINING_RECORD_BYTES = 16 + TRAINING_ANCHOR_COUNT * 76;
     static final int TRAINING_GRID_SIZE = 3;
     static final int TRAINING_PHASE_COUNT = TRAINING_GRID_SIZE * TRAINING_GRID_SIZE;

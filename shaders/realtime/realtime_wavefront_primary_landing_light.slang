@@ -1,5 +1,4 @@
 #define PRIME_TWO_STAGE_WAVEFRONT 1
-#define PRIME_WAVEFRONT_LIGHT_EVENT_ONLY 1
 #define PRIME_WAVEFRONT_NO_ADVANCE 1
 #include "realtime/realtime_wavefront_bounce.slang"
 
@@ -30,6 +29,7 @@ uint primeShadePrimaryLandingPrimary(
     }
     PrimeFusedWavefrontLightResult light =
             primeShadeTransparentAreaLightEvent(
+                    PrimeNoWavefrontSharcTraining(),
                     context,
                     recordIndex,
                     record,

@@ -1087,25 +1087,9 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			def wavefrontVariantPlan = [
 					'realtime_wavefront_head':
 							[compile: ['', '_ser'], alias: [:]],
-					'realtime_wavefront_step':
-							[compile: ['', '_ser'], alias: [:]],
-					'realtime_wavefront_primary':
-							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_primary_direct':
 							[compile: [''], alias: ['_ser': '']],
-					'realtime_wavefront_shade':
-							[compile: ['', '_ser'], alias: [:]],
-					'realtime_wavefront_transparent_shade':
-							[compile: ['', '_ser'], alias: [:]],
-					'realtime_wavefront_light':
-							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_resolve':
-							[compile: [''], alias: ['_ser': '']],
-					'realtime_wavefront_transparent_resolve':
-							[compile: [''], alias: ['_ser': '']],
-					'realtime_wavefront_sharc_shade':
-							[compile: ['', '_ser'], alias: [:]],
-					'realtime_wavefront_sharc_light':
 							[compile: [''], alias: ['_ser': '']],
 					'offline_wavefront_head':
 							[compile: ['', '_ser'], alias: [:]],

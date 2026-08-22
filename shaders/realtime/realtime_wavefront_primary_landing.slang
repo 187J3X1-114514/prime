@@ -1,5 +1,4 @@
 #define PRIME_TWO_STAGE_WAVEFRONT 1
-#define PRIME_WAVEFRONT_LIGHT_EVENT_ONLY 1
 #include "realtime/realtime_wavefront_bounce.slang"
 #include "realtime/realtime_wavefront_primary_landing_publish.slang"
 
@@ -30,6 +29,7 @@ uint primeShadePrimaryLandingSecondary(
         PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
         PrimeFusedWavefrontLightResult light =
                 primeShadeTransparentSunLightEvent(
+                        PrimeNoWavefrontSharcTraining(),
                         context, recordIndex, record, surface, lightEvent);
         if (!light.diagnosticsCommitted) {
             context.diagnostics = shadeDiagnostics;
@@ -54,6 +54,7 @@ uint primeShadePrimaryLandingSecondary(
     }
     PrimeFusedWavefrontLightResult light =
             primeShadeTransparentAreaLightEvent(
+                    PrimeNoWavefrontSharcTraining(),
                     context,
                     recordIndex,
                     record,

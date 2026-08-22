@@ -66,9 +66,6 @@ final class TracePipelinesContractTest {
         assertEquals(58, RealtimeRayTracingPipeline.dispatchCount(12));
         assertEquals(14, RealtimeRayTracingPipeline.dispatchCount(1));
         assertEquals(266, RealtimeRayTracingPipeline.dispatchCount(64));
-        assertEquals(38, RealtimeRayTracingPipeline.sharcDispatchCount(12));
-        assertEquals(5, RealtimeRayTracingPipeline.sharcDispatchCount(1));
-        assertEquals(194, RealtimeRayTracingPipeline.sharcDispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
@@ -131,13 +128,13 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void realtimeAndSharcSchedulesRemainIndependent() {
+    void realtimeAndSharcSchedulesShareTheTwoStageTopology() {
         RaygenSchedule realtime = RealtimeWavefrontGroups.standardSchedule("_ser.rgen.spv");
         RaygenSchedule sharc = RealtimeWavefrontGroups.sharcSchedule("_ser.rgen.spv");
         assertEquals(RealtimeWavefrontGroups.MODULE_COUNT, realtime.moduleCount());
         assertEquals(RealtimeWavefrontGroups.GROUP_COUNT, realtime.groupCount());
-        assertEquals(RealtimeWavefrontGroups.LEGACY_MODULE_COUNT, sharc.moduleCount());
-        assertEquals(RealtimeWavefrontGroups.LEGACY_GROUP_COUNT, sharc.groupCount());
+        assertEquals(RealtimeWavefrontGroups.MODULE_COUNT, sharc.moduleCount());
+        assertEquals(RealtimeWavefrontGroups.GROUP_COUNT, sharc.groupCount());
         assertEquals(
                 "/prime/shaders/realtime_wavefront_two_stage_primary_ser.rgen.spv",
                 realtime.moduleResource(2));
@@ -145,13 +142,23 @@ final class TracePipelinesContractTest {
                 "/prime/shaders/realtime_wavefront_steady_area_ser.rgen.spv",
                 realtime.moduleResource(11));
         assertEquals(
-                "/prime/shaders/realtime_wavefront_sharc_bounce_ser.rgen.spv",
-                sharc.moduleResource(1));
+                "/prime/shaders/realtime_wavefront_sharc_steady_classify_ser.rgen.spv",
+                sharc.moduleResource(8));
         assertEquals(
-                "/prime/shaders/realtime_wavefront_primary_ser.rgen.spv",
-                sharc.moduleResource(3));
-        assertEquals(2, sharc.module(RealtimeWavefrontGroups.LEGACY_PRIMARY_DIRECT));
-        assertEquals(3, sharc.module(RealtimeWavefrontGroups.LEGACY_PRIMARY));
+                "/prime/shaders/realtime_wavefront_sharc_steady_area_ser.rgen.spv",
+                sharc.moduleResource(11));
+        for (int group = 0; group < RealtimeWavefrontGroups.GROUP_COUNT; group++) {
+            assertEquals(group, realtime.module(group));
+            assertEquals(group, sharc.module(group));
+            assertEquals(0, realtime.control(group));
+            assertEquals(0, sharc.control(group));
+            if (group < RealtimeWavefrontGroups.CLASSIFY
+                    || group > RealtimeWavefrontGroups.AREA) {
+                assertEquals(
+                        realtime.moduleResource(group),
+                        sharc.moduleResource(group));
+            }
+        }
     }
 
     @Test
@@ -197,16 +204,13 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "steady_area", suffix),
                             wavefrontShader(
                                     "realtime", "two_stage_transparent_resolve", suffix),
-                            wavefrontShader("realtime", "bounce", suffix),
                             wavefrontShader("realtime", "primary_direct", suffix),
-                            wavefrontShader("realtime", "primary", suffix),
-                            wavefrontShader("realtime", "transparent_bounce", suffix),
-                            wavefrontShader("realtime", "resolve", suffix),
-                            wavefrontShader("realtime", "transparent_resolve", suffix)),
+                            wavefrontShader("realtime", "resolve", suffix)),
                     1);
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_STABLE_RADIANCE));
+            assertFalse(realtime.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
             assertFalse(realtime.contains(ShaderAbi.OFFLINE_DESCRIPTOR_RUNNING_MEAN));
             assertFalse(realtime.contains(ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS));
             assertFalse(realtime.contains(ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE));
@@ -228,7 +232,14 @@ final class TracePipelinesContractTest {
     void sharcModulesExposeOnlyTheDeclaredFrameBinding() throws IOException {
         for (String suffix : List.of("", "_ser")) {
             Set<Integer> query = descriptorBindings(List.of(
-                    "realtime_wavefront_sharc_bounce" + suffix + ".rgen.spv"), 1);
+                    "realtime_wavefront_sharc_steady_classify"
+                            + suffix + ".rgen.spv",
+                    "realtime_wavefront_sharc_steady_none"
+                            + suffix + ".rgen.spv",
+                    "realtime_wavefront_sharc_steady_sun"
+                            + suffix + ".rgen.spv",
+                    "realtime_wavefront_sharc_steady_area"
+                            + suffix + ".rgen.spv"), 1);
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
@@ -264,16 +275,6 @@ final class TracePipelinesContractTest {
                     Set.of(tracePayload),
                     payloadShapes(
                             wavefrontShader("realtime", "head", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(tracePayload, shadowPayload),
-                    payloadShapes(
-                            wavefrontShader("realtime", "bounce", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(tracePayload, shadowPayload),
-                    payloadShapes(
-                            wavefrontShader("realtime", "transparent_bounce", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(tracePayload),
@@ -324,6 +325,27 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "steady_area", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
+                    Set.of(tracePayload),
+                    payloadShapes(
+                            wavefrontShader(
+                                    "realtime", "sharc_steady_classify", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader("realtime", "sharc_steady_none", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader("realtime", "sharc_steady_sun", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader("realtime", "sharc_steady_area", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(
                             wavefrontShader("realtime", "primary_direct", suffix),
@@ -341,20 +363,10 @@ final class TracePipelinesContractTest {
                 assertTrue(payloads.contains(shadowPayload), "offline " + stage + suffix);
             }
             assertEquals(
-                    Set.of(tracePayload),
-                    payloadShapes(
-                            wavefrontShader("realtime", "transparent_resolve", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
                     Set.of(),
                     payloadShapes(
                             wavefrontShader(
                                     "realtime", "two_stage_transparent_resolve", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(),
-                    payloadShapes(
-                            wavefrontShader("realtime", "primary", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(),
@@ -395,7 +407,8 @@ final class TracePipelinesContractTest {
     void laneVaryingQueuePartitionsUseScalarReservation()
             throws IOException {
         for (String suffix : List.of("", "_ser")) {
-            for (String stage : List.of("primary_landing", "steady_classify")) {
+            for (String stage : List.of(
+                    "primary_landing", "steady_classify", "sharc_steady_classify")) {
                 Set<Integer> opcodes = parse(
                         wavefrontShader("realtime", stage, suffix)).opcodes;
                 assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_ELECT),
@@ -408,23 +421,6 @@ final class TracePipelinesContractTest {
                         stage + suffix);
             }
         }
-    }
-
-    @Test
-    void fusedBounceDisablesSubgroupCompactionAfterSerReordering() throws IOException {
-        Set<Integer> scalar = parse(
-                wavefrontShader("realtime", "bounce", "")).opcodes;
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_ELECT));
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT));
-        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
-
-        Set<Integer> ser = parse(
-                wavefrontShader("realtime", "bounce", "_ser")).opcodes;
-        assertFalse(ser.contains(OP_GROUP_NON_UNIFORM_ELECT));
-        assertFalse(ser.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
-        assertFalse(ser.contains(OP_GROUP_NON_UNIFORM_BALLOT));
-        assertFalse(ser.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
     }
 
     @Test

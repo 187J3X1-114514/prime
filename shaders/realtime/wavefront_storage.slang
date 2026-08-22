@@ -81,8 +81,7 @@ uint primeWavefrontQueueCapacity(uint queue) {
             || queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
             || queue == PRIME_WAVEFRONT_AREA_QUEUE;
 #if defined(PRIME_TWO_STAGE_WAVEFRONT)
-    // Standard stage two aliases AREA onto queue zero; legacy SHARC retains its one-path
-    // ordinary ping-pong capacity and therefore cannot consume queue one's adjacent slot.
+    // Two-stage steady AREA events alias queue zero and may contain both transparent branches.
     wideQueue = wideQueue || queue == PRIME_WAVEFRONT_TRACE_QUEUE_0;
 #endif
     uint entriesPerPixel = wideQueue

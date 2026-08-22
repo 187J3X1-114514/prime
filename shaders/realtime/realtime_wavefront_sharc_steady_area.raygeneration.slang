@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront_shade.slang"
+#include "realtime/realtime_wavefront_steady.slang"
 #include "realtime/sharc_query_policy.slang"
 #include "realtime/sharc_training_policy.slang"
 
@@ -7,15 +7,13 @@ void main()
 {
     uint launchIndex = DispatchRaysIndex().x;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
-    uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
     if (launchIndex == 0u) {
-        primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_TRACE_QUEUE_0);
     }
-    primeWavefrontShade(
-            PrimeStagedSecondaryAreaNee(),
-            PrimeNoIndirectReuse(),
+    primeWavefrontSteadyConsume(
             PrimeIntegratedSharcTraining(),
             context,
-            launchIndex,
-            sourceQueue);
+            PRIME_STEADY_EVENT_AREA,
+            PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            launchIndex);
 }

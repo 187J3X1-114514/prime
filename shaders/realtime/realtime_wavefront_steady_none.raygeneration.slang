@@ -9,6 +9,7 @@ void main()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1);
     }
     primeWavefrontSteadyConsume(
+            PrimeNoWavefrontSharcTraining(),
             context,
             PRIME_STEADY_EVENT_NONE,
             PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1,

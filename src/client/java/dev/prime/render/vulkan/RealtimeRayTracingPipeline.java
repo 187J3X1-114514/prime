@@ -34,10 +34,6 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         return 4 * scatterCount + 10;
     }
 
-    static int sharcDispatchCount(int scatterCount) {
-        return 3 * Math.max(scatterCount - 1, 0) + 5;
-    }
-
     static int[] primaryDirectInputImageIndices() {
         return new int[] {1, 2};
     }
@@ -88,10 +84,6 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
             TraceProgram activeProgram,
             IntegratorFrameInput input,
             long commandOffset) {
-        if (this.sharcEffective()) {
-            return this.recordLegacyTransport(
-                    commandBuffer, stack, activeProgram, input, commandOffset);
-        }
         this.traceDirect(
                 commandBuffer,
                 stack,
@@ -226,137 +218,6 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         }
     }
 
-    private int recordLegacyTransport(
-            VkCommandBuffer commandBuffer,
-            MemoryStack stack,
-            TraceProgram activeProgram,
-            IntegratorFrameInput input,
-            long commandOffset) {
-        this.traceDirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                input.width(),
-                input.height(),
-                RealtimeWavefrontGroups.LEGACY_HEAD);
-        this.primaryDirectInputBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.LEGACY_PRIMARY_DIRECT,
-                commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.primaryInputBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.LEGACY_PRIMARY,
-                commandOffset,
-                ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
-        if (input.scatterCount() > 1) {
-            this.nextStepBarrier(commandBuffer, stack, false);
-        } else {
-            this.resolveInputBarrier(commandBuffer, stack);
-        }
-        int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-        int transparentTraceQueue = ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0;
-        for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
-            this.recordLegacyRound(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    commandOffset,
-                    traceQueue,
-                    transparentTraceQueue,
-                    scatter + 1 == input.scatterCount());
-            traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
-                    ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
-                    : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-            transparentTraceQueue = transparentTraceQueue
-                            == ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0
-                    ? ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
-                    : ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0;
-        }
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.LEGACY_TRANSPARENT_RESOLVE,
-                commandOffset,
-                ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
-        this.traceDirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                input.width(),
-                input.height(),
-                RealtimeWavefrontGroups.LEGACY_RESOLVE);
-        return sharcDispatchCount(input.scatterCount());
-    }
-
-    private void recordLegacyRound(
-            VkCommandBuffer commandBuffer,
-            MemoryStack stack,
-            TraceProgram activeProgram,
-            long commandOffset,
-            int traceQueue,
-            int transparentTraceQueue,
-            boolean finalRound) {
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.legacyBounce(traceQueue),
-                commandOffset,
-                traceQueue);
-        // The primary classifier gives the ordinary and transparent kernels disjoint records,
-        // queues, and output pixels, so both can complete before the single round barrier.
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.legacyTransparentBounce(transparentTraceQueue),
-                commandOffset,
-                transparentTraceQueue);
-        // One buffer barrier publishes the compact AREA/PRIMARY queue and exact resolved hits.
-        // Its SBT record still identifies the transparent source queue for the ping-pong tail.
-        this.queueBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.legacyTransparentArea(transparentTraceQueue),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        if (finalRound) {
-            this.resolveInputBarrier(commandBuffer, stack);
-        } else {
-            this.nextStepBarrier(commandBuffer, stack, true);
-        }
-    }
-
-    // A named member keeps sibling renderers off javac's auxiliary-class access path.
-    abstract static class IndependentSupport extends RealtimeRayTracingPipelineSupport {
-        IndependentSupport(
-                VulkanContext context,
-                TraceBackend backend,
-                RaygenSchedule schedule,
-                RaygenSchedule sharcSchedule,
-                int defaultPassCount,
-                String pipelineLabel,
-                String shaderBindingTableLabel) {
-            super(
-                    context,
-                    backend,
-                    schedule,
-                    sharcSchedule,
-                    defaultPassCount,
-                    pipelineLabel,
-                    shaderBindingTableLabel);
-        }
-    }
 }
 
 /** Shared Vulkan resources for independently scheduled realtime renderers. */

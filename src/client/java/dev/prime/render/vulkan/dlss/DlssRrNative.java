@@ -25,7 +25,8 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 
 /** Stable, fixed-width Java binding for Prime's private DLSS Ray Reconstruction bridge. */
 public final class DlssRrNative {
-    public static final int ABI_VERSION = 6;
+    public static final int ABI_VERSION = 7;
+    static final int RENDER_PRESET_F = 6;
     static final int EXTENSION_QUERY_SIZE = 56;
     static final int INIT_DESCRIPTION_SIZE = 56;
     static final int OPTIMAL_SETTINGS_SIZE = 32;
@@ -180,6 +181,7 @@ public final class DlssRrNative {
 
     private static BridgeFunctions validateBridge(SharedLibrary library) {
         long getAbiVersion = requireFunction(library, "primeDlssRrGetAbiVersion");
+        long getRenderPreset = requireFunction(library, "primeDlssRrGetRenderPreset");
         BridgeFunctions functions = new BridgeFunctions(
                 requireFunction(library, "primeDlssRrGetInstanceExtensions"),
                 requireFunction(library, "primeDlssRrGetDeviceExtensions"),
@@ -196,6 +198,14 @@ public final class DlssRrNative {
                             + ABI_VERSION
                             + ", found "
                             + abiVersion);
+        }
+        int renderPreset = JNI.invokeI(getRenderPreset);
+        if (renderPreset != RENDER_PRESET_F) {
+            throw new IllegalStateException(
+                    "Prime DLSS RR render preset mismatch: expected F ("
+                            + RENDER_PRESET_F
+                            + "), found "
+                            + renderPreset);
         }
         return functions;
     }

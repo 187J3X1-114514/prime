@@ -8,6 +8,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.fsr.FsrDebugView;
@@ -19,6 +20,7 @@ import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.Options;
@@ -48,12 +50,19 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> sharcEnabled() {
+        return sharcEnabled(ignored -> {});
+    }
+
+    public static OptionInstance<Boolean> sharcEnabled(Consumer<Boolean> changed) {
         return OptionInstance.createBoolean(
                 "prime.options.sharc",
                 OptionInstance.cachedConstantTooltip(
                         Component.translatable("prime.options.sharc.tooltip")),
                 PrimeConfig.settings().sharcEnabled(),
-                PrimeConfig::setSharcEnabled);
+                enabled -> {
+                    PrimeConfig.setSharcEnabled(enabled);
+                    changed.accept(enabled);
+                });
     }
 
     public static OptionInstance<Integer> scatterCount() {
@@ -68,6 +77,20 @@ public final class PrimeVideoOptions {
                         ScatterSettings.MAXIMUM_COUNT),
                 PrimeConfig.scatterCount(),
                 PrimeConfig::setScatterCount);
+    }
+
+    public static OptionInstance<Integer> primaryChainLimit() {
+        return new OptionInstance<>(
+                "prime.options.primary_chain_limit",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.primary_chain_limit.tooltip")),
+                (caption, limit) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(limit))),
+                new OptionInstance.IntRange(
+                        PrimaryChainSettings.MINIMUM_LIMIT,
+                        PrimaryChainSettings.MAXIMUM_LIMIT),
+                PrimeConfig.primaryChainLimit(),
+                PrimeConfig::setPrimaryChainLimit);
     }
 
     public static OptionInstance<Integer> terrainWorkerPercentage() {

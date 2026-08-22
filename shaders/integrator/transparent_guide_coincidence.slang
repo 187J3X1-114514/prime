@@ -45,3 +45,27 @@ public bool primeTransparentGuideContinuationReusable(
                     == primeTransparentGuideDiscreteEvent(guide)
             && transportStack.count == guideStack.count;
 }
+
+// A valid discrete transmission already proves that the preferred refracted continuation exists.
+// Only a reflected/terminated transmissive sample needs the canonical continuation constructed to
+// distinguish ordinary Fresnel divergence from TIR or matching termination.
+public bool primeTransparentGuideNeedsCanonicalComparison(
+        bool observesGuide,
+        bool transmissive,
+        BsdfSample transport)
+{
+    return observesGuide
+            && transmissive
+            && (transport.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) == 0u;
+}
+
+public bool primeTransparentGuideForkRequired(
+        bool observesGuide,
+        bool movingSurface,
+        bool comparesCanonical,
+        bool canonicalReusable)
+{
+    return observesGuide
+            && (movingSurface
+                    || (comparesCanonical && !canonicalReusable));
+}

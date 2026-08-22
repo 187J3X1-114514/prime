@@ -50,11 +50,11 @@ final class RealtimeSharcTest {
     }
 
     @Test
-    void integratedTrainingStoresSixCollapsedAnchorsPerCarrierPath() {
-        assertEquals(6, RealtimeSharc.TRAINING_ANCHOR_COUNT);
-        assertEquals(472, RealtimeSharc.TRAINING_RECORD_BYTES);
-        assertEquals(108_748_800L, RealtimeSharc.trainingBytes(1920, 1080));
-        assertEquals(434_995_200L, RealtimeSharc.trainingBytes(3840, 2160));
+    void integratedTrainingStoresFourCollapsedAnchorsPerCarrierPath() {
+        assertEquals(4, RealtimeSharc.TRAINING_ANCHOR_COUNT);
+        assertEquals(320, RealtimeSharc.TRAINING_RECORD_BYTES);
+        assertEquals(73_728_000L, RealtimeSharc.trainingBytes(1920, 1080));
+        assertEquals(294_912_000L, RealtimeSharc.trainingBytes(3840, 2160));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RealtimeSharc.trainingBytes(0, 1080));

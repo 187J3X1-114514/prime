@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.HdrOutput;
+import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -19,6 +20,7 @@ final class PrimeConfigTest {
     @Test
     void restoreDefaultsIncludesStandaloneSchedulingSettings() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
+        PrimeConfig.setPrimaryChainLimit(PrimaryChainSettings.MAXIMUM_LIMIT);
         PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
         PrimeConfig.setHdrEnabled(true);
         PrimeConfig.setReferenceWhiteNits(400);
@@ -29,6 +31,10 @@ final class PrimeConfigTest {
         assertEquals(
                 ScatterSettings.DEFAULT_COUNT,
                 PrimeConfig.rendererSettings().scatterCount());
+        assertEquals(PrimaryChainSettings.DEFAULT_LIMIT, PrimeConfig.primaryChainLimit());
+        assertEquals(
+                PrimaryChainSettings.DEFAULT_LIMIT,
+                PrimeConfig.rendererSettings().primaryChainLimit());
         assertEquals(
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 PrimeConfig.terrainWorkerPercentage());
@@ -274,7 +280,8 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
-        assertTrue(serialized.contains("renderer.scatter_count=12\n"));
+        assertTrue(serialized.contains("renderer.scatter_count=8\n"));
+        assertTrue(serialized.contains("renderer.primary_chain_limit=8\n"));
         assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertFalse(serialized.contains("renderer.integrator="));
@@ -331,6 +338,22 @@ final class PrimeConfigTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfig.parseScatterCount("12.0"));
+    }
+
+    @Test
+    void primaryChainLimitAcceptsOnlyItsRuntimeRange() {
+        assertEquals(1, PrimeConfig.parsePrimaryChainLimit("1"));
+        assertEquals(8, PrimeConfig.parsePrimaryChainLimit("8"));
+        assertEquals(64, PrimeConfig.parsePrimaryChainLimit("64"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parsePrimaryChainLimit("0"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parsePrimaryChainLimit("65"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parsePrimaryChainLimit("8.0"));
     }
 
     @Test

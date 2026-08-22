@@ -70,6 +70,12 @@ public bool primePreviousSunNeeEnabled(uint pathFlags) {
     return (pathFlags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u;
 }
 
+// Steady bounce zero begins after the first non-delta scatter. Delta-chain length deliberately
+// does not participate in roulette or in the steady dispatch limit.
+public uint primeTwoStageRouletteCompletedScatters(uint steadyBounce) {
+    return steadyBounce + 1u;
+}
+
 // A transparent path that still shares its reconstruction observation may use roulette only after
 // it captures a stable solid-angle guide. Once it diverges, an independent probe owns the guide and
 // removes this transport lifetime constraint.

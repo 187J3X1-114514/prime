@@ -27,8 +27,9 @@ void primeAppendScalarQueueEntry<Storage>(
     }
 }
 
-// Every invocation must call this from uniform control flow. The elected lane reserves one
-// contiguous range, reducing global atomics while retaining the producer subgroup's locality.
+// Every invocation must call this from uniform control flow with a subgroup-uniform queue.
+// The elected lane reserves one contiguous range, reducing global atomics while retaining the
+// producer subgroup's locality. Lane-varying queue partitions must use scalar reservation.
 void primeAppendSubgroupQueueEntry<Storage>(
         Storage storage,
         uint queue,

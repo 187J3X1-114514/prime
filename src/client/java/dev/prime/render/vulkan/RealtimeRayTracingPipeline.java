@@ -31,7 +31,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
 
     static int dispatchCount(int scatterCount) {
-        return 4 * Math.max(scatterCount - 1, 0) + 5;
+        return 4 * scatterCount + 10;
     }
 
     static int[] primaryDirectInputImageIndices() {
@@ -43,11 +43,25 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     }
 
     static int[] nextStepInputImageIndices() {
-        return new int[] {0, 1, 2, 11, 12};
+        // Guide images participate even when the next stage only writes them: the fallback and
+        // first-owned guide stores require an explicit WAW dependency. Omitting those images lets
+        // an earlier fallback write win after the ownership transition.
+        return new int[] {
+            0, 1, 2, 4, 5, 6, 7, 8, 9, 10,
+            11, 12, 13, 14, 15, 16, 17, 18, 21, 22
+        };
     }
 
-    static int[] shadeInputImageIndices() {
-        return new int[] {0, 1, 2, 5, 6, 7, 9, 10, 11, 12, 17, 18, 21};
+    static boolean standardBarrierPublishesImagesBefore(int group) {
+        // Classifiers only mutate wavefront storage. Publish scratch at its next image consumer;
+        // the sibling light-event kernels own disjoint records and logical signal lanes.
+        return switch (group) {
+            case RealtimeWavefrontGroups.PRIMARY_CHAIN,
+                    RealtimeWavefrontGroups.PRIMARY_LANDING_SECONDARY,
+                    RealtimeWavefrontGroups.PRIMARY_LANDING_ADVANCE,
+                    RealtimeWavefrontGroups.NONE -> true;
+            default -> false;
+        };
     }
 
     public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
@@ -92,24 +106,91 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 activeProgram,
                 RealtimeWavefrontGroups.PRIMARY,
                 commandOffset,
-                ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-        if (input.scatterCount() > 1) {
-            this.nextStepBarrier(commandBuffer, stack, false);
-        } else {
-            this.resolveInputBarrier(commandBuffer, stack);
-        }
-        int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-        for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
-            this.recordRound(
+                ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+        this.standardBarrierBefore(
+                commandBuffer, stack, RealtimeWavefrontGroups.PRIMARY_CHAIN);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_CHAIN,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+        this.standardBarrierBefore(
+                commandBuffer, stack, RealtimeWavefrontGroups.PRIMARY_LANDING_CLASSIFY);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_CLASSIFY,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+        this.standardBarrierBefore(
+                commandBuffer, stack, RealtimeWavefrontGroups.PRIMARY_LANDING_SECONDARY);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_SECONDARY,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.standardBarrierBefore(
+                commandBuffer, stack, RealtimeWavefrontGroups.PRIMARY_LANDING_PRIMARY);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_PRIMARY,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+        this.standardBarrierBefore(
+                commandBuffer, stack, RealtimeWavefrontGroups.PRIMARY_LANDING_ADVANCE);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.PRIMARY_LANDING_ADVANCE,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.standardBarrierBefore(
+                commandBuffer, stack, RealtimeWavefrontGroups.CLASSIFY);
+        for (int bounce = 0; bounce < input.scatterCount(); bounce++) {
+            this.traceQueued(
                     commandBuffer,
                     stack,
                     activeProgram,
+                    RealtimeWavefrontGroups.CLASSIFY,
                     commandOffset,
-                    traceQueue,
-                    scatter + 1 == input.scatterCount());
-            traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
-                    ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
-                    : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
+                    ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0);
+            this.standardBarrierBefore(
+                    commandBuffer, stack, RealtimeWavefrontGroups.NONE);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.NONE,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.SUN,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.AREA,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+            if (bounce + 1 == input.scatterCount()) {
+                this.resolveInputBarrier(commandBuffer, stack);
+            } else {
+                this.standardBarrierBefore(
+                        commandBuffer, stack, RealtimeWavefrontGroups.CLASSIFY);
+            }
         }
         this.traceQueued(
                 commandBuffer,
@@ -128,70 +209,15 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         return dispatchCount(input.scatterCount());
     }
 
-    private void recordRound(
-            VkCommandBuffer commandBuffer,
-            MemoryStack stack,
-            TraceProgram activeProgram,
-            long commandOffset,
-            int traceQueue,
-            boolean finalRound) {
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.step(traceQueue),
-                commandOffset,
-                traceQueue);
-        this.queueBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.light(),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.shadeInputBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.shade(traceQueue),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.transparentShade(traceQueue),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
-        if (finalRound) {
-            this.resolveInputBarrier(commandBuffer, stack);
+    private void standardBarrierBefore(
+            VkCommandBuffer commandBuffer, MemoryStack stack, int group) {
+        if (standardBarrierPublishesImagesBefore(group)) {
+            this.nextStepBarrier(commandBuffer, stack, false);
         } else {
-            this.nextStepBarrier(commandBuffer, stack, true);
+            this.queueBarrier(commandBuffer, stack);
         }
     }
 
-    // A named member keeps sibling renderers off javac's auxiliary-class access path.
-    abstract static class IndependentSupport extends RealtimeRayTracingPipelineSupport {
-        IndependentSupport(
-                VulkanContext context,
-                TraceBackend backend,
-                RaygenSchedule schedule,
-                RaygenSchedule sharcSchedule,
-                int defaultPassCount,
-                String pipelineLabel,
-                String shaderBindingTableLabel) {
-            super(
-                    context,
-                    backend,
-                    schedule,
-                    sharcSchedule,
-                    defaultPassCount,
-                    pipelineLabel,
-                    shaderBindingTableLabel);
-        }
-    }
 }
 
 /** Shared Vulkan resources for independently scheduled realtime renderers. */
@@ -514,7 +540,8 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             }
             this.bind(commandBuffer, stack, pushConstants, activeProgram);
             long commandOffset = queueCommandOffset(width, height);
-            this.initializeQueues(commandBuffer, stack, commandOffset);
+            this.initializeQueues(
+                    commandBuffer, stack, commandOffset, input.primaryChainLimit());
             int dispatchCount = this.recordTransport(
                     commandBuffer, stack, activeProgram, input, commandOffset);
             this.lastRecordedPassCount = dispatchCount;
@@ -600,14 +627,16 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
     private void initializeQueues(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
-            long commandOffset) {
+            long commandOffset,
+            int primaryChainLimit) {
         WavefrontCommands.initializeQueues(
                 commandBuffer,
                 stack,
                 this.wavefront,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_QUEUE_COUNT,
-                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
+                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE,
+                primaryChainLimit);
     }
 
     protected final void queueBarrier(
@@ -642,15 +671,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 stack,
                 this.bindings.nextStepInputImages,
                 synchronizeSharcTraining);
-    }
-
-    protected final void shadeInputBarrier(
-            VkCommandBuffer commandBuffer, MemoryStack stack) {
-        this.wavefrontResourceBarrier(
-                commandBuffer,
-                stack,
-                this.bindings.shadeInputImages,
-                true);
     }
 
     protected final void resolveInputBarrier(
@@ -831,7 +851,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         private final long[] primaryDirectInputImages;
         private final long[] primaryInputImages;
         private final long[] nextStepInputImages;
-        private final long[] shadeInputImages;
         private final long wavefront;
         private final long sharcFrame;
         private boolean destroyed;
@@ -860,9 +879,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             this.nextStepInputImages = select(
                     this.allImages,
                     RealtimeRayTracingPipeline.nextStepInputImageIndices());
-            this.shadeInputImages = select(
-                    this.allImages,
-                    RealtimeRayTracingPipeline.shadeInputImageIndices());
             this.wavefront = wavefront;
             this.sharcFrame = sharcFrame;
         }

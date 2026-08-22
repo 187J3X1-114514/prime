@@ -1,3 +1,4 @@
+#define PRIME_TWO_STAGE_WAVEFRONT 1
 #include "realtime/realtime_wavefront_transparent_resolve.slang"
 
 [shader("raygeneration")]

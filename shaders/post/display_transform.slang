@@ -4,58 +4,104 @@ module "post/display_transform.slang";
 import "prime_abi_types.slang";
 import "core/color_space.slang";
 
-// Ported from the C:/WorkSpace/drt working tree at commit
-// fa282723f5e1536b37217c10c74437fad054c87c. Prime keeps its Rec.2020 input
-// boundary; the source bench's ACES AP0 conversion is therefore intentionally omitted.
-//
-// These are derived runtime coefficients, not the authoring controls. Keeping them in one
-// structure makes future tuning explicit without adding per-frame parameters or UI surface area.
-public struct PrimeAgxHsvParameters
+// Ported from C:/WorkSpace/drt at commit 3f32130a3cd561930d3ebd027a927ccac12c3f05.
+// Prime keeps its Rec.2020 input boundary, so the source bench's AP0 conversion is omitted.
+
+public struct PrimeReinhardGamutParameters
 {
-    public float minimumLog2;
-    public float inverseDynamicRange;
-    public float inputPivot;
-    public float outputPivot;
-    public float pivotSlope;
-    public float toePower;
-    public float shoulderPower;
-    public float gamutCompression;
-    public float toeCoefficient;
-    public float shoulderCoefficient;
-    public float blackHueRetention;
-    public float whiteHueRetention;
-    public float maximumLogCoordinate;
+    public float gamutExpansion;
+    public float middleGray;
+    // Linear display headroom; encoding happens after the tone curve.
     public float outputPeak;
+    public float hueRetention;
+    public float curvePeak;
 };
 
-public PrimeAgxHsvParameters primeDefaultAgxHsvParameters()
-{
-    PrimeAgxHsvParameters parameters;
-    // The calibrated HSV preset preserves IEC sRGB 18% gray and matches the local
-    // identity slope and visible-shadow neutral ramp used by the source bench.
-    parameters.minimumLog2 = -12.473931;
-    parameters.inverseDynamicRange = 1.0 / 16.5;
-    parameters.inputPivot = 10.0 / 16.5;
-    parameters.outputPivot = 0.46135613;
-    parameters.pivotSlope = 2.4606366;
-    parameters.toePower = 1.55;
-    parameters.shoulderPower = 5.2;
-    parameters.gamutCompression = 0.05;
-    parameters.toeCoefficient = 11.219474;
-    parameters.shoulderCoefficient = 2568.7498;
-    parameters.blackHueRetention = 1.0;
-    parameters.whiteHueRetention = 0.5;
-    parameters.maximumLogCoordinate = 1.0;
-    parameters.outputPeak = 1.0;
-    return parameters;
-}
-
-static const float3 PRIME_AGX_NEUTRAL_WEIGHTS = float3(
+static const float3 PRIME_REINHARD_NEUTRAL_WEIGHTS = float3(
         0.2120053547549465,
         0.3921825078090138,
         0.3958121374360396);
+static const float PRIME_REINHARD_MIDDLE_GRAY = 0.18;
+static const float PRIME_REINHARD_HIGHLIGHT_REACH_EV = 6.5;
 
-public float3 primeAgxRgbToHsv(float3 color)
+public float primeReinhardCurvePeak(float outputPeak)
+{
+    float reachRatio = exp2(PRIME_REINHARD_HIGHLIGHT_REACH_EV) * outputPeak;
+    float tangentDistance = PRIME_REINHARD_MIDDLE_GRAY * (reachRatio - 1.0);
+    float outputDistance = outputPeak - PRIME_REINHARD_MIDDLE_GRAY;
+    float shoulderExtent = outputDistance * tangentDistance
+            / (tangentDistance - outputDistance);
+    return PRIME_REINHARD_MIDDLE_GRAY + shoulderExtent;
+}
+
+public PrimeReinhardGamutParameters primeDefaultReinhardGamutParameters()
+{
+    PrimeReinhardGamutParameters parameters;
+    parameters.gamutExpansion = 0.03;
+    parameters.middleGray = PRIME_REINHARD_MIDDLE_GRAY;
+    parameters.outputPeak = 1.0;
+    parameters.hueRetention = 0.5;
+    parameters.curvePeak = primeReinhardCurvePeak(parameters.outputPeak);
+    return parameters;
+}
+
+public float3 primeReinhardToExpandedGamut(
+        float3 color,
+        PrimeReinhardGamutParameters parameters)
+{
+    // Moving the virtual primaries outward contracts unchanged Rec.709 coordinates
+    // toward the neutral axis.
+    float neutral = dot(color, PRIME_REINHARD_NEUTRAL_WEIGHTS);
+    return lerp(color, neutral.xxx, parameters.gamutExpansion);
+}
+
+public float3 primeReinhardFromExpandedGamut(
+        float3 color,
+        PrimeReinhardGamutParameters parameters)
+{
+    // The neutral projection is invariant, so this is the exact linear inverse.
+    float neutral = dot(color, PRIME_REINHARD_NEUTRAL_WEIGHTS);
+    return (color - parameters.gamutExpansion * neutral.xxx)
+            / (1.0 - parameters.gamutExpansion);
+}
+
+public float primeReinhardCurveComponent(
+        float color,
+        PrimeReinhardGamutParameters parameters)
+{
+    float linearSlope = parameters.middleGray / PRIME_REINHARD_MIDDLE_GRAY;
+    if (color <= PRIME_REINHARD_MIDDLE_GRAY) return linearSlope * color;
+
+    float shoulderExtent = parameters.curvePeak - parameters.middleGray;
+    float distance = color - PRIME_REINHARD_MIDDLE_GRAY;
+    float tangentDistance = linearSlope * distance;
+    return parameters.middleGray
+            + tangentDistance / (1.0 + tangentDistance / shoulderExtent);
+}
+
+public float3 primeReinhardCurve(
+        float3 color,
+        PrimeReinhardGamutParameters parameters)
+{
+    return float3(
+            primeReinhardCurveComponent(color.x, parameters),
+            primeReinhardCurveComponent(color.y, parameters),
+            primeReinhardCurveComponent(color.z, parameters));
+}
+
+public float3 primeReinhardEncodeSrgb(float3 linearRgb)
+{
+    // Preserve negative results through hue repair; the display boundary clamps them later.
+    bool3 cutoff = linearRgb < 0.0031308;
+    float3 higher = 1.055 * pow(max(linearRgb, 0.0), 1.0 / 2.4) - 0.055;
+    float3 lower = linearRgb * 12.92;
+    return float3(
+            cutoff.x ? lower.x : higher.x,
+            cutoff.y ? lower.y : higher.y,
+            cutoff.z ? lower.z : higher.z);
+}
+
+public float3 primeReinhardRgbToHsv(float3 color)
 {
     float maximum = max(color.x, max(color.y, color.z));
     float minimum = min(color.x, min(color.y, color.z));
@@ -81,7 +127,7 @@ public float3 primeAgxRgbToHsv(float3 color)
     return float3(hue, saturation, maximum);
 }
 
-public float3 primeAgxHsvToRgb(float3 hsv)
+public float3 primeReinhardHsvToRgb(float3 hsv)
 {
     float3 primary = clamp(
             abs(frac(hsv.x + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0,
@@ -90,124 +136,66 @@ public float3 primeAgxHsvToRgb(float3 hsv)
     return hsv.z * lerp(1.0.xxx, primary, hsv.y);
 }
 
-float3 primeAgxInset(float3 color, PrimeAgxHsvParameters parameters)
-{
-    float neutral = dot(color, PRIME_AGX_NEUTRAL_WEIGHTS);
-    return lerp(color, neutral.xxx, parameters.gamutCompression);
-}
-
-float3 primeAgxOutset(float3 color, PrimeAgxHsvParameters parameters)
-{
-    float neutral = dot(color, PRIME_AGX_NEUTRAL_WEIGHTS);
-    return (color - parameters.gamutCompression * neutral.xxx)
-            / (1.0 - parameters.gamutCompression);
-}
-
-public float primeAgxCurveComponent(float value, PrimeAgxHsvParameters parameters)
-{
-    bool toe = value <= parameters.inputPivot;
-    float power = toe ? parameters.toePower : parameters.shoulderPower;
-    float coefficient = toe
-            ? parameters.toeCoefficient
-            : parameters.shoulderCoefficient;
-    float distance = value - parameters.inputPivot;
-    return parameters.outputPivot
-            + parameters.pivotSlope * distance
-                    * pow(
-                            1.0 + coefficient * pow(abs(distance), power),
-                            -1.0 / power);
-}
-
-float3 primeAgxCurve(float3 value, PrimeAgxHsvParameters parameters)
-{
-    return float3(
-            primeAgxCurveComponent(value.x, parameters),
-            primeAgxCurveComponent(value.y, parameters),
-            primeAgxCurveComponent(value.z, parameters));
-}
-
-float3 primeAgxS2O3(float3 linearBt709, PrimeAgxHsvParameters parameters)
-{
-    // A strong per-channel shoulder can band across highlight saturation transitions.
-    // The calibrated 5.2 power is the source bench's current artistic compromise.
-    float3 inset = primeAgxInset(linearBt709, parameters);
-    float3 normalizedLog = clamp(
-            (log2(inset) - parameters.minimumLog2)
-                    * parameters.inverseDynamicRange,
-            0.0,
-            parameters.maximumLogCoordinate);
-    return primeAgxOutset(primeAgxCurve(normalizedLog, parameters), parameters);
-}
-
-float3 primeAgxAdjustHsv(
+public float3 primeReinhardProtectHsvHue(
         float3 originalLinear,
-        float3 mapped,
-        PrimeAgxHsvParameters parameters)
+        float3 mappedDisplay,
+        PrimeReinhardGamutParameters parameters)
 {
-    float3 originalDisplay = pow(originalLinear, 1.0 / 2.2);
-    float3 originalHsv = primeAgxRgbToHsv(originalDisplay);
-    float3 mappedHsv = primeAgxRgbToHsv(mapped);
-    float normalizedValue = clamp(mappedHsv.z / parameters.outputPeak, 0.0, 1.0);
+    if (parameters.hueRetention <= 0.0) return mappedDisplay;
 
-    if (originalHsv.y > 1.0e-7 && mappedHsv.y > 1.0e-7)
-    {
-        float retention = lerp(
-                parameters.blackHueRetention,
-                parameters.whiteHueRetention,
-                normalizedValue);
-        float hueOffset = originalHsv.x - mappedHsv.x;
-        hueOffset -= floor(hueOffset + 0.5);
-        mappedHsv.x = frac(mappedHsv.x + retention * hueOffset);
-    }
+    float3 originalHsv = primeReinhardRgbToHsv(
+            primeReinhardEncodeSrgb(originalLinear));
+    float3 mappedHsv = primeReinhardRgbToHsv(mappedDisplay);
+    if (originalHsv.y <= 1.0e-7 || mappedHsv.y <= 1.0e-7) return mappedDisplay;
 
-    mappedHsv.y = clamp(mappedHsv.y, 0.0, 1.0);
-    return primeAgxHsvToRgb(mappedHsv);
+    float hueOffset = originalHsv.x - mappedHsv.x;
+    hueOffset -= floor(hueOffset + 0.5);
+    mappedHsv.x = frac(mappedHsv.x + parameters.hueRetention * hueOffset);
+    return primeReinhardHsvToRgb(mappedHsv);
 }
 
-public float3 primeAgxHsvTonemap(
+public float3 primeReinhardGamutTonemap(
         float3 linearBt709,
-        PrimeAgxHsvParameters parameters)
+        PrimeReinhardGamutParameters parameters)
 {
     float3 nonnegative = max(linearBt709, float3(0.0));
-    if (all(nonnegative == float3(0.0))) return float3(0.0);
-    return primeAgxAdjustHsv(
-            nonnegative,
-            primeAgxS2O3(nonnegative, parameters),
+    float3 working = primeReinhardToExpandedGamut(nonnegative, parameters);
+    float3 mappedLinear = primeReinhardFromExpandedGamut(
+            primeReinhardCurve(working, parameters),
             parameters);
+    float3 mappedDisplay = primeReinhardEncodeSrgb(mappedLinear);
+    return primeReinhardProtectHsvHue(nonnegative, mappedDisplay, parameters);
 }
 
 public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
         float exposureMultiplier,
-        float maximumLogCoordinate,
         float outputPeak,
-        float shoulderCoefficient)
+        float curvePeak)
 {
     float3 exposedRec2020 = max(hdrRec2020, float3(0.0))
             * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
     float3 linearBt709 = max(
             primeLinearRec2020ToLinearBt709(exposedRec2020),
             float3(0.0));
-    // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
-    PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
-    parameters.maximumLogCoordinate = maximumLogCoordinate;
+    PrimeReinhardGamutParameters parameters = primeDefaultReinhardGamutParameters();
     parameters.outputPeak = outputPeak;
-    parameters.shoulderCoefficient = shoulderCoefficient;
+    parameters.curvePeak = curvePeak;
+    float encodedOutputPeak = primeReinhardEncodeSrgb(outputPeak.xxx).x;
     return clamp(
-            primeAgxHsvTonemap(linearBt709, parameters),
+            primeReinhardGamutTonemap(linearBt709, parameters),
             float3(0.0),
-            outputPeak.xxx);
+            encodedOutputPeak.xxx);
 }
 
 public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
         float exposureMultiplier)
 {
-    PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
+    PrimeReinhardGamutParameters parameters = primeDefaultReinhardGamutParameters();
     return primeDisplayTransformToSrgb(
             hdrRec2020,
             exposureMultiplier,
-            parameters.maximumLogCoordinate,
             parameters.outputPeak,
-            parameters.shoulderCoefficient);
+            parameters.curvePeak);
 }

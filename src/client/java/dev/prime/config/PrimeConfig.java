@@ -6,6 +6,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.PostProcessingMode;
@@ -28,6 +29,8 @@ public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String SHARC_ENABLED_KEY = "renderer.sharc";
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
+    private static final String PRIMARY_CHAIN_LIMIT_KEY =
+            "renderer.primary_chain_limit";
     private static final String TERRAIN_WORKER_PERCENTAGE_KEY =
             "terrain.worker_percentage";
     private static final String LEGACY_WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
@@ -76,6 +79,7 @@ public final class PrimeConfig {
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
     private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
+    private static int primaryChainLimit = PrimaryChainSettings.DEFAULT_LIMIT;
     private static int terrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private static boolean hdrEnabled;
     private static int referenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
@@ -90,6 +94,7 @@ public final class PrimeConfig {
         boolean pathTracingEnabled = true;
         boolean sharcEnabled = true;
         int loadedScatterCount = ScatterSettings.DEFAULT_COUNT;
+        int loadedPrimaryChainLimit = PrimaryChainSettings.DEFAULT_LIMIT;
         int loadedTerrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
@@ -161,6 +166,20 @@ public final class PrimeConfig {
                     rewriteNeeded = true;
                 }
                 if (hasLegacyIntegratorProperties(properties)) {
+                    rewriteNeeded = true;
+                }
+                String chainLimit = properties.getProperty(PRIMARY_CHAIN_LIMIT_KEY);
+                if (chainLimit != null) {
+                    try {
+                        loadedPrimaryChainLimit = parsePrimaryChainLimit(chainLimit);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime primary delta-chain limit '{}'; using {}",
+                                chainLimit,
+                                PrimaryChainSettings.DEFAULT_LIMIT);
+                        rewriteNeeded = true;
+                    }
+                } else {
                     rewriteNeeded = true;
                 }
                 String workerPercentage = properties.getProperty(
@@ -429,6 +448,7 @@ public final class PrimeConfig {
                 sharcEnabled,
                 vanillaPbrPresets);
         scatterCount = loadedScatterCount;
+        primaryChainLimit = loadedPrimaryChainLimit;
         terrainWorkerPercentage = loadedTerrainWorkerPercentage;
         hdrEnabled = loadedHdrEnabled;
         HdrOutput.setRequested(loadedHdrEnabled);
@@ -437,10 +457,11 @@ public final class PrimeConfig {
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
                 loadedScatterCount,
+                loadedPrimaryChainLimit,
                 loadedTerrainWorkerPercentage,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
@@ -487,6 +508,7 @@ public final class PrimeConfig {
                 current.material(),
                 current.display(),
                 scatterCount,
+                primaryChainLimit,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -507,6 +529,19 @@ public final class PrimeConfig {
         int replacement = ScatterSettings.validateCount(count);
         if (replacement != scatterCount) {
             scatterCount = replacement;
+            rendererRevision = Math.incrementExact(rendererRevision);
+            dirty = true;
+        }
+    }
+
+    public static int primaryChainLimit() {
+        return primaryChainLimit;
+    }
+
+    public static void setPrimaryChainLimit(int limit) {
+        int replacement = PrimaryChainSettings.validateLimit(limit);
+        if (replacement != primaryChainLimit) {
+            primaryChainLimit = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
@@ -612,6 +647,7 @@ public final class PrimeConfig {
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
         setScatterCount(ScatterSettings.DEFAULT_COUNT);
+        setPrimaryChainLimit(PrimaryChainSettings.DEFAULT_LIMIT);
         setTerrainWorkerPercentage(TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         setHdrEnabled(false);
         setReferenceWhiteNits(HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
@@ -700,6 +736,7 @@ public final class PrimeConfig {
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
                     + SCATTER_COUNT_KEY + "=" + scatterCount + "\n"
+                    + PRIMARY_CHAIN_LIMIT_KEY + "=" + primaryChainLimit + "\n"
                     + TERRAIN_WORKER_PERCENTAGE_KEY + "="
                     + terrainWorkerPercentage + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
@@ -747,6 +784,15 @@ public final class PrimeConfig {
             return ScatterSettings.validateCount(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Scatter count must be an integer", exception);
+        }
+    }
+
+    static int parsePrimaryChainLimit(String value) {
+        try {
+            return PrimaryChainSettings.validateLimit(Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Primary delta-chain limit must be an integer", exception);
         }
     }
 

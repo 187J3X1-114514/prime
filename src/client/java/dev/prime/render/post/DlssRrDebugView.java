@@ -17,7 +17,10 @@ public enum DlssRrDebugView {
     DIFFUSE_ALBEDO("diffuse_albedo", 9),
     SPECULAR_ALBEDO("specular_albedo", 10),
     SPECULAR_HIT_DISTANCE("specular_hit_distance", 11),
-    RR_OUTPUT("rr_output", 12);
+    RR_OUTPUT("rr_output", 12),
+    WAVEFRONT_OVERVIEW("wavefront_overview", 13),
+    HANDOFF_OVERVIEW("handoff_overview", 14),
+    GUIDE_RESOLVE_OVERVIEW("guide_resolve_overview", 15);
 
     private final String id;
     private final int shaderId;

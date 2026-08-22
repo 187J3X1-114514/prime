@@ -18,6 +18,9 @@
 
 ## 渲染能力
 
+- 重新设计 Reinhard-Gamut 的 HDR shoulder。当前 `+6.5 EV` reach 随显示峰值 headroom
+  整体放宽中灰以上曲线，数学上能在有限输入命中峰值，但会过度抬升太阳等中高亮，达不到
+  艺术需求；后续应明确 SDR 参考白以下的外观保持边界，并只用额外 headroom 展开 HDR 高光；
 - 场景几何 LOD；
 - 云渲染（细节待定）；
 - 将当前已读取但尚未参与着色的切线空间法线接入闭包，并为 normal-map handedness、

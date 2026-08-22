@@ -1,53 +1,72 @@
 package dev.prime.render.vulkan;
 
-import dev.prime.render.shader.ShaderAbi;
 import java.util.List;
 
-/** Ray-generation group order for execution-mode queues. */
+/** Shared two-stage group topology with execution-mode-specific steady modules. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
-    static final int PRIMARY_DIRECT = 3;
-    static final int PRIMARY = 5;
-    static final int RESOLVE = 10;
-    static final int TRANSPARENT_RESOLVE = 11;
-    static final int GROUP_COUNT = 12;
-    static final int MODULE_COUNT = 9;
-    private static final int[] MODULES = {0, 1, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8};
-    private static final int[] CONTROLS = {0, 1, 257, 0, 4, 0, 2, 258, 2, 258, 3, 5};
+    static final int PRIMARY_DIRECT = 1;
+    static final int PRIMARY = 2;
+    static final int PRIMARY_CHAIN = 3;
+    static final int PRIMARY_LANDING_CLASSIFY = 4;
+    static final int PRIMARY_LANDING_PRIMARY = 5;
+    static final int PRIMARY_LANDING_SECONDARY = 6;
+    static final int PRIMARY_LANDING_ADVANCE = 7;
+    static final int CLASSIFY = 8;
+    static final int NONE = 9;
+    static final int SUN = 10;
+    static final int AREA = 11;
+    static final int TRANSPARENT_RESOLVE = 12;
+    static final int RESOLVE = 13;
+    static final int GROUP_COUNT = 14;
+    static final int MODULE_COUNT = 14;
 
+    private static final int[] MODULES = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+    };
+    private static final int[] CONTROLS = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
     private RealtimeWavefrontGroups() {}
 
     static RaygenSchedule standardSchedule(String suffix) {
         String prefix = "/prime/shaders/realtime_wavefront_";
-        return schedule(
-                suffix,
-                prefix + "light" + suffix,
-                prefix + "shade" + suffix);
+        return RaygenSchedule.of(List.of(
+                prefix + "head" + suffix,
+                prefix + "primary_direct" + suffix,
+                prefix + "two_stage_primary" + suffix,
+                prefix + "primary_chain" + suffix,
+                prefix + "primary_landing" + suffix,
+                prefix + "primary_landing_primary" + suffix,
+                prefix + "primary_landing_secondary" + suffix,
+                prefix + "primary_landing_advance" + suffix,
+                prefix + "steady_classify" + suffix,
+                prefix + "steady_none" + suffix,
+                prefix + "steady_sun" + suffix,
+                prefix + "steady_area" + suffix,
+                prefix + "two_stage_transparent_resolve" + suffix,
+                prefix + "resolve" + suffix), MODULES, CONTROLS);
     }
 
     static RaygenSchedule sharcSchedule(String suffix) {
         String prefix = "/prime/shaders/realtime_wavefront_";
-        return schedule(
-                suffix,
-                prefix + "sharc_light" + suffix,
-                prefix + "sharc_shade" + suffix);
-    }
-
-    private static RaygenSchedule schedule(
-            String suffix,
-            String light,
-            String shade) {
-        String prefix = "/prime/shaders/realtime_wavefront_";
         return RaygenSchedule.of(List.of(
                 prefix + "head" + suffix,
-                prefix + "step" + suffix,
                 prefix + "primary_direct" + suffix,
-                light,
-                prefix + "primary" + suffix,
-                shade,
-                prefix + "transparent_shade" + suffix,
-                prefix + "resolve" + suffix,
-                prefix + "transparent_resolve" + suffix), MODULES, CONTROLS);
+                prefix + "two_stage_primary" + suffix,
+                prefix + "primary_chain" + suffix,
+                prefix + "primary_landing" + suffix,
+                prefix + "primary_landing_primary" + suffix,
+                prefix + "primary_landing_secondary" + suffix,
+                prefix + "primary_landing_advance" + suffix,
+                prefix + "sharc_steady_classify" + suffix,
+                prefix + "sharc_steady_none" + suffix,
+                prefix + "sharc_steady_sun" + suffix,
+                prefix + "sharc_steady_area" + suffix,
+                prefix + "two_stage_transparent_resolve" + suffix,
+                prefix + "resolve" + suffix),
+                MODULES,
+                CONTROLS);
     }
 
     static int module(int group) {
@@ -58,27 +77,4 @@ final class RealtimeWavefrontGroups {
         return CONTROLS[group];
     }
 
-    static int step(int queue) {
-        return queued(queue, 1, 2);
-    }
-
-    static int light() {
-        return 4;
-    }
-
-    static int shade(int queue) {
-        return queued(queue, 6, 7);
-    }
-
-    static int transparentShade(int queue) {
-        return queued(queue, 8, 9);
-    }
-
-    private static int queued(int queue, int first, int second) {
-        return switch (queue) {
-            case ShaderAbi.WAVEFRONT_TRACE_QUEUE_0 -> first;
-            case ShaderAbi.WAVEFRONT_TRACE_QUEUE_1 -> second;
-            default -> throw new IllegalArgumentException("Invalid wavefront queue");
-        };
-    }
 }

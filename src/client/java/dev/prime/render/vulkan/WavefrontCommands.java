@@ -65,18 +65,46 @@ final class WavefrontCommands {
             long commandOffset,
             int queueCount,
             int commandStride) {
+        initializeQueues(
+                commandBuffer, stack, wavefront, commandOffset,
+                queueCount, commandStride, 0);
+    }
+
+    static void initializeQueues(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            VulkanBuffer wavefront,
+            long commandOffset,
+            int queueCount,
+            int commandStride,
+            int queueZeroMetadata) {
         long commandBytes = (long) queueCount * commandStride;
         wavefrontToTransferBarrier(
                 commandBuffer, stack, wavefront, commandOffset, commandBytes);
         ByteBuffer commands = stack.calloc(queueCount * commandStride);
+        initializeQueueCommands(commands, queueCount, commandStride, queueZeroMetadata);
+        VK12.vkCmdUpdateBuffer(commandBuffer, wavefront.handle(), commandOffset, commands);
+        transferToWavefrontBarrier(
+                commandBuffer, stack, wavefront, commandOffset, commandBytes);
+    }
+
+    static void initializeQueueCommands(
+            ByteBuffer commands,
+            int queueCount,
+            int commandStride,
+            int queueZeroMetadata) {
+        if (queueCount <= 0 || commandStride < 4 * Integer.BYTES
+                || commands.remaining() < queueCount * commandStride) {
+            throw new IllegalArgumentException("Invalid wavefront indirect-command layout");
+        }
         for (int queue = 0; queue < queueCount; queue++) {
             int offset = queue * commandStride;
             commands.putInt(offset + Integer.BYTES, 1);
             commands.putInt(offset + 2 * Integer.BYTES, 1);
         }
-        VK12.vkCmdUpdateBuffer(commandBuffer, wavefront.handle(), commandOffset, commands);
-        transferToWavefrontBarrier(
-                commandBuffer, stack, wavefront, commandOffset, commandBytes);
+        // VkTraceRaysIndirectCommandKHR consumes only the first three uints. Queue zero owns the
+        // ABI-defined fourth word; shader-side atomic count resets touch only word zero.
+        commands.putInt(3 * Integer.BYTES, queueZeroMetadata);
     }
 
     static void wavefrontBarrier(

@@ -19,6 +19,7 @@ public record RendererSettings(
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
         int scatterCount,
+        int primaryChainLimit,
         int terrainWorkerPercentage,
         long revision) {
     public RendererSettings(
@@ -38,6 +39,7 @@ public record RendererSettings(
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
+                PrimaryChainSettings.DEFAULT_LIMIT,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -60,7 +62,32 @@ public record RendererSettings(
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
+                PrimaryChainSettings.DEFAULT_LIMIT,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
+                revision);
+    }
+
+    public RendererSettings(
+            boolean pathTracingEnabled,
+            boolean sharcEnabled,
+            boolean voxelTextureSurfaces,
+            int voxelTextureSurfaceStrengthSteps,
+            PostProcessingMode postProcessingMode,
+            ReconstructionQualityMode reconstructionQuality,
+            AstronomySettings astronomy,
+            LightingSettings.Snapshot lighting,
+            MaterialSettings.Snapshot material,
+            DisplaySettings.Snapshot display,
+            int scatterCount,
+            int terrainWorkerPercentage,
+            long revision) {
+        this(
+                pathTracingEnabled, sharcEnabled,
+                voxelTextureSurfaces,
+                voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
+                astronomy, lighting, material, display, scatterCount,
+                PrimaryChainSettings.DEFAULT_LIMIT,
+                terrainWorkerPercentage,
                 revision);
     }
 
@@ -74,6 +101,7 @@ public record RendererSettings(
         display = Objects.requireNonNull(display, "display");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
         ScatterSettings.validateCount(scatterCount);
+        PrimaryChainSettings.validateLimit(primaryChainLimit);
         TerrainWorkerSettings.validatePercentage(terrainWorkerPercentage);
         if (revision < 0L) {
             throw new IllegalArgumentException("Renderer settings revision must not be negative");

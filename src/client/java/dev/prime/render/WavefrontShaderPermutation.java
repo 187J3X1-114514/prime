@@ -8,6 +8,6 @@ public final class WavefrontShaderPermutation {
         if (subgroupSupported && invocationReorderSupported) {
             return "_ser.rgen.spv";
         }
-        return subgroupSupported ? "_subgroup.rgen.spv" : ".rgen.spv";
+        return ".rgen.spv";
     }
 }

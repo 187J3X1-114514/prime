@@ -23,12 +23,43 @@ public record RealtimeFrameInput(
         ReconstructionQualityMode quality,
         TransparentGuideMode transparentGuideMode,
         int scatterCount,
+        int primaryChainLimit,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
         DisplaySettings.Snapshot display,
         boolean forceReset) {
+    public RealtimeFrameInput(
+            FrameCamera camera,
+            long frameTimeNanos,
+            long sceneRevision,
+            long residentSceneRevision,
+            long textureRevision,
+            int width,
+            int height,
+            int displayWidth,
+            int displayHeight,
+            AstronomyState astronomy,
+            boolean cameraInWater,
+            PostProcessingMode postProcessingMode,
+            ReconstructionQualityMode quality,
+            TransparentGuideMode transparentGuideMode,
+            int scatterCount,
+            LightingSettings.Snapshot lighting,
+            MaterialSettings.Snapshot material,
+            boolean shInput,
+            boolean triangleDebug,
+            DisplaySettings.Snapshot display,
+            boolean forceReset) {
+        this(
+                camera, frameTimeNanos, sceneRevision, residentSceneRevision,
+                textureRevision, width, height, displayWidth, displayHeight, astronomy,
+                cameraInWater, postProcessingMode, quality, transparentGuideMode,
+                scatterCount, PrimaryChainSettings.DEFAULT_LIMIT, lighting, material,
+                shInput, triangleDebug, display, forceReset);
+    }
+
     public RealtimeFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
@@ -42,6 +73,7 @@ public record RealtimeFrameInput(
                 cameraInWater,
                 transparentGuideMode);
         ScatterSettings.validateCount(scatterCount);
+        PrimaryChainSettings.validateLimit(primaryChainLimit);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -101,6 +133,7 @@ public record RealtimeFrameInput(
                 this.astronomy,
                 packedRayCone,
                 this.scatterCount,
+                this.primaryChainLimit,
                 sampleIndex,
                 sampleEpoch,
                 jitterPhase,

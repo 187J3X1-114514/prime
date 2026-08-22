@@ -76,9 +76,17 @@ uint primeWavefrontPixelCount() {
 }
 
 uint primeWavefrontQueueCapacity(uint queue) {
-    uint entriesPerPixel = queue == PRIME_WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE
-            ? 1u
-            : PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL;
+    // Either transparent branch can independently defer area work from the same pixel.
+    bool wideQueue = queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0
+            || queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
+            || queue == PRIME_WAVEFRONT_AREA_QUEUE;
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+    // Two-stage steady AREA events alias queue zero and may contain both transparent branches.
+    wideQueue = wideQueue || queue == PRIME_WAVEFRONT_TRACE_QUEUE_0;
+#endif
+    uint entriesPerPixel = wideQueue
+            ? PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL
+            : 1u;
     return primeWavefrontPixelCount() * entriesPerPixel;
 }
 
@@ -102,26 +110,30 @@ uint primeWavefrontQueueCommandWord(uint queue) {
 uint primeWavefrontQueueWord(uint queue, uint entry) {
     uint indexWords = primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_QUEUE_COUNT);
     uint pixelCount = primeWavefrontPixelCount();
-    uint capacity = pixelCount * PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL;
     if (queue == PRIME_WAVEFRONT_TRACE_QUEUE_0) {
         return indexWords + entry;
     }
     if (queue == PRIME_WAVEFRONT_TRACE_QUEUE_1) {
-        return indexWords + capacity + entry;
+        return indexWords + pixelCount + entry;
     }
-    // Normal and transparent shade entries partition the same traced record set. They grow from
-    // opposite ends of one slab, so their independent counters cannot alias while their sum stays
-    // within the trace-queue capacity.
-    if (queue == PRIME_WAVEFRONT_SHADE_QUEUE) {
-        return indexWords + 2u * capacity + entry;
+    if (queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1) {
+        // Primary is consumed before this transparent ping-pong target becomes reachable.
+        return indexWords + 2u * pixelCount + entry;
     }
-    if (queue == PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE) {
-        return indexWords + 3u * capacity - 1u - entry;
+    if (queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0) {
+        return indexWords + 4u * pixelCount + entry;
     }
     if (queue == PRIME_WAVEFRONT_AREA_QUEUE) {
-        return indexWords + 3u * capacity + entry;
+        return indexWords + 6u * pixelCount + entry;
     }
-    return indexWords + 4u * capacity + entry;
+    // The area queue occupies both slots 6 and 7; resolve starts after its compact domain.
+    return indexWords + 8u * pixelCount + entry;
+}
+
+uint primePrimaryChainLimit() {
+    return primeWavefrontQueue[
+            primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_TRACE_QUEUE_0) + 3u]
+            & 0xffu;
 }
 
 static const uint PRIME_WAVEFRONT_AREA_GUIDE_WORDS = 4u;

@@ -22,281 +22,14 @@ import "integrator/path_contract.slang";
 import "integrator/transparent_guide_coincidence.slang";
 
 #include "bsdf/adapter/bsdf.slang"
+import "lighting/hit_emission.slang";
 import "lighting/lights.slang";
 import "rt/shadow_payload.slang";
 
 // The entire estimator operates in linear Rec.2020 D65. Scheduling changes may move this state
 // between kernels, but they must not reinterpret it as encoded sRGB or another RGB basis.
 
-// Payload locations are part of the independently compiled RT pipeline ABI. Slang's typed
-// TraceRay overload assigns locations from each entry point's live payload set, so a shader that
-// only traces one ray kind can silently disagree with the hit/miss stages. Explicit GLSL-style
-// payload globals keep the legacy location-0 surface/location-1 shadow contract deterministic.
-layout(location = 0) rayPayloadEXT TracePayload primeSurfacePayload;
-layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
-
-struct PrimeIntegratorContext {
-    PrimeNumericalDiagnostics diagnostics;
-};
-
-PrimeIntegratorContext primeIntegratorContextCreate() {
-    PrimeIntegratorContext context;
-    context.diagnostics = primeNumericalDiagnosticsCreate();
-    return context;
-}
-
-PrimeNumericalObservation primeBsdfObservationCreate() {
-    return primeNumericalObservationCreate(
-            primeWritesRawNumericalDiagnostic());
-}
-
-void primeCommitBsdfObservation(
-        inout PrimeIntegratorContext context,
-        PrimeNumericalObservation observation) {
-    primeRecordNumerical(
-            context.diagnostics,
-            observation.flags,
-            observation.firstField);
-}
-
-float3 primeSanitizeObservedDenoiseAlbedo(
-        inout PrimeIntegratorContext context,
-        float3 albedo) {
-    PrimeNumericalObservation observation = primeBsdfObservationCreate();
-    float3 result = primeSanitizeDenoiseAlbedo(albedo, observation);
-    primeCommitBsdfObservation(context, observation);
-    return result;
-}
-
-RayDesc primeIntegratorRay(float3 origin, float tMin, float3 direction, float tMax) {
-    RayDesc ray;
-    ray.Origin = origin;
-    ray.TMin = tMin;
-    ray.Direction = direction;
-    ray.TMax = tMax;
-    return ray;
-}
-
-struct PrimeDirectLightingSplit {
-    float3 diffuse;
-    float3 specular;
-    float3 direction;
-};
-
-// Bookkeeping that maps a complete model path into the signal/guide contract. Keeping it in a
-// named state object makes the estimator loop independent of any particular NRD or NGX resource.
-struct PrimeDenoiserState {
-    bool hasPrimarySurface;
-    bool reachedSolidAngle;
-    float3 diffuseAlbedoProduct;
-    float3 specularAlbedoProduct;
-    bool diffusePath;
-    uint primaryBounce;
-};
-
-SurfaceInteraction primeMissSurfaceInteraction(uint2 sourcePrimitive) {
-    SurfaceInteraction surface;
-    surface.position = float3(0.0);
-    surface.t = 0.0;
-    surface.geometricNormal = float3(0.0, 1.0, 0.0);
-    surface.hitKind = PRIME_HIT_NONE;
-    surface.baseColor = float3(0.0);
-    surface.materialControl = 0u;
-    surface.sectionIndex = sourcePrimitive.x;
-    surface.emitterIndex = PRIME_NO_LIGHT_INDEX;
-    surface.textureLod = 0.0;
-    surface.opacity = 0.0;
-    surface.shadingNormal = primePackOctahedralNormal(float3(0.0, 1.0, 0.0));
-    surface.roughness = primeConfiguredDefaultLinearRoughness();
-    surface.opticalControl = 0u;
-    surface.motionZFlags = sourcePrimitive.y;
-    surface.adjacentBaseColor = float3(0.0);
-    surface.adjacentInterfaceControl = 0u;
-    return surface;
-}
-
-void primeResetSurfacePayload(uint2 sourcePrimitive) {
-    primeSurfacePayload.t = 0.0;
-    primeSurfacePayload.geometricNormal = float3(0.0, 1.0, 0.0);
-    primeSurfacePayload.hitKind = PRIME_HIT_NONE;
-    primeSurfacePayload.baseColor = float3(0.0);
-    primeSurfacePayload.materialControl = 0u;
-    primeSurfacePayload.sectionIndex = sourcePrimitive.x;
-    primeSurfacePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
-    primeSurfacePayload.textureLod = 0.0;
-    primeSurfacePayload.opacity = 0.0;
-    primeSurfacePayload.shadingNormal = primePackOctahedralNormal(float3(0.0, 1.0, 0.0));
-    primeSurfacePayload.roughness = primeConfiguredDefaultLinearRoughness();
-    primeSurfacePayload.opticalControl = 0u;
-    primeSurfacePayload.adjacentBaseColor = float3(0.0);
-    primeSurfacePayload.adjacentInterfaceControl = 0u;
-    primeSurfacePayload.position = float3(0.0);
-    primeSurfacePayload.positionReserved = sourcePrimitive.y;
-}
-
-SurfaceInteraction primeSurfaceInteractionFromPayload() {
-    SurfaceInteraction surface;
-    uint packedHitKind = primeSurfacePayload.hitKind;
-    surface.position = (packedHitKind & PRIME_HIT_KIND_MASK) == PRIME_HIT_NONE
-            ? float3(0.0)
-            : primeSurfacePayload.position;
-    surface.t = primeSurfacePayload.t;
-    surface.geometricNormal = primeSurfacePayload.geometricNormal;
-    surface.hitKind = packedHitKind & PRIME_HIT_KIND_MASK;
-    surface.baseColor = primeSurfacePayload.baseColor;
-    surface.materialControl = primeSurfacePayload.materialControl;
-    surface.sectionIndex = primeSurfacePayload.sectionIndex;
-    surface.emitterIndex = primeSurfacePayload.emitterIndex;
-    surface.textureLod = primeSurfacePayload.textureLod;
-    surface.opacity = primeSurfacePayload.opacity;
-    surface.shadingNormal = primeSurfacePayload.shadingNormal;
-    surface.roughness = primeSurfacePayload.roughness;
-    surface.opticalControl = primeSurfacePayload.opticalControl;
-    surface.motionZFlags = primeSurfacePayload.positionReserved;
-    surface.adjacentBaseColor = primeSurfacePayload.adjacentBaseColor;
-    surface.adjacentInterfaceControl = primeSurfacePayload.adjacentInterfaceControl;
-    return surface;
-}
-
-interface IPrimeSurfaceTracePolicy {
-    void trace(
-            float3 origin,
-            float3 direction,
-            uint2 sourcePrimitive,
-            uint pathClass);
-}
-
-struct PrimeScalarSurfaceTracePolicy : IPrimeSurfaceTracePolicy {
-    void trace(
-            float3 origin,
-            float3 direction,
-            uint2 sourcePrimitive,
-            uint pathClass) {
-        uint rayFlags = sourcePrimitive.x == PRIME_NO_PRIMITIVE_INDEX
-                ? gl_RayFlagsNoneEXT
-                : gl_RayFlagsNoOpaqueEXT;
-        traceRayEXT(primeScene, rayFlags, 0xff, 0, 1, 0,
-                origin, 0.0, direction, 1000000.0, 0);
-    }
-};
-
-struct PrimeSerSurfaceTracePolicy : IPrimeSurfaceTracePolicy {
-    void trace(
-            float3 origin,
-            float3 direction,
-            uint2 sourcePrimitive,
-            uint pathClass) {
-        // Hit objects decouple traversal from closest-hit/miss execution. The reorder point groups
-        // those continuations by shader first and by the low section-index bits second. Keep this
-        // method narrow: every live value may need to survive invocation repacking.
-        int payloadLocation = 0;
-        HitObject hitObject;
-        hitObjectTraceRayEXT(
-                hitObject,
-                primeScene,
-                sourcePrimitive.x == PRIME_NO_PRIMITIVE_INDEX
-                        ? gl_RayFlagsNoneEXT
-                        : gl_RayFlagsNoOpaqueEXT,
-                0xff,
-                0,
-                1,
-                0,
-                origin,
-                0.0,
-                direction,
-                1000000.0,
-                payloadLocation);
-        // Eight section bits preserve primitive-buffer locality, two geometry bits separate
-        // opaque, cutout and transmissive hit work, and two transport bits keep the return to
-        // ordinary, transparent-reflection or transparent-transmission shading coherent.
-        bool hit = hitObjectIsHitEXT(hitObject);
-        uint coherenceHint = ((pathClass & 0x3u) << 10u)
-                | (hit ? (uint(hitObjectGetGeometryIndexEXT(hitObject)) & 0x3u) << 8u : 0u)
-                | (hit ? uint(hitObjectGetInstanceIdEXT(hitObject)) & 0xffu : 0u);
-        reorderThreadEXT(hitObject, coherenceHint, 12u);
-        hitObjectExecuteShaderEXT(hitObject, payloadLocation);
-    }
-};
-
-#if defined(PRIME_ENABLE_SER)
-typealias PrimeSurfaceTracePolicy = PrimeSerSurfaceTracePolicy;
-#else
-typealias PrimeSurfaceTracePolicy = PrimeScalarSurfaceTracePolicy;
-#endif
-
-SurfaceInteraction primeTraceSurfaceClassified<TracePolicy>(
-        TracePolicy policy,
-        float3 origin,
-        float3 direction,
-        uint2 sourcePrimitive,
-        uint pathClass)
-    where TracePolicy : IPrimeSurfaceTracePolicy
-{
-    primeResetSurfacePayload(sourcePrimitive);
-    policy.trace(origin, direction, sourcePrimitive, pathClass);
-    return primeSurfaceInteractionFromPayload();
-}
-
-SurfaceInteraction primeTraceSurface(float3 origin, float3 direction) {
-    return primeTraceSurfaceClassified(
-            PrimeSurfaceTracePolicy(),
-            origin,
-            direction,
-            uint2(PRIME_NO_PRIMITIVE_INDEX),
-            0u);
-}
-
-SurfaceInteraction primeTraceSurface(
-        float3 origin, float3 direction, uint2 sourcePrimitive) {
-    return primeTraceSurfaceClassified(
-            PrimeSurfaceTracePolicy(), origin, direction, sourcePrimitive, 0u);
-}
-
-SurfaceInteraction primeTraceSurfaceWithoutReorder(
-        float3 origin, float3 direction) {
-    // The sparse tail keeps the complete result, medium and denoiser state live across its
-    // local loop. Repacking there spills more state than it recovers through coherence, so this
-    // entry deliberately executes the same trace without the SER reorder point.
-    return primeTraceSurfaceClassified(
-            PrimeScalarSurfaceTracePolicy(),
-            origin,
-            direction,
-            uint2(PRIME_NO_PRIMITIVE_INDEX),
-            0u);
-}
-
-SurfaceInteraction primeTraceSurfaceWithoutReorder(
-        float3 origin, float3 direction, uint2 sourcePrimitive) {
-    return primeTraceSurfaceClassified(
-            PrimeScalarSurfaceTracePolicy(),
-            origin,
-            direction,
-            sourcePrimitive,
-            0u);
-}
-
-bool primeKnownHitKind(SurfaceInteraction surface) {
-    return surface.hitKind == PRIME_HIT_NONE || surface.hitKind == PRIME_HIT_SURFACE;
-}
-
-bool primePreviousCannotUseMis(PathState path) {
-    return path.bounce == 0u
-            || (path.flags & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
-}
-
-float3 primeSurfaceOutwardShadingNormal(SurfaceInteraction surface) {
-    float3 shadingNormal = primeUnpackOctahedralNormal(surface.shadingNormal);
-    return dot(shadingNormal, surface.geometricNormal) >= 0.0
-            ? shadingNormal
-            : -shadingNormal;
-}
-
-float3 primeSurfaceShadingNormal(SurfaceInteraction surface, float3 viewDirection) {
-    float3 shadingNormal = primeSurfaceOutwardShadingNormal(surface);
-    return dot(surface.geometricNormal, viewDirection) >= 0.0
-            ? shadingNormal
-            : -shadingNormal;
-}
+#include "integrator/transport_core.slang"
 
 uint primeAreaLightReceiverNormal(
         SurfaceInteraction surface, float3 viewDirection) {
@@ -359,41 +92,6 @@ float primeSecondarySunFamilyProbability(
             integrator, surface, viewDirection);
     return primeQuantizedSunFamilyProbability(
             importance.x, importance.y);
-}
-
-float primeSurfaceOpacity(SurfaceInteraction surface) {
-    return clamp(surface.opacity, 0.0, 1.0);
-}
-
-float primeSurfaceLinearRoughness(SurfaceInteraction surface) {
-    return primeMaterialEffectiveLinearRoughness(
-            surface.materialControl, surface.roughness);
-}
-
-PrimeClosureTraits primeSurfaceClosureTraits(
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        PrimeOpenPbrVolumeStack volumeStack) {
-    if (primeMaterialIsTransmissive(surface.materialControl)) {
-        return primeMinecraftTransmissionClosureTraits(
-                primeSurfaceOutwardShadingNormal(surface),
-                surface.materialControl,
-                surface.roughness,
-                surface.opticalControl,
-                viewDirection,
-                volumeStack,
-                surface.adjacentInterfaceControl);
-    }
-    if (primeMaterialIsFoliage(surface.materialControl)) {
-        return primeFoliageClosureTraits(
-                surface.roughness,
-                surface.opticalControl,
-                surface.materialControl);
-    }
-    return primeOpaqueClosureTraits(
-            surface.roughness,
-            surface.opticalControl,
-            surface.materialControl);
 }
 
 struct PrimeShadowTrace {
@@ -721,26 +419,14 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
     return result;
 }
 
-PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
+PrimeDirectLightingSplit primeEstimatePrimaryDirectPreparedAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
-        PrimePreparedSampleBase preparedSample,
+        AreaLightSample area,
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    AreaLightSample area = primeSampleAreaLight(
-            context.diagnostics,
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY));
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -775,21 +461,42 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             false);
 }
 
-float3 primeEstimateDirectAreaLight(
+PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
-        float2 treeSample,
-        float2 positionSample,
+        PrimePreparedSampleBase preparedSample,
         PrimeOpenPbrVolumeStack volumeStack,
-        float lightFamilyProbability) {
-    float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+        bool conditionalTransparentBranch) {
     AreaLightSample area = primeSampleAreaLight(
             context.diagnostics,
             surface.position,
             primeAreaLightReceiverNormal(surface, viewDirection),
-            treeSample,
-            positionSample);
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_SECONDARY));
+    return primeEstimatePrimaryDirectPreparedAreaLight(
+            context,
+            surface,
+            viewDirection,
+            area,
+            volumeStack,
+            conditionalTransparentBranch);
+}
+
+float3 primeEstimateDirectPreparedAreaLight(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        AreaLightSample area,
+        PrimeOpenPbrVolumeStack volumeStack,
+        float lightFamilyProbability) {
+    float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     area.light.pdf = primeLightFamilyPdfValue(
             area.light.pdf, lightFamilyProbability);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
@@ -815,6 +522,29 @@ float3 primeEstimateDirectAreaLight(
             radiance,
             volumeStack,
             true);
+}
+
+float3 primeEstimateDirectAreaLight(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float2 treeSample,
+        float2 positionSample,
+        PrimeOpenPbrVolumeStack volumeStack,
+        float lightFamilyProbability) {
+    AreaLightSample area = primeSampleAreaLight(
+            context.diagnostics,
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            treeSample,
+            positionSample);
+    return primeEstimateDirectPreparedAreaLight(
+            context,
+            surface,
+            viewDirection,
+            area,
+            volumeStack,
+            lightFamilyProbability);
 }
 
 float3 primeEstimateDirectSun(
@@ -1146,27 +876,6 @@ bool primeRussianRoulette(
     return true;
 }
 
-void primeAccumulate(
-        inout PrimeIntegratorContext context,
-        inout float3 accumulator,
-        float3 contribution) {
-    primeRecordRadiance(context.diagnostics, contribution);
-    accumulator += contribution;
-    primeRecordRadiance(context.diagnostics, accumulator);
-}
-
-void primeAccumulateAfterPrimary(
-        inout PrimeIntegratorContext context,
-        inout PrimeIntegrationResult result,
-        bool diffusePath,
-        float3 contribution) {
-    if (diffusePath) {
-        primeAccumulate(context, result.radiance.diffuse, contribution);
-    } else {
-        primeAccumulate(context, result.radiance.specular, contribution);
-    }
-}
-
 // Renderer-specific integrators compose these terminal estimators. Their caller supplies whether
 // the competing Area technique existed, so realtime and offline can keep independent NEE rules.
 float3 primeEvaluateEnvironmentContribution(
@@ -1237,248 +946,6 @@ float3 primeEvaluateHitEmission(
             context, path, surface, previousUsedAreaNee);
 }
 
-bool primeApplySegmentMedium(
-        inout PrimeIntegratorContext context,
-        inout PathState path,
-        SurfaceInteraction surface,
-        PrimeOpenPbrVolumeStack volumeStack) {
-    primeSetNumericalContext(
-            context.diagnostics, PRIME_NUMERICAL_STAGE_MEDIUM, path.bounce);
-    if (volumeStack.count == 0u) {
-        return true;
-    }
-    PrimeOpenPbrVolume medium = volumeStack.values[volumeStack.count - 1u];
-    path.throughput *= primeSegmentTransmittance(medium.extinction, surface.t);
-    primeRecordNonnegative(context.diagnostics, path.throughput);
-    return !all(path.throughput == float3(0.0));
-}
-
-struct PrimePathScatter {
-    BsdfSample bsdf;
-    PrimeOpenPbrVolumeStack volumeStack;
-};
-
-PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        float3 sampleValue,
-        PrimeOpenPbrVolumeStack volumeStack,
-        float minimumLinearRoughness) {
-    PrimePathScatter result;
-    result.volumeStack = volumeStack;
-    PrimeNumericalObservation observation = primeBsdfObservationCreate();
-    if (primeMaterialIsFoliage(surface.materialControl)) {
-        PrimeCompactFoliageState state = primeMinecraftFoliageStateWithMinimumRoughness(
-                surface.baseColor,
-                primeSurfaceShadingNormal(surface, viewDirection),
-                surface.roughness,
-                surface.opticalControl,
-                surface.materialControl,
-                viewDirection,
-                surface.t,
-                volumeStack,
-                minimumLinearRoughness);
-        result.bsdf = primeSampleMinecraftFoliageFromState(
-                state, viewDirection, sampleValue, volumeStack, observation);
-    } else if (primeMaterialIsTransmissive(surface.materialControl)) {
-        float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeCompactTransmissionState state =
-                primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
-                surface.baseColor,
-                primeSurfaceOpacity(surface),
-                outwardNormal,
-                surface.materialControl,
-                surface.roughness,
-                surface.opticalControl,
-                viewDirection,
-                surface.t,
-                volumeStack,
-                minimumLinearRoughness,
-                surface.adjacentBaseColor,
-                surface.adjacentInterfaceControl);
-        PrimeTransmissiveBsdfSample sampled =
-                primeSampleMinecraftTransmissionCompleteFromState(
-                        state,
-                        surface.baseColor,
-                        primeSurfaceOpacity(surface),
-                        surface.materialControl,
-                        viewDirection,
-                        sampleValue,
-                        volumeStack,
-                        observation);
-        sampled = primeApplyAdjacentMediumTransition(
-                sampled,
-                state,
-                volumeStack,
-                surface.baseColor,
-                primeSurfaceOpacity(surface),
-                surface.materialControl,
-                surface.opticalControl,
-                surface.adjacentBaseColor,
-                surface.adjacentInterfaceControl);
-        result.bsdf = sampled.bsdfSample;
-        result.volumeStack = sampled.volumeStack;
-    } else {
-        float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-        PrimeCompactOpaqueState state = primeOpaqueStateWithMinimumRoughness(
-                surface.baseColor,
-                shadingNormal,
-                surface.roughness,
-                surface.opticalControl,
-                surface.materialControl,
-                viewDirection,
-                surface.t,
-                volumeStack,
-                minimumLinearRoughness);
-        result.bsdf = primeSampleOpaqueFromState(
-                state,
-                shadingNormal,
-                viewDirection,
-                sampleValue,
-                volumeStack,
-                observation);
-    }
-    primeCommitBsdfObservation(context, observation);
-    return result;
-}
-
-PrimePathScatter primeSamplePathSurface(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        float3 sampleValue,
-        PrimeOpenPbrVolumeStack volumeStack) {
-    return primeSamplePathSurfaceWithMinimumRoughness(
-            context, surface, viewDirection, sampleValue, volumeStack, 0.0);
-}
-
-struct PrimeGuidedPathScatter {
-    PrimePathScatter scatter;
-    PrimeDenoiseAlbedos albedos;
-};
-
-PrimeGuidedPathScatter primeSampleGuidedPathSurface(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        float3 sampleValue,
-        PrimeOpenPbrVolumeStack volumeStack,
-        uint bounce) {
-    PrimeGuidedPathScatter result;
-    result.scatter.volumeStack = volumeStack;
-    PrimeNumericalObservation observation = primeBsdfObservationCreate();
-    primeSetNumericalContext(
-            context.diagnostics, PRIME_NUMERICAL_STAGE_SURFACE, bounce);
-    if (primeMaterialIsFoliage(surface.materialControl)) {
-        PrimeCompactFoliageState state = primeMinecraftFoliageState(
-                surface.baseColor,
-                primeSurfaceShadingNormal(surface, viewDirection),
-                surface.roughness,
-                surface.opticalControl,
-                surface.materialControl,
-                viewDirection,
-                surface.t,
-                volumeStack);
-        result.albedos = primeDenoiseAlbedosFromState(
-                state,
-                viewDirection,
-                PRIME_DENOISE_CLOSURE_FOLIAGE,
-                observation);
-        primeSetNumericalContext(
-                context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
-        result.scatter.bsdf = primeSampleMinecraftFoliageFromState(
-                state, viewDirection, sampleValue, volumeStack, observation);
-    } else if (primeMaterialIsTransmissive(surface.materialControl)) {
-        float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
-                surface.baseColor,
-                primeSurfaceOpacity(surface),
-                outwardNormal,
-                surface.materialControl,
-                surface.roughness,
-                surface.opticalControl,
-                viewDirection,
-                surface.t,
-                volumeStack,
-                surface.adjacentBaseColor,
-                surface.adjacentInterfaceControl);
-        result.albedos = primeDenoiseAlbedosFromState(
-                state,
-                viewDirection,
-                PRIME_DENOISE_CLOSURE_TRANSMISSIVE,
-                observation);
-        primeSetNumericalContext(
-                context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
-        PrimeTransmissiveBsdfSample sampled =
-                primeSampleMinecraftTransmissionCompleteFromState(
-                        state,
-                        surface.baseColor,
-                        primeSurfaceOpacity(surface),
-                        surface.materialControl,
-                        viewDirection,
-                        sampleValue,
-                        volumeStack,
-                        observation);
-        sampled = primeApplyAdjacentMediumTransition(
-                sampled,
-                state,
-                volumeStack,
-                surface.baseColor,
-                primeSurfaceOpacity(surface),
-                surface.materialControl,
-                surface.opticalControl,
-                surface.adjacentBaseColor,
-                surface.adjacentInterfaceControl);
-        result.scatter.bsdf = sampled.bsdfSample;
-        result.scatter.volumeStack = sampled.volumeStack;
-    } else {
-        float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-        PrimeCompactOpaqueState state = primeOpaqueState(
-                surface.baseColor,
-                shadingNormal,
-                surface.roughness,
-                surface.opticalControl,
-                surface.materialControl,
-                viewDirection,
-                surface.t,
-                volumeStack);
-        result.albedos = primeDenoiseAlbedosFromState(
-                state,
-                viewDirection,
-                PRIME_DENOISE_CLOSURE_OPAQUE,
-                observation);
-        primeSetNumericalContext(
-                context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
-        result.scatter.bsdf = primeSampleOpaqueFromState(
-                state,
-                shadingNormal,
-                viewDirection,
-                sampleValue,
-                volumeStack,
-                observation);
-    }
-    primeCommitBsdfObservation(context, observation);
-    return result;
-}
-
-bool primeHasScatter(BsdfSample bsdf) {
-    return bsdf.eventFlags != 0u;
-}
-
-bool primeIsDiscreteSample(BsdfSample bsdf) {
-    return (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u;
-}
-
-bool primeIsSolidAngleSample(BsdfSample bsdf) {
-    uint solidAngleFlags = PRIME_BSDF_EVENT_DIFFUSE | PRIME_BSDF_EVENT_GLOSSY;
-    return (bsdf.eventFlags & solidAngleFlags) != 0u && !primeIsDiscreteSample(bsdf);
-}
-
-static const uint PRIME_SHARC_EVENT_DISCRETE = 0u;
-static const uint PRIME_SHARC_EVENT_DIFFUSE = 1u;
-static const uint PRIME_SHARC_EVENT_GLOSSY = 2u;
-
 struct PrimeIndirectReuseResult {
     float3 contribution;
     bool hit;
@@ -1505,45 +972,6 @@ struct PrimeNoIndirectReuse : IPrimeIndirectReuse {
     }
 }
 
-uint primeSharcEvent(BsdfSample bsdf) {
-    if (primeIsDiscreteSample(bsdf)) {
-        return PRIME_SHARC_EVENT_DISCRETE;
-    }
-    return (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u
-            ? PRIME_SHARC_EVENT_DIFFUSE
-            : PRIME_SHARC_EVENT_GLOSSY;
-}
-
-bool primeApplyPathScatter(
-        inout PrimeIntegratorContext context,
-        inout PathState path,
-        SurfaceInteraction surface,
-        BsdfSample bsdf) {
-    primeSetNumericalContext(
-            context.diagnostics, PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
-    float3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
-    primeRecordNonnegative(context.diagnostics, nextThroughput);
-    if (all(nextThroughput == float3(0.0))) {
-        return false;
-    }
-    path.throughput = nextThroughput;
-    path.etaScale = primeEtaScaleAfterScatter(
-            path.etaScale,
-            bsdf.relativeEta,
-            (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
-    primeRecordNonnegative(context.diagnostics, path.etaScale);
-    path.physicalOrigin = surface.position;
-    path.sourcePrimitive = uint2(
-            surface.sectionIndex, primeSurfaceTriangleIndex(surface));
-    path.sourceReserved = 0u;
-    path.rayDirection = bsdf.direction;
-    path.previousBsdfPdf = bsdf.pdf;
-    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
-            ? PRIME_PATH_PREVIOUS_DISCRETE
-            : 0u;
-    return true;
-}
-
 bool primeAdvancePath(
         inout PrimeIntegratorContext context,
         inout PathState path,
@@ -1556,18 +984,28 @@ bool primeAdvancePath(
     uint previousLightNormal = discreteOnlyInterface
             ? 0u
             : primeAreaLightReceiverNormal(surface, -path.rayDirection);
-    if (!primeApplyPathScatter(context, path, surface, bsdf)) {
+    if (!primeAdvancePathWithoutRoulette(
+            context,
+            path,
+            surface,
+            bsdf,
+            previousLightNormal,
+            surfaceLinearRoughness)) {
         return false;
     }
-    path.previousLightNormal = previousLightNormal;
-    path.previousSharcRoughness = surfaceLinearRoughness;
-    path.previousSharcEvent = primeSharcEvent(bsdf);
     if (skipRoulette) {
         return true;
     }
-    // bounce counts every completed scatter, including discrete-only transparent interfaces.
+    // Two-stage realtime has already completed its non-delta bridge scatter before steady bounce
+    // zero. Count that scatter for RR without folding primary delta depth into the steady bounce
+    // domain or reducing its independent dispatch limit.
+    uint rouletteCompletedScatters = path.bounce;
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+    rouletteCompletedScatters =
+            primeTwoStageRouletteCompletedScatters(path.bounce);
+#endif
     if (!primeRussianRouletteApplies(
-            path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
+            rouletteCompletedScatters, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
     float rouletteSample = primeHashSample1D(
@@ -1599,20 +1037,6 @@ bool primeAdvancePath(
 // Queue-resident PSR state stores the bounded discrete chain as an incremental path length and
 // orthogonal direction transform. The last discrete position is exactly path.physicalOrigin at every
 // queue boundary, so keeping a second float3 would increase both slot size and live registers.
-
-PrimeQueuedPsrState primeAppendQueuedPsrDiscrete(
-        PrimeQueuedPsrState state,
-        float3 previousPosition,
-        SurfaceInteraction surface,
-        BsdfSample bsdf) {
-    return primeAppendQueuedPsrState(
-            state,
-            primePush.cameraPosition,
-            previousPosition,
-            surface.position,
-            surface.geometricNormal,
-            (bsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u);
-}
 
 float primeQueuedPsrAnchorDistance(
         PrimeQueuedPsrState state,
@@ -1662,18 +1086,6 @@ PrimeDenoiserGuides primeQueuedPsrGuide(
     return guides;
 }
 
-void primeAccumulateTransparentBranch(
-        inout PrimeIntegratorContext context,
-        inout PrimeTransparentBranchResult result,
-        bool diffusePath,
-        float3 contribution) {
-    if (diffusePath) {
-        primeAccumulate(context, result.diffuseRadiance, contribution);
-    } else {
-        primeAccumulate(context, result.specularRadiance, contribution);
-    }
-}
-
 // Advances one fixed primary-transparent branch by one queued vertex. Its signal lane remains
 // branch-owned while traversal/SER sorts both continuations with every other path.
 bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
@@ -1694,6 +1106,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         bool transmissionBranch,
         bool guideEnabled,
         uint storedSunProbability,
+        bool skipRoulette,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
@@ -1711,6 +1124,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     bool observesIndependentGuide = guideEnabled
             && !hasGuide
             && !guideProbeFallback;
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
     if (observesIndependentGuide
             && surface.hitKind == PRIME_HIT_SURFACE
             && primeSurfaceHasMotion(surface)) {
@@ -1718,11 +1132,18 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         // probe whenever a moving surface enters the unresolved discrete chain.
         guideProbeFallback = true;
     }
+#endif
 
     float hitDistance = surface.hitKind == PRIME_HIT_NONE
             ? PRIME_NRD_FP16_MAX
             : primeNrdSanitizeHitDistance(surface.t);
-    if (path.bounce == 1u) {
+    if (path.bounce ==
+#if defined(PRIME_STEADY_WAVEFRONT)
+            0u
+#else
+            1u
+#endif
+    ) {
         result.firstHitDistance = hitDistance;
     }
     if (hasGuide && path.bounce == guideBounce + 1u) {
@@ -1734,6 +1155,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     }
     if (surface.hitKind == PRIME_HIT_NONE) {
         if (guideEnabled && !transmissionBranch && !hasGuide
+                && !guideProbeFallback
                 && primeQueuedPsrCount(psrState) > 0u
                 && !primeQueuedPsrOverflowed(psrState)) {
             float3 direction =
@@ -1776,11 +1198,15 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     bool discreteContinuation = discreteOnlyInterface;
     bool primarySurfaceReplacement =
-            guideEnabled && !hasGuide && !discreteContinuation;
+            observesIndependentGuide && !discreteContinuation;
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
-    bool previousUsedAreaNee = areaNee.enabled() && path.bounce > 0u;
+    bool previousUsedAreaNee = areaNee.enabled()
+#if !defined(PRIME_STEADY_WAVEFRONT)
+            && path.bounce > 0u
+#endif
+            ;
     float3 emitted = primeEvaluateHitEmission(
             context, path, surface, previousUsedAreaNee);
     primeAccumulateTransparentBranch(
@@ -1890,7 +1316,9 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     }
     BsdfSample bsdf = scatter.bsdf;
     if (compareGuideContinuation && !guideContinuationReusable) {
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
         guideProbeFallback = true;
+#endif
     }
     if (!primeHasScatter(bsdf)) {
         return false;
@@ -1922,7 +1350,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             preparedSample,
             discreteContinuation,
             surfaceLinearRoughness,
-            primeTransparentRouletteBlocked(
+            skipRoulette || primeTransparentRouletteBlocked(
                     primeTransparentTransportOwnsGuide(
                             false,
                             guideProbeFallback),
@@ -1969,6 +1397,7 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
         inout PrimeIntegrationResult result,
         SurfaceInteraction surface,
         uint storedSunProbability,
+        bool skipRoulette,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
@@ -1985,7 +1414,13 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
     }
 
     if (denoiserState.hasPrimarySurface
-            && path.bounce == denoiserState.primaryBounce + 1u) {
+            && path.bounce ==
+#if defined(PRIME_STEADY_WAVEFRONT)
+                    0u
+#else
+                    denoiserState.primaryBounce + 1u
+#endif
+    ) {
         float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
                 ? PRIME_NRD_FP16_MAX
                 : primeNrdSanitizeHitDistance(surface.t);
@@ -2174,13 +1609,20 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     bsdf,
                     preparedSample,
                     discreteOnlyInterface,
-                    surfaceLinearRoughness)) {
+                    surfaceLinearRoughness,
+                    skipRoulette)) {
         return false;
     }
     if (areaNee.enabled()
             && supportsSolidAngle
             && denoiserState.hasPrimarySurface
-            && path.bounce != denoiserState.primaryBounce) {
+            &&
+#if defined(PRIME_STEADY_WAVEFRONT)
+                    true
+#else
+                    path.bounce != denoiserState.primaryBounce
+#endif
+    ) {
         areaNee.markSecondaryPath(
                 path,
                 integrator,

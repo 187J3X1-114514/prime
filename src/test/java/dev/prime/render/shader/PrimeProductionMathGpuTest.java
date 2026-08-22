@@ -283,18 +283,18 @@ final class PrimeProductionMathGpuTest {
                             blue,
                             random.nextInt(-12, 13));
                 } else if (kind == 6) {
-                    float logValue = switch (local & 3) {
-                        case 0 -> -12.473931F;
-                        case 1 -> -2.473931F;
-                        case 2 -> 4.026069F;
-                        default -> random.nextFloat() * 24.0F - 16.0F;
+                    float curveInput = switch (local & 3) {
+                        case 0 -> 0.0F;
+                        case 1 -> 0.09F;
+                        case 2 -> 0.18F;
+                        default -> 0.18F * powerOfTwo(random.nextInt(-8, 11));
                     };
                     putVec4(
                             input,
                             index,
                             inputWords,
                             1,
-                            logValue,
+                            curveInput,
                             0.0F,
                             0.0F,
                             0.0F);
@@ -307,7 +307,15 @@ final class PrimeProductionMathGpuTest {
                         green = (local & 2) != 0 ? 1.0F : 0.0F;
                         blue = (local & 4) != 0 ? 1.0F : 0.0F;
                     }
-                    putVec4(input, index, inputWords, 1, red, green, blue, 0.0F);
+                    float auxiliary = kind == 7
+                            ? random.nextFloat() * 4.0F
+                            : switch (local & 3) {
+                                case 0 -> 1.0F;
+                                case 1 -> 4.0F;
+                                case 2 -> 64.0F;
+                                default -> 10_000.0F;
+                            };
+                    putVec4(input, index, inputWords, 1, red, green, blue, auxiliary);
                 }
             }
         }

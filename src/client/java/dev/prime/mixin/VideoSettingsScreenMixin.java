@@ -7,6 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
@@ -52,6 +53,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$sharcEnabled;
     @Unique private OptionInstance<Integer> prime$scatterCount;
+    @Unique private OptionInstance<Integer> prime$primaryChainLimit;
     @Unique private OptionInstance<Integer> prime$terrainWorkerPercentage;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
@@ -84,8 +86,10 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
-            this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled();
+            this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled(
+                    ignored -> this.prime$updatePrimaryChainAvailability());
             this.prime$scatterCount = PrimeVideoOptions.scatterCount();
+            this.prime$primaryChainLimit = PrimeVideoOptions.primaryChainLimit();
             this.prime$terrainWorkerPercentage =
                     PrimeVideoOptions.terrainWorkerPercentage();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
@@ -125,6 +129,8 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$sharcEnabled);
             list.addBig(this.prime$scatterCount);
+            list.addBig(this.prime$primaryChainLimit);
+            this.prime$updatePrimaryChainAvailability();
             list.addBig(this.prime$terrainWorkerPercentage);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
@@ -192,6 +198,10 @@ public abstract class VideoSettingsScreenMixin {
                 this.prime$scatterCount,
                 ScatterSettings.DEFAULT_COUNT);
         this.prime$refresh(
+                this.prime$primaryChainLimit,
+                PrimaryChainSettings.DEFAULT_LIMIT);
+        this.prime$updatePrimaryChainAvailability();
+        this.prime$refresh(
                 this.prime$terrainWorkerPercentage,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
@@ -253,6 +263,21 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);
         this.prime$refresh(this.prime$rrDebugView, DlssRrDebugView.OFF);
         this.prime$refresh(this.prime$rrDebugFullscreen, false);
+    }
+
+    @Unique
+    private void prime$updatePrimaryChainAvailability() {
+        if (this.prime$primaryChainLimit == null) {
+            return;
+        }
+        OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
+        if (list == null) {
+            return;
+        }
+        AbstractWidget widget = list.findOption(this.prime$primaryChainLimit);
+        if (widget != null) {
+            widget.active = !PrimeConfig.settings().sharcEnabled();
+        }
     }
 
     @Unique

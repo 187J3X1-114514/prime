@@ -90,72 +90,118 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
     } else if (kind == 6) {
-        PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
-        float normalized = clamp(
-                (values.x - parameters.minimumLog2)
-                        * parameters.inverseDynamicRange,
-                0.0,
-                1.0);
-        actual.x = primeAgxCurveComponent(normalized, parameters);
+        PrimeReinhardGamutParameters parameters =
+                primeDefaultReinhardGamutParameters();
+        float value = max(values.x, 0.0);
+        actual.x = primeReinhardCurveComponent(value, parameters);
         actual.y = max(
                 max(
-                        abs(parameters.outputPivot - 0.46135613),
-                        abs(parameters.pivotSlope - 2.4606366)),
+                        abs(parameters.gamutExpansion - 0.03),
+                        abs(parameters.middleGray - 0.18)),
                 max(
-                        max(
-                                abs(parameters.toePower - 1.55),
-                                abs(parameters.shoulderPower - 5.2)),
-                        abs(parameters.gamutCompression - 0.05)));
-        if (values.x <= parameters.minimumLog2) {
-            expected.x = 0.0;
-        } else if (values.x >= parameters.minimumLog2
-                + 1.0 / parameters.inverseDynamicRange) {
-            expected.x = 1.0;
-        } else if (primeTestClose(
-                normalized, parameters.inputPivot, 1.0e-6, 1.0e-6)) {
-            expected.x = parameters.outputPivot;
+                        abs(parameters.outputPeak - 1.0),
+                        abs(parameters.hueRetention - 0.5)));
+        if (value <= 0.18) {
+            expected.x = value;
         } else {
-            expected.x = actual.x;
+            float shoulderExtent = parameters.curvePeak - 0.18;
+            float distance = value - 0.18;
+            expected.x = 0.18 + distance / (1.0 + distance / shoulderExtent);
         }
         expected.y = 0.0;
-        if (!primeTestClose(actual.x, expected.x, 3.0e-5, 3.0e-5)
-                || !primeTestClose(actual.y, expected.y, 1.0e-7, 1.0e-7)
-                || !primeTestClose(
-                        parameters.toeCoefficient, 11.219474, 1.0e-5, 1.0e-6)
-                || !primeTestClose(
-                        parameters.shoulderCoefficient, 2568.7498, 2.0e-2, 1.0e-6)) {
+        if (!primeTestClose(actual.x, expected.x, 3.0e-6, 3.0e-6)
+                || !primeTestClose(actual.y, expected.y, 1.0e-7, 1.0e-7)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        if (actual.x < -1.0e-5 || actual.x > 1.00001) {
+        if (actual.x < -1.0e-6 || actual.x > parameters.curvePeak) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
     } else if (kind == 7) {
-        PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
+        PrimeReinhardGamutParameters parameters =
+                primeDefaultReinhardGamutParameters();
         float3 rgb = max(values.xyz, float3(0.0));
-        float3 hsv = primeAgxRgbToHsv(rgb);
-        float3 roundTrip = primeAgxHsvToRgb(hsv);
-        float3 error = abs(roundTrip - rgb);
-        float3 mapped = primeAgxHsvTonemap(rgb, parameters);
-        actual = float2(
-                max(error.x, max(error.y, error.z)),
-                max(mapped.x, max(mapped.y, mapped.z)));
-        expected = float2(0.0, actual.y);
-        if (!primeTestClose(actual.x, 0.0, 4.0e-6, 4.0e-6)) {
+        float3 expanded = primeReinhardToExpandedGamut(rgb, parameters);
+        float3 restored = primeReinhardFromExpandedGamut(expanded, parameters);
+        float3 rgbRoundTrip = primeReinhardHsvToRgb(
+                primeReinhardRgbToHsv(rgb));
+        float3 gray = max(values.w, 0.0).xxx;
+        float3 grayExpanded = primeReinhardToExpandedGamut(gray, parameters);
+
+        float3 mappedLinear = primeReinhardFromExpandedGamut(
+                primeReinhardCurve(expanded, parameters),
+                parameters);
+        float3 mappedDisplay = primeReinhardEncodeSrgb(mappedLinear);
+        float3 repaired = primeReinhardProtectHsvHue(
+                rgb, mappedDisplay, parameters);
+        float3 originalHsv = primeReinhardRgbToHsv(
+                primeReinhardEncodeSrgb(rgb));
+        float3 mappedHsv = primeReinhardRgbToHsv(mappedDisplay);
+        float3 repairedHsv = primeReinhardRgbToHsv(repaired);
+        float hueError = 0.0;
+        float svError = 0.0;
+        if (originalHsv.y > 1.0e-7 && mappedHsv.y > 1.0e-7) {
+            float hueOffset = originalHsv.x - mappedHsv.x;
+            hueOffset -= floor(hueOffset + 0.5);
+            float expectedHue = frac(mappedHsv.x + 0.5 * hueOffset);
+            float repairedOffset = repairedHsv.x - expectedHue;
+            repairedOffset -= floor(repairedOffset + 0.5);
+            hueError = abs(repairedOffset);
+            svError = max(
+                    abs(repairedHsv.y - mappedHsv.y),
+                    abs(repairedHsv.z - mappedHsv.z));
+        } else {
+            float3 repairError = abs(repaired - mappedDisplay);
+            hueError = max(repairError.x, max(repairError.y, repairError.z));
+        }
+
+        float3 inverseError = abs(restored - rgb);
+        float3 hsvError = abs(rgbRoundTrip - rgb);
+        float3 grayError = abs(grayExpanded - gray);
+        actual.x = max(
+                max(inverseError.x, max(inverseError.y, inverseError.z)),
+                max(
+                        max(hsvError.x, max(hsvError.y, hsvError.z)),
+                        max(grayError.x, max(grayError.y, grayError.z))));
+        actual.y = max(hueError, svError);
+        expected = float2(0.0);
+        if (!primeTestClose(actual.x, 0.0, 5.0e-6, 5.0e-6)
+                || !primeTestClose(actual.y, 0.0, 8.0e-6, 8.0e-6)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        mask |= primeTestClassify(mapped);
+        float originalSpan = max(rgb.x, max(rgb.y, rgb.z))
+                - min(rgb.x, min(rgb.y, rgb.z));
+        float expandedSpan = max(expanded.x, max(expanded.y, expanded.z))
+                - min(expanded.x, min(expanded.y, expanded.z));
+        if (expandedSpan > originalSpan + 2.0e-6) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        mask |= primeTestClassify(expanded);
+        mask |= primeTestClassify(restored);
+        mask |= primeTestClassify(repaired);
     } else if (kind == 8) {
         float3 hdrRec2020 = max(values.xyz, float3(0.0));
-        float3 expectedAgxHsv = clamp(
-                primeAgxHsvTonemap(
+        float outputPeak = clamp(values.w, 1.0, 10000.0);
+        float curvePeak = primeReinhardCurvePeak(outputPeak);
+        PrimeReinhardGamutParameters parameters =
+                primeDefaultReinhardGamutParameters();
+        parameters.outputPeak = outputPeak;
+        parameters.curvePeak = curvePeak;
+        float encodedPeak = primeReinhardEncodeSrgb(outputPeak.xxx).x;
+        float3 expectedReinhard = clamp(
+                primeReinhardGamutTonemap(
                         max(
                                 primeLinearRec2020ToLinearBt709(hdrRec2020),
                                 float3(0.0)),
-                        primeDefaultAgxHsvParameters()),
+                        parameters),
                 float3(0.0),
-                float3(1.0));
-        float3 output = primeDisplayTransformToSrgb(hdrRec2020, 1.0);
-        float3 error = abs(output - expectedAgxHsv);
+                encodedPeak.xxx);
+        float3 output = primeDisplayTransformToSrgb(
+                hdrRec2020, 1.0, outputPeak, curvePeak);
+        float3 error = abs(output - expectedReinhard);
+        if (outputPeak == 1.0) {
+            float3 sdrError = abs(output - primeDisplayTransformToSrgb(hdrRec2020, 1.0));
+            error = max(error, sdrError);
+        }
         actual = float2(
                 max(error.x, max(error.y, error.z)),
                 max(output.x, max(output.y, output.z)));
@@ -163,7 +209,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         if (!primeTestClose(actual.x, 0.0, 1.0e-7, 1.0e-7)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        if (any(output < float3(0.0)) || any(output > float3(1.0))) {
+        if (any(output < float3(0.0)) || any(output > encodedPeak.xxx)) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         mask |= primeTestClassify(output);

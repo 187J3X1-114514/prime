@@ -77,8 +77,9 @@ final class ShaderAbiTest {
         assertEquals(6, ShaderAbi.WAVEFRONT_QUEUE_COUNT);
         assertEquals(0, ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
         assertEquals(1, ShaderAbi.WAVEFRONT_TRACE_QUEUE_1);
-        assertEquals(2, ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-        assertEquals(3, ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
+        assertEquals(2, ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+        assertEquals(3, ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0);
+        assertEquals(2, ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1);
         assertEquals(4, ShaderAbi.WAVEFRONT_AREA_QUEUE);
         assertEquals(5, ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
         assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);

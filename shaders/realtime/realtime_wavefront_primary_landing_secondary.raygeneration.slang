@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront_light.slang"
+#include "realtime/realtime_wavefront_primary_landing.slang"
 
 [shader("raygeneration")]
 void main()
@@ -8,10 +8,5 @@ void main()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
-    primeWavefrontLight(
-            PrimeMixedWavefrontLightNee(),
-            PrimeNoIndirectReuse(),
-            PrimeNoWavefrontSharcTraining(),
-            context,
-            launchIndex);
+    primeWavefrontPrimaryLandingSecondary(context, launchIndex);
 }

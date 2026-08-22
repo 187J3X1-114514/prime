@@ -1,9 +1,9 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.AgxHsvOutput;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
+import dev.prime.render.ReinhardGamutOutput;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.VulkanSharedPrograms.SharedComputeProgram;
 import java.nio.ByteBuffer;
@@ -22,7 +22,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 /** Prime's common linear Rec.2020 HDR to selectable sRGB Rec.709 display boundary. */
 public final class DisplayTransformPass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 28;
+    private static final int PUSH_SIZE = 24;
     private static final int LOCAL_SIZE = 8;
 
     private final VulkanContext context;
@@ -255,16 +255,16 @@ public final class DisplayTransformPass implements Destroyable {
         java.util.Objects.requireNonNull(initialization, "initialization");
         VulkanImageTransitions.prepareOutputForComposite(
                 commandBuffer, initialization, this.hdrOutput);
-        AgxHsvOutput.Parameters agx = AgxHsvOutput.parameters(HdrOutput.activeHeadroom());
+        ReinhardGamutOutput.Parameters reinhard =
+                ReinhardGamutOutput.parameters(HdrOutput.activeHeadroom());
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, this.width);
             push.putInt(4, this.height);
             push.putInt(8, diagnostic ? 1 : 0);
             push.putFloat(12, display.finalExposureMultiplier());
-            push.putFloat(16, agx.maximumLogCoordinate());
-            push.putFloat(20, agx.outputPeak());
-            push.putFloat(24, agx.shoulderCoefficient());
+            push.putFloat(16, reinhard.outputPeak());
+            push.putFloat(20, reinhard.curvePeak());
             VK12.vkCmdBindPipeline(
                     commandBuffer,
                     VK12.VK_PIPELINE_BIND_POINT_COMPUTE,

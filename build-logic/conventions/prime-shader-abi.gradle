@@ -102,7 +102,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| colorContract.displayColorSpace != 'rec709-d65'
 				|| colorContract.displayExposure != 1.0) {
 			throw new GradleException(
-					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> AgX HSV -> sRGB Rec.709 display')
+					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> Reinhard-Gamut -> sRGB Rec.709 display')
 		}
 		if (emissionContract.level15BlockIntensity != 1.5) {
 			throw new GradleException(
@@ -161,8 +161,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| wavefrontContract.queueCount != 6
 				|| wavefrontContract.traceQueue0 != 0
 				|| wavefrontContract.traceQueue1 != 1
-				|| wavefrontContract.shadeQueue != 2
-				|| wavefrontContract.transparentShadeQueue != 3
+				|| wavefrontContract.primaryQueue != 2
+				|| wavefrontContract.transparentTraceQueue0 != 3
+				|| wavefrontContract.transparentTraceQueue1 != 2
 				|| wavefrontContract.areaQueue != 4
 				|| wavefrontContract.transparentResolveQueue != 5
 				|| wavefrontContract.queueCommandStride != 16
@@ -406,8 +407,9 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
     public static final int WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
     public static final int WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
-    public static final int WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
-    public static final int WAVEFRONT_TRANSPARENT_SHADE_QUEUE = ${wavefrontContract.transparentShadeQueue};
+    public static final int WAVEFRONT_PRIMARY_QUEUE = ${wavefrontContract.primaryQueue};
+    public static final int WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0 = ${wavefrontContract.transparentTraceQueue0};
+    public static final int WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1 = ${wavefrontContract.transparentTraceQueue1};
     public static final int WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
     public static final int WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE = ${wavefrontContract.transparentResolveQueue};
     public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
@@ -770,8 +772,12 @@ public static const uint PRIME_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${wav
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
 public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
 public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
-public static const uint PRIME_WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
-public static const uint PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE = ${wavefrontContract.transparentShadeQueue};
+public static const uint PRIME_WAVEFRONT_PRIMARY_QUEUE = ${wavefrontContract.primaryQueue};
+public static const uint PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0 = ${wavefrontContract.transparentTraceQueue0};
+public static const uint PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1 = ${wavefrontContract.transparentTraceQueue1};
+// Transitional aliases keep the retired split-stage entry points compilable on this experiment.
+public static const uint PRIME_WAVEFRONT_SHADE_QUEUE = PRIME_WAVEFRONT_PRIMARY_QUEUE;
+public static const uint PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE = PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0;
 public static const uint PRIME_WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
 public static const uint PRIME_WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE = ${wavefrontContract.transparentResolveQueue};
 public static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
@@ -1068,9 +1074,6 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 					|| source.name.startsWith('offline_wavefront_')
 					? [
 							[name: '', definitions: []],
-							[name: '_subgroup', definitions: [
-									'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
-							]],
 							[name: '_ser', definitions: [
 									'-DPRIME_ENABLE_SER=1',
 									'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
@@ -1083,35 +1086,19 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			// update it only when a mode becomes reachable from the corresponding entry point.
 			def wavefrontVariantPlan = [
 					'realtime_wavefront_head':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
-					'realtime_wavefront_step':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
-					'realtime_wavefront_primary':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'realtime_wavefront_primary_direct':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_transparent_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_transparent_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_sharc_shade':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'realtime_wavefront_sharc_light':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+							[compile: [''], alias: ['_ser': '']],
 					'offline_wavefront_head':
-							[compile: ['', '_subgroup', '_ser'], alias: [:]],
+							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_step':
-							[compile: ['', '_ser'], alias: ['_subgroup': '']],
+							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_area':
-							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_resolve':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']]
+							[compile: [''], alias: ['_ser': '']]
 			][stem]
 			def variants = wavefrontVariantPlan == null
 					? allWavefrontVariants

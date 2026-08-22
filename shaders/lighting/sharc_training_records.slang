@@ -4,7 +4,7 @@
 import "core/packed_geometry.slang";
 #include "lighting/sharc_training_core.slang"
 
-// One fully traced carrier path trains its first six distinct cache roots. Adjacent roots own
+// One fully traced carrier path trains its first four distinct cache roots. Adjacent roots own
 // consecutive camera-weighted tail segments, so each bounce updates one float3 without
 // subtracting large path prefixes or rewriting every root.
 static const uint PRIME_SHARC_TRAINING_HEADER_WORDS = 4u;

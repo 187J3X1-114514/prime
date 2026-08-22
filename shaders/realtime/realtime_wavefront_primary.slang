@@ -5,6 +5,9 @@ struct PrimeWavefrontContinuations {
     uint secondPathIndex;
     bool firstActive;
     bool secondActive;
+    bool firstPrimaryChain;
+    bool secondPrimaryChain;
+    bool transparent;
 };
 
 PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
@@ -24,6 +27,9 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
     queued.secondPathIndex = primeWavefrontIndex(pixel, 1u);
     queued.firstActive = false;
     queued.secondActive = false;
+    queued.firstPrimaryChain = false;
+    queued.secondPrimaryChain = false;
+    queued.transparent = true;
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         PrimeDenoiserState emptyState = primeInitialDenoiserState();
         PrimeWavefrontPathRecord emptyRecord = primeMakeWavefrontRecord(context.diagnostics,
@@ -198,17 +204,32 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                     preparedSample,
                     branchDiscreteOnly,
                     surfaceLinearRoughness,
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+                    true);
+#else
                     primeTransparentRouletteBlocked(
                             primeTransparentTransportOwnsGuide(
                                     false,
                                     guideProbeFallback),
                             guideEnabled,
                             hasGuide));
+#endif
         }
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;
+#if !defined(PRIME_TWO_STAGE_WAVEFRONT)
             continuation = branchPath.bounce < maximumBounces;
+#endif
         }
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        bool primaryChain = continuation
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u;
+        if (continuation && !primaryChain) {
+            branchPath.bounce = 0u;
+        }
+#else
+        bool primaryChain = false;
+#endif
         PrimeWavefrontPathRecord record =
                 primeMakeTransparentWavefrontRecord(context.diagnostics,
                 branchPath,
@@ -223,12 +244,19 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 primaryReflectionOnly,
                 guideProbeFallback,
                 continuation);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        if (continuation && !primaryChain) {
+            record.transport = primeWavefrontSteadyState(record.transport);
+        }
+#endif
         uint pathIndex = primeWavefrontIndex(pixel, branch);
         primeWavefrontPaths[pathIndex] = record;
         if (transmissionBranch) {
             queued.firstActive = continuation;
+            queued.firstPrimaryChain = primaryChain;
         } else {
             queued.secondActive = continuation;
+            queued.secondPrimaryChain = primaryChain;
         }
         primeStoreTransparentBranchIntermediate(
                 pixel,
@@ -236,6 +264,66 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 hasGuide,
                 primaryReflectionOnly,
                 branchResult);
+        if (transmissionBranch
+                && guideEnabled
+                && hasScatter
+                && !hasGuide
+                && continuation) {
+            uint sourceReason;
+            bool adjacentAirGap = primeHasAdjacentMedium(
+                            surface.adjacentInterfaceControl)
+                    && primeUsesAdjacentAirGap(
+                            surface.materialControl,
+                            surface.opticalControl,
+                            surface.adjacentInterfaceControl);
+            if (adjacentAirGap) {
+                sourceReason = PRIME_GUIDE_STOP_PRIMARY_AIR_GAP;
+            } else if ((surface.materialControl & PRIME_MATERIAL_THIN_WALLED) != 0u) {
+                sourceReason = PRIME_GUIDE_STOP_PRIMARY_THIN_WALLED;
+            } else if (dot(
+                            primeSurfaceOutwardShadingNormal(surface),
+                            viewDirection) >= 0.0) {
+                float3 recordDirection =
+                        record.transport.rayDirectionAndDenoiserControl.xyz;
+                PrimeOpenPbrVolumeStack recordStack =
+                        primeWavefrontVolumeStack(record.transport);
+                uint expectedStackCount = min(volumeStack.count + 1u, 2u);
+                uint2 expectedSource = uint2(
+                        surface.sectionIndex, primeSurfaceTriangleIndex(surface));
+                if ((bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) == 0u
+                        || any(recordDirection != bsdf.direction)
+                        || dot(recordDirection,
+                                primeSurfaceOutwardShadingNormal(surface)) >= 0.0) {
+                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_DIRECTION;
+                } else if (selected.volumeStack.count != expectedStackCount
+                        || recordStack.count != selected.volumeStack.count) {
+                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_STACK;
+                } else if (any(record.transport.sourceAndPathControl.xy
+                                != expectedSource)) {
+                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_SOURCE;
+                } else if (any(record.transport
+                                .physicalOriginAndPreviousBsdfPdf.xyz
+                                != surface.position)) {
+                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_ORIGIN;
+                } else {
+                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_SOLID_ENTERING;
+                }
+            } else {
+                sourceReason = volumeStack.count == 0u
+                        ? PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING_EMPTY
+                        : PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING;
+            }
+            // A true miss preserves this source-side classification. Acquiring guide ownership
+            // or reaching another terminal condition replaces it later in the branch lifetime.
+            primeStoreUnownedTransmissionGuideDiagnostic(pixel, sourceReason);
+        }
+        if (transmissionBranch && guideEnabled && !hasGuide && !continuation) {
+            primeStoreUnownedTransmissionGuideDiagnostic(
+                    pixel,
+                    hasScatter
+                            ? PRIME_GUIDE_STOP_PRIMARY_ADVANCE
+                            : PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER);
+        }
     }
     return queued;
 }
@@ -247,7 +335,7 @@ void primeWavefrontPrimary<AreaNee>(
     where AreaNee : IPrimeSecondaryAreaNee
 {
     uint recordIndex = primeWavefrontQueuedPath(
-            PRIME_WAVEFRONT_SHADE_QUEUE, launchIndex);
+            PRIME_WAVEFRONT_PRIMARY_QUEUE, launchIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
@@ -266,6 +354,9 @@ void primeWavefrontPrimary<AreaNee>(
     continuations.secondPathIndex = primeWavefrontIndex(pixel, 1u);
     continuations.firstActive = false;
     continuations.secondActive = false;
+    continuations.firstPrimaryChain = false;
+    continuations.secondPrimaryChain = false;
+    continuations.transparent = false;
 
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeMaterialIsTransmissive(surface.materialControl)) {
@@ -298,8 +389,22 @@ void primeWavefrontPrimary<AreaNee>(
                 result,
                 surface,
                 0u,
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+                true,
+#else
+                false,
+#endif
                 recordIndex);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        bool primaryChain = continuation
+                && (path.flags & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
+        if (continuation && !primaryChain) {
+            path.bounce = 0u;
+        }
+#else
+        bool primaryChain = false;
         continuation = continuation && path.bounce < maximumBounces;
+#endif
         PrimeWavefrontPathRecord updated = primeMakeWavefrontRecord(
                 context.diagnostics,
                 path,
@@ -307,19 +412,48 @@ void primeWavefrontPrimary<AreaNee>(
                 denoiserState,
                 result.guides,
                 continuation);
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+        if (continuation && !primaryChain) {
+            updated.transport = primeWavefrontSteadyState(updated.transport);
+        }
+#endif
         primeWavefrontPaths[recordIndex] = updated;
         primeStoreWavefrontArea(pixel, result.guides);
         primeStoreWavefrontIntermediate(pixel, result);
         continuations.firstActive = continuation;
+        continuations.firstPrimaryChain = primaryChain;
     }
+#if defined(PRIME_TWO_STAGE_WAVEFRONT)
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
+            continuations.firstPathIndex,
+            continuations.firstActive && !continuations.firstPrimaryChain);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
+            continuations.secondPathIndex,
+            continuations.secondActive && !continuations.secondPrimaryChain);
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
             continuations.firstPathIndex,
-            continuations.firstActive);
+            continuations.firstPrimaryChain || continuations.secondPrimaryChain);
+#else
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            continuations.firstPathIndex,
+            continuations.firstActive && !continuations.transparent);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
+            continuations.firstPathIndex,
+            continuations.firstActive && continuations.transparent);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,
             continuations.secondPathIndex,
             continuations.secondActive);
+#endif
 }

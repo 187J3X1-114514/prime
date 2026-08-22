@@ -15,5 +15,9 @@ Configuration fetches the CMake-pinned Vulkan-Headers `v1.3.296`; it does not co
 the development Vulkan SDK used by the Java/Slang build. Changing either the DLSS SDK ABI or this
 header pin requires rebuilding the bridge and rerunning `DlssRrNativeContractTest`.
 
+The bridge fixes every supported quality mode to Ray Reconstruction render preset F. Its private
+ABI exposes that selection so the Java loader and contract test reject a mismatched bridge.
+
 Copy `prime_dlss_rr.dll` beside the release `nvngx_dlssd.dll` in
-`src/client/resources/prime/natives/windows-x86_64`.
+`src/client/resources/prime/natives/windows-x86_64`. The bundled runtime is `310.7.128.0` with
+SHA-256 `5D8EA393A9C8656EE3E2B863910A8DE10A2F96B9693493743F59AC6910F6F4F1`.

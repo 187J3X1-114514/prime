@@ -1,8 +1,5 @@
 # Third-party licenses
 
-Prime's default AgX HSV display transform is adapted from AgX-S2O3. See
-`AGX-S2O3-LICENSE.txt` for source and license details.
-
 - FidelityFX SDK 1.1.4 (AMD's signed Vulkan library containing the FSR 3.1.4 Upscaler): MIT
   License. See `FIDELITYFX-SDK-LICENSE.txt`. Prime calls only the upscaling API; frame
   interpolation and swapchain replacement are not included or used.

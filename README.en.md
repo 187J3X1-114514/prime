@@ -45,7 +45,7 @@ tradeoffs.
   path-traced scene.
 - **Realtime denoising and reconstruction:** NVIDIA DLSS Ray Reconstruction is the primary path, with
   NRD + FSR available for other compatible GPUs.
-- **SDR and HDR output:** both use the same AgX-HSV display transform. HDR queries the active
+- **SDR and HDR output:** both use the same Reinhard-Gamut display transform. HDR queries the active
   display's brightness capabilities, extends highlights through linear scRGB, and supports automatic
   or manual reference-white calibration.
 - **Bounced-light cache:** the optional SHARC cache remembers bounced lighting already calculated

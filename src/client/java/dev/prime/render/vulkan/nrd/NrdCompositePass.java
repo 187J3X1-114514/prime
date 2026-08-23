@@ -23,7 +23,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 final class NrdCompositePass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int BINDING_COUNT = 28;
-    private static final int PUSH_SIZE = 28;
+    private static final int PUSH_SIZE = NrdCompositeConstants.SIZE;
     private final VulkanContext context;
     private final long descriptorSetLayout;
     private final long descriptorPool;
@@ -214,14 +214,16 @@ final class NrdCompositePass implements Destroyable {
                     0,
                     stack.longs(this.descriptorSet),
                     null);
-            ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
-            push.putInt(0, width);
-            push.putInt(4, height);
-            push.putFloat(8, sunRadianceMultiplier);
-            push.putFloat(12, cameraJitterX);
-            push.putFloat(16, cameraJitterY);
-            push.putFloat(20, epipoleX);
-            push.putFloat(24, epipoleY);
+            ByteBuffer push = stack.calloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
+            NrdCompositeConstants.write(
+                    push,
+                    width,
+                    height,
+                    sunRadianceMultiplier,
+                    cameraJitterX,
+                    cameraJitterY,
+                    epipoleX,
+                    epipoleY);
             VK12.vkCmdPushConstants(
                     commandBuffer,
                     this.pipelineLayout,

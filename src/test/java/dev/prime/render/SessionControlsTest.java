@@ -18,18 +18,22 @@ final class SessionControlsTest {
         SessionControls changed = defaults
                 .withScreenshotRequested(true)
                 .withRendererDiagnostics(true)
+                .withRawOutput(true)
                 .withRendererImageView(RendererImageView.NORMAL);
 
         assertFalse(defaults.screenshotRequested());
         assertFalse(defaults.rendererDiagnostics());
+        assertFalse(defaults.rawOutput());
         assertEquals(RendererImageView.OFF, defaults.imageDiagnostics().renderer());
         assertEquals(RrInputView.OFF, defaults.imageDiagnostics().rr());
         assertEquals(NrdInputView.OFF, defaults.imageDiagnostics().nrd());
         assertTrue(changed.screenshotRequested());
         assertTrue(changed.rendererDiagnostics());
+        assertTrue(changed.rawOutput());
         assertEquals(RendererImageView.NORMAL, changed.imageDiagnostics().renderer());
         assertNotSame(defaults, changed);
         assertSame(changed, changed.withRendererDiagnostics(true));
+        assertSame(changed, changed.withRawOutput(true));
     }
 
     @Test
@@ -42,9 +46,11 @@ final class SessionControlsTest {
         assertEquals(RrInputView.MOTION, controls.imageDiagnostics().rr());
         assertEquals(NrdInputView.OFF, controls.imageDiagnostics().nrd());
 
-        controls = controls.withNrdInputView(NrdInputView.PRIMARY_NORMAL);
+        controls = controls.withNrdInputView(NrdInputView.PRIMARY_NORMAL_ROUGHNESS);
         assertEquals(RendererImageView.OFF, controls.imageDiagnostics().renderer());
         assertEquals(RrInputView.OFF, controls.imageDiagnostics().rr());
-        assertEquals(NrdInputView.PRIMARY_NORMAL, controls.imageDiagnostics().nrd());
+        assertEquals(
+                NrdInputView.PRIMARY_NORMAL_ROUGHNESS,
+                controls.imageDiagnostics().nrd());
     }
 }

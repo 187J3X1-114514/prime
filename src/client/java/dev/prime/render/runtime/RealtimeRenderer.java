@@ -235,7 +235,9 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeRenderSettings settings = input.settings();
         boolean sharcChanged = this.sharcRequested != settings.sharcEnabled();
         this.sharcRequested = settings.sharcEnabled();
-        PostProcessingMode requestedMode = settings.postProcessing();
+        PostProcessingMode requestedMode = input.controls().rawOutput()
+                ? PostProcessingMode.DISABLED
+                : settings.postProcessing();
         ResolvedReconstruction requestedSelection = this.reconstructionRegistry.resolve(
                 requestedMode,
                 settings.reconstructionQuality(),

@@ -3,32 +3,30 @@ package dev.prime.render.diagnostic;
 import dev.prime.render.StableIds;
 import java.util.Optional;
 
-/** Semantic projections of the exact primary and reflection resources submitted to NRD. */
+/** Exact external image inputs of the two REBLUR instances and SIGMA. */
 public enum NrdInputView implements ImageDiagnosticView {
     OFF("off"),
     DENOISED_OUTPUT("denoised_output"),
+    PRIMARY_GRID("primary_grid"),
     PRIMARY_MOTION("primary_motion"),
-    PRIMARY_NORMAL("primary_normal"),
-    PRIMARY_ROUGHNESS("primary_roughness"),
+    PRIMARY_NORMAL_ROUGHNESS("primary_normal_roughness"),
     PRIMARY_VIEW_Z("primary_view_z"),
-    PRIMARY_DIFFUSE_RADIANCE("primary_diffuse_radiance"),
-    PRIMARY_DIFFUSE_HIT_DISTANCE("primary_diffuse_hit_distance"),
-    PRIMARY_SPECULAR_RADIANCE("primary_specular_radiance"),
-    PRIMARY_SPECULAR_HIT_DISTANCE("primary_specular_hit_distance"),
+    PRIMARY_DIFFUSE_SH0("primary_diffuse_sh0"),
     PRIMARY_DIFFUSE_SH1("primary_diffuse_sh1"),
+    PRIMARY_SPECULAR_SH0("primary_specular_sh0"),
     PRIMARY_SPECULAR_SH1("primary_specular_sh1"),
+    REFLECTION_GRID("reflection_grid"),
     REFLECTION_MOTION("reflection_motion"),
-    REFLECTION_NORMAL("reflection_normal"),
-    REFLECTION_ROUGHNESS("reflection_roughness"),
+    REFLECTION_NORMAL_ROUGHNESS("reflection_normal_roughness"),
     REFLECTION_VIEW_Z("reflection_view_z"),
-    REFLECTION_DIFFUSE_RADIANCE("reflection_diffuse_radiance"),
-    REFLECTION_DIFFUSE_HIT_DISTANCE("reflection_diffuse_hit_distance"),
-    REFLECTION_SPECULAR_RADIANCE("reflection_specular_radiance"),
-    REFLECTION_SPECULAR_HIT_DISTANCE("reflection_specular_hit_distance"),
+    REFLECTION_DIFFUSE_SH0("reflection_diffuse_sh0"),
     REFLECTION_DIFFUSE_SH1("reflection_diffuse_sh1"),
+    REFLECTION_SPECULAR_SH0("reflection_specular_sh0"),
     REFLECTION_SPECULAR_SH1("reflection_specular_sh1"),
-    SUN_PENUMBRA("sun_penumbra"),
-    GRID("grid");
+    SIGMA_GRID("sigma_grid"),
+    SIGMA_NORMAL_ROUGHNESS("sigma_normal_roughness"),
+    SIGMA_VIEW_Z("sigma_view_z"),
+    SIGMA_PENUMBRA("sigma_penumbra");
 
     private final String id;
 
@@ -39,6 +37,11 @@ public enum NrdInputView implements ImageDiagnosticView {
     @Override
     public String id() {
         return this.id;
+    }
+
+    @Override
+    public boolean grid() {
+        return this == PRIMARY_GRID || this == REFLECTION_GRID || this == SIGMA_GRID;
     }
 
     public static Optional<NrdInputView> findById(String id) {

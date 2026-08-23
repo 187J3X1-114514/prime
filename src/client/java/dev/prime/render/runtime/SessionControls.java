@@ -9,6 +9,7 @@ import dev.prime.render.diagnostic.RrInputView;
 public record SessionControls(
         boolean screenshotRequested,
         boolean rendererDiagnostics,
+        boolean rawOutput,
         ImageDiagnosticSelection imageDiagnostics) {
     public SessionControls {
         imageDiagnostics = java.util.Objects.requireNonNull(imageDiagnostics, "imageDiagnostics");
@@ -16,6 +17,7 @@ public record SessionControls(
 
     public static SessionControls defaults() {
         return new SessionControls(
+                false,
                 false,
                 false,
                 ImageDiagnosticSelection.off());
@@ -27,6 +29,7 @@ public record SessionControls(
                 : new SessionControls(
                         value,
                         this.rendererDiagnostics,
+                        this.rawOutput,
                         this.imageDiagnostics);
     }
 
@@ -35,6 +38,17 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
+                        value,
+                        this.rawOutput,
+                        this.imageDiagnostics);
+    }
+
+    public SessionControls withRawOutput(boolean value) {
+        return value == this.rawOutput
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
+                        this.rendererDiagnostics,
                         value,
                         this.imageDiagnostics);
     }
@@ -57,6 +71,7 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.rendererDiagnostics,
+                        this.rawOutput,
                         value);
     }
 }

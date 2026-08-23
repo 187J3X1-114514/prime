@@ -71,6 +71,7 @@ public final class PrimeVideoOptions {
                         vanillaPbrPresets()),
                 new Diagnostics(
                         rendererDiagnostics(),
+                        rawOutput(),
                         rendererImageView(diagnosticChanged),
                         rrInputView(diagnosticChanged),
                         nrdInputView(diagnosticChanged)));
@@ -195,6 +196,16 @@ public final class PrimeVideoOptions {
                         "prime.options.debug.renderer_diagnostics.tooltip")),
                 runtime.rendererDiagnostics(),
                 runtime::setRendererDiagnostics);
+    }
+
+    private static OptionInstance<Boolean> rawOutput() {
+        PrimeRuntime runtime = PrimeRuntime.instance();
+        return OptionInstance.createBoolean(
+                "prime.options.debug.raw_output",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.debug.raw_output.tooltip")),
+                runtime.rawOutput(),
+                runtime::setRawOutput);
     }
 
     private static OptionInstance<ReconstructionQualityMode> qualityMode() {
@@ -581,6 +592,7 @@ public final class PrimeVideoOptions {
 
     public record Diagnostics(
             OptionInstance<Boolean> rendererDiagnostics,
+            OptionInstance<Boolean> rawOutput,
             OptionInstance<RendererImageView> rendererImageView,
             OptionInstance<RrInputView> rrInputView,
             OptionInstance<NrdInputView> nrdInputView) {

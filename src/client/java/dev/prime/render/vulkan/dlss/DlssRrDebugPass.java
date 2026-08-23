@@ -63,7 +63,7 @@ final class DlssRrDebugPass implements Destroyable {
         if (view == RrInputView.GRID) {
             List<ImageDiagnosticPass.View> views = List.of(
                     descriptor(RrInputView.DENOISED_OUTPUT),
-                    descriptor(RrInputView.INPUT_COLOR),
+                    descriptor(RrInputView.NOISY_INPUT),
                     descriptor(RrInputView.DIFFUSE_ALBEDO),
                     descriptor(RrInputView.SPECULAR_ALBEDO),
                     descriptor(RrInputView.NORMAL),
@@ -84,7 +84,7 @@ final class DlssRrDebugPass implements Destroyable {
     private static ImageDiagnosticPass.View descriptor(RrInputView view) {
         return switch (view) {
             case DENOISED_OUTPUT -> view(OUTPUT, ImageDiagnosticPass.RADIANCE);
-            case INPUT_COLOR -> view(INPUT_COLOR, ImageDiagnosticPass.RADIANCE);
+            case NOISY_INPUT -> view(INPUT_COLOR, ImageDiagnosticPass.RADIANCE);
             case DIFFUSE_ALBEDO -> view(DIFFUSE_ALBEDO, ImageDiagnosticPass.ALBEDO);
             case SPECULAR_ALBEDO -> view(SPECULAR_ALBEDO, ImageDiagnosticPass.ALBEDO);
             case NORMAL -> view(NORMAL_ROUGHNESS, ImageDiagnosticPass.NORMAL);

@@ -32,6 +32,10 @@ public final class SessionController {
         this.controls = this.controls.withRendererDiagnostics(value);
     }
 
+    public void setRawOutput(boolean value) {
+        this.controls = this.controls.withRawOutput(value);
+    }
+
     public void setRendererImageView(RendererImageView value) {
         this.controls = this.controls.withRendererImageView(value);
     }

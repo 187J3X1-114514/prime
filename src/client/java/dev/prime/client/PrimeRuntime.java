@@ -232,6 +232,15 @@ public final class PrimeRuntime {
         this.session.setRendererDiagnostics(value);
     }
 
+    public boolean rawOutput() {
+        return this.session.controls().rawOutput();
+    }
+
+    public void setRawOutput(boolean value) {
+        this.session.setRawOutput(value);
+        this.requestRealtimeReset();
+    }
+
     public RendererImageView rendererImageView() {
         return this.session.controls().imageDiagnostics().renderer();
     }

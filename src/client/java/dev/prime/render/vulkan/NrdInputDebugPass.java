@@ -7,22 +7,22 @@ import dev.prime.render.vulkan.nrd.PreparedNrdFrame;
 import java.util.List;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
-/** Diagnostic-only visualizer over the exact prepared inputs submitted to NRD. */
+/** Diagnostic-only one-to-one presentation of both REBLUR instances and SIGMA inputs. */
 final class NrdInputDebugPass implements Destroyable {
     private static final int OUTPUT = 0;
     private static final int PRIMARY_MOTION = 1;
     private static final int PRIMARY_NORMAL_ROUGHNESS = 2;
     private static final int PRIMARY_VIEW_Z = 3;
-    private static final int PRIMARY_DIFFUSE = 4;
-    private static final int PRIMARY_SPECULAR = 5;
-    private static final int PRIMARY_DIFFUSE_SH1 = 6;
+    private static final int PRIMARY_DIFFUSE_SH0 = 4;
+    private static final int PRIMARY_DIFFUSE_SH1 = 5;
+    private static final int PRIMARY_SPECULAR_SH0 = 6;
     private static final int PRIMARY_SPECULAR_SH1 = 7;
     private static final int REFLECTION_MOTION = 8;
     private static final int REFLECTION_NORMAL_ROUGHNESS = 9;
     private static final int REFLECTION_VIEW_Z = 10;
-    private static final int REFLECTION_DIFFUSE = 11;
-    private static final int REFLECTION_SPECULAR = 12;
-    private static final int REFLECTION_DIFFUSE_SH1 = 13;
+    private static final int REFLECTION_DIFFUSE_SH0 = 11;
+    private static final int REFLECTION_DIFFUSE_SH1 = 12;
+    private static final int REFLECTION_SPECULAR_SH0 = 13;
     private static final int REFLECTION_SPECULAR_SH1 = 14;
     private static final int SUN_PENUMBRA = 15;
 
@@ -48,15 +48,15 @@ final class NrdInputDebugPass implements Destroyable {
             primary.normalRoughness(),
             primary.viewZ(),
             primary.noisyDiffuse(),
-            primary.noisySpecular(),
             primary.noisyDiffuseSh1(),
+            primary.noisySpecular(),
             primary.noisySpecularSh1(),
             reflection.motion(),
             reflection.normalRoughness(),
             reflection.viewZ(),
             reflection.noisyDiffuse(),
-            reflection.noisySpecular(),
             reflection.noisyDiffuseSh1(),
+            reflection.noisySpecular(),
             reflection.noisySpecularSh1(),
             prepared.sunPenumbra()
         };
@@ -74,66 +74,90 @@ final class NrdInputDebugPass implements Destroyable {
     }
 
     void record(VkCommandBuffer commandBuffer, NrdInputView view) {
-        if (view == NrdInputView.OFF) return;
-        if (view == NrdInputView.GRID) {
-            List<ImageDiagnosticPass.View> views = List.of(
-                    descriptor(NrdInputView.DENOISED_OUTPUT),
-                    descriptor(NrdInputView.PRIMARY_MOTION),
-                    descriptor(NrdInputView.PRIMARY_NORMAL),
-                    descriptor(NrdInputView.PRIMARY_ROUGHNESS),
-                    descriptor(NrdInputView.PRIMARY_VIEW_Z),
-                    descriptor(NrdInputView.PRIMARY_DIFFUSE_RADIANCE),
-                    descriptor(NrdInputView.PRIMARY_DIFFUSE_HIT_DISTANCE),
-                    descriptor(NrdInputView.PRIMARY_SPECULAR_RADIANCE),
-                    descriptor(NrdInputView.PRIMARY_SPECULAR_HIT_DISTANCE),
-                    descriptor(NrdInputView.PRIMARY_DIFFUSE_SH1),
-                    descriptor(NrdInputView.PRIMARY_SPECULAR_SH1),
-                    descriptor(NrdInputView.REFLECTION_MOTION),
-                    descriptor(NrdInputView.REFLECTION_NORMAL),
-                    descriptor(NrdInputView.REFLECTION_ROUGHNESS),
-                    descriptor(NrdInputView.REFLECTION_VIEW_Z),
-                    descriptor(NrdInputView.REFLECTION_DIFFUSE_RADIANCE),
-                    descriptor(NrdInputView.REFLECTION_DIFFUSE_HIT_DISTANCE),
-                    descriptor(NrdInputView.REFLECTION_SPECULAR_RADIANCE),
-                    descriptor(NrdInputView.REFLECTION_SPECULAR_HIT_DISTANCE),
-                    descriptor(NrdInputView.REFLECTION_DIFFUSE_SH1),
-                    descriptor(NrdInputView.REFLECTION_SPECULAR_SH1),
-                    descriptor(NrdInputView.SUN_PENUMBRA));
-            this.sdr.recordGrid(commandBuffer, 5, views);
-            this.hdr.recordGrid(commandBuffer, 5, views);
-            return;
+        switch (view) {
+            case OFF -> {
+                return;
+            }
+            case PRIMARY_GRID -> recordGrid(commandBuffer, 3, primaryGrid());
+            case REFLECTION_GRID -> recordGrid(commandBuffer, 3, reflectionGrid());
+            case SIGMA_GRID -> recordGrid(commandBuffer, 2, sigmaGrid());
+            default -> recordFull(commandBuffer, descriptor(view));
         }
-        ImageDiagnosticPass.View descriptor = descriptor(view);
-        this.sdr.recordFull(commandBuffer, descriptor);
-        this.hdr.recordFull(commandBuffer, descriptor);
     }
 
-    private static ImageDiagnosticPass.View descriptor(NrdInputView view) {
+    private void recordGrid(
+            VkCommandBuffer commandBuffer,
+            int columns,
+            List<ImageDiagnosticPass.View> views) {
+        this.sdr.recordGrid(commandBuffer, columns, views);
+        this.hdr.recordGrid(commandBuffer, columns, views);
+    }
+
+    private void recordFull(
+            VkCommandBuffer commandBuffer, ImageDiagnosticPass.View view) {
+        this.sdr.recordFull(commandBuffer, view);
+        this.hdr.recordFull(commandBuffer, view);
+    }
+
+    static List<ImageDiagnosticPass.View> primaryGrid() {
+        return List.of(
+                descriptor(NrdInputView.DENOISED_OUTPUT),
+                descriptor(NrdInputView.PRIMARY_MOTION),
+                descriptor(NrdInputView.PRIMARY_NORMAL_ROUGHNESS),
+                descriptor(NrdInputView.PRIMARY_VIEW_Z),
+                descriptor(NrdInputView.PRIMARY_DIFFUSE_SH0),
+                descriptor(NrdInputView.PRIMARY_DIFFUSE_SH1),
+                descriptor(NrdInputView.PRIMARY_SPECULAR_SH0),
+                descriptor(NrdInputView.PRIMARY_SPECULAR_SH1));
+    }
+
+    static List<ImageDiagnosticPass.View> reflectionGrid() {
+        return List.of(
+                descriptor(NrdInputView.DENOISED_OUTPUT),
+                descriptor(NrdInputView.REFLECTION_MOTION),
+                descriptor(NrdInputView.REFLECTION_NORMAL_ROUGHNESS),
+                descriptor(NrdInputView.REFLECTION_VIEW_Z),
+                descriptor(NrdInputView.REFLECTION_DIFFUSE_SH0),
+                descriptor(NrdInputView.REFLECTION_DIFFUSE_SH1),
+                descriptor(NrdInputView.REFLECTION_SPECULAR_SH0),
+                descriptor(NrdInputView.REFLECTION_SPECULAR_SH1));
+    }
+
+    static List<ImageDiagnosticPass.View> sigmaGrid() {
+        return List.of(
+                descriptor(NrdInputView.DENOISED_OUTPUT),
+                descriptor(NrdInputView.SIGMA_NORMAL_ROUGHNESS),
+                descriptor(NrdInputView.SIGMA_VIEW_Z),
+                descriptor(NrdInputView.SIGMA_PENUMBRA));
+    }
+
+    static ImageDiagnosticPass.View descriptor(NrdInputView view) {
         return switch (view) {
             case DENOISED_OUTPUT -> view(OUTPUT, ImageDiagnosticPass.RADIANCE);
-            case PRIMARY_MOTION -> view(PRIMARY_MOTION, ImageDiagnosticPass.MOTION);
-            case PRIMARY_NORMAL -> view(PRIMARY_NORMAL_ROUGHNESS, ImageDiagnosticPass.PACKED_NORMAL);
-            case PRIMARY_ROUGHNESS -> view(PRIMARY_NORMAL_ROUGHNESS, ImageDiagnosticPass.PACKED_ROUGHNESS);
-            case PRIMARY_VIEW_Z -> view(PRIMARY_VIEW_Z, ImageDiagnosticPass.DEPTH);
-            case PRIMARY_DIFFUSE_RADIANCE -> view(PRIMARY_DIFFUSE, ImageDiagnosticPass.RADIANCE);
-            case PRIMARY_DIFFUSE_HIT_DISTANCE -> view(PRIMARY_DIFFUSE, ImageDiagnosticPass.HIT_A);
-            case PRIMARY_SPECULAR_RADIANCE -> view(PRIMARY_SPECULAR, ImageDiagnosticPass.RADIANCE);
-            case PRIMARY_SPECULAR_HIT_DISTANCE -> view(PRIMARY_SPECULAR, ImageDiagnosticPass.HIT_A);
-            case PRIMARY_DIFFUSE_SH1 -> view(PRIMARY_DIFFUSE_SH1, ImageDiagnosticPass.SH1);
-            case PRIMARY_SPECULAR_SH1 -> view(PRIMARY_SPECULAR_SH1, ImageDiagnosticPass.SH1);
-            case REFLECTION_MOTION -> view(REFLECTION_MOTION, ImageDiagnosticPass.MOTION);
-            case REFLECTION_NORMAL -> view(REFLECTION_NORMAL_ROUGHNESS, ImageDiagnosticPass.PACKED_NORMAL);
-            case REFLECTION_ROUGHNESS -> view(REFLECTION_NORMAL_ROUGHNESS, ImageDiagnosticPass.PACKED_ROUGHNESS);
-            case REFLECTION_VIEW_Z -> view(REFLECTION_VIEW_Z, ImageDiagnosticPass.DEPTH);
-            case REFLECTION_DIFFUSE_RADIANCE -> view(REFLECTION_DIFFUSE, ImageDiagnosticPass.RADIANCE);
-            case REFLECTION_DIFFUSE_HIT_DISTANCE -> view(REFLECTION_DIFFUSE, ImageDiagnosticPass.HIT_A);
-            case REFLECTION_SPECULAR_RADIANCE -> view(REFLECTION_SPECULAR, ImageDiagnosticPass.RADIANCE);
-            case REFLECTION_SPECULAR_HIT_DISTANCE -> view(REFLECTION_SPECULAR, ImageDiagnosticPass.HIT_A);
-            case REFLECTION_DIFFUSE_SH1 -> view(REFLECTION_DIFFUSE_SH1, ImageDiagnosticPass.SH1);
-            case REFLECTION_SPECULAR_SH1 -> view(REFLECTION_SPECULAR_SH1, ImageDiagnosticPass.SH1);
-            case SUN_PENUMBRA -> view(SUN_PENUMBRA, ImageDiagnosticPass.HIT_R);
-            case OFF, GRID -> throw new IllegalArgumentException("NRD view has no single image");
+            case PRIMARY_MOTION -> raw(PRIMARY_MOTION);
+            case PRIMARY_NORMAL_ROUGHNESS -> raw(PRIMARY_NORMAL_ROUGHNESS);
+            case PRIMARY_VIEW_Z -> raw(PRIMARY_VIEW_Z);
+            case PRIMARY_DIFFUSE_SH0 -> raw(PRIMARY_DIFFUSE_SH0);
+            case PRIMARY_DIFFUSE_SH1 -> raw(PRIMARY_DIFFUSE_SH1);
+            case PRIMARY_SPECULAR_SH0 -> raw(PRIMARY_SPECULAR_SH0);
+            case PRIMARY_SPECULAR_SH1 -> raw(PRIMARY_SPECULAR_SH1);
+            case REFLECTION_MOTION -> raw(REFLECTION_MOTION);
+            case REFLECTION_NORMAL_ROUGHNESS -> raw(REFLECTION_NORMAL_ROUGHNESS);
+            case REFLECTION_VIEW_Z -> raw(REFLECTION_VIEW_Z);
+            case REFLECTION_DIFFUSE_SH0 -> raw(REFLECTION_DIFFUSE_SH0);
+            case REFLECTION_DIFFUSE_SH1 -> raw(REFLECTION_DIFFUSE_SH1);
+            case REFLECTION_SPECULAR_SH0 -> raw(REFLECTION_SPECULAR_SH0);
+            case REFLECTION_SPECULAR_SH1 -> raw(REFLECTION_SPECULAR_SH1);
+            case SIGMA_NORMAL_ROUGHNESS -> raw(PRIMARY_NORMAL_ROUGHNESS);
+            case SIGMA_VIEW_Z -> raw(PRIMARY_VIEW_Z);
+            case SIGMA_PENUMBRA -> raw(SUN_PENUMBRA);
+            case OFF, PRIMARY_GRID, REFLECTION_GRID, SIGMA_GRID ->
+                    throw new IllegalArgumentException("NRD view has no single image");
         };
+    }
+
+    private static ImageDiagnosticPass.View raw(int source) {
+        return view(source, ImageDiagnosticPass.RAW);
     }
 
     private static ImageDiagnosticPass.View view(int source, int presentation) {

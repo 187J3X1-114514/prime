@@ -101,6 +101,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addSmall(this.prime$options.material().airGap(), this.prime$options.material().vanillaPbrPresets());
             list.addHeader(PRIME$DIAGNOSTICS_HEADER);
             list.addBig(this.prime$options.diagnostics().rendererDiagnostics());
+            list.addBig(this.prime$options.diagnostics().rawOutput());
             list.addBig(this.prime$options.diagnostics().rendererImageView());
             list.addBig(this.prime$options.diagnostics().rrInputView());
             list.addBig(this.prime$options.diagnostics().nrdInputView());
@@ -197,6 +198,7 @@ public abstract class VideoSettingsScreenMixin {
                 this.prime$options.material().vanillaPbrPresets(),
                 MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
         this.prime$refresh(this.prime$options.diagnostics().rendererDiagnostics(), false);
+        this.prime$refresh(this.prime$options.diagnostics().rawOutput(), false);
         this.prime$refresh(this.prime$options.diagnostics().rendererImageView(), RendererImageView.OFF);
         this.prime$refresh(this.prime$options.diagnostics().rrInputView(), RrInputView.OFF);
         this.prime$refresh(this.prime$options.diagnostics().nrdInputView(), NrdInputView.OFF);

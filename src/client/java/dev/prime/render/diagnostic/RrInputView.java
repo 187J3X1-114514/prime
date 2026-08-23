@@ -7,7 +7,7 @@ import java.util.Optional;
 public enum RrInputView implements ImageDiagnosticView {
     OFF("off"),
     DENOISED_OUTPUT("denoised_output"),
-    INPUT_COLOR("input_color"),
+    NOISY_INPUT("input_color"),
     DIFFUSE_ALBEDO("diffuse_albedo"),
     SPECULAR_ALBEDO("specular_albedo"),
     NORMAL("normal"),

@@ -65,22 +65,22 @@ public final class AtmospherePipeline implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final PipelineSource[] PIPELINE_SOURCES = {
         new PipelineSource(
-                "/prime/shaders/atmosphere_transmittance.comp.spv",
+                GeneratedShaderPrograms.resource("atmosphere_transmittance"),
                 "Prime atmosphere transmittance pipeline"),
         new PipelineSource(
-                "/prime/shaders/atmosphere_multi_scattering.comp.spv",
+                GeneratedShaderPrograms.resource("atmosphere_multi_scattering"),
                 "Prime atmosphere multiple scattering pipeline"),
         new PipelineSource(
-                "/prime/shaders/atmosphere_sky.comp.spv",
+                GeneratedShaderPrograms.resource("atmosphere_sky"),
                 "Prime atmosphere sky pipeline"),
         new PipelineSource(
-                "/prime/shaders/atmosphere_aerial.comp.spv",
+                GeneratedShaderPrograms.resource("atmosphere_aerial"),
                 "Prime atmosphere epipolar aerial-radiance pipeline"),
         new PipelineSource(
-                "/prime/shaders/atmosphere_aerial_transmittance.comp.spv",
+                GeneratedShaderPrograms.resource("atmosphere_aerial_transmittance"),
                 "Prime atmosphere aerial-transmittance pipeline"),
         new PipelineSource(
-                "/prime/shaders/sun_shadow_hierarchy.comp.spv",
+                GeneratedShaderPrograms.resource("sun_shadow_hierarchy"),
                 "Prime sun shadow hierarchy pipeline")
     };
 

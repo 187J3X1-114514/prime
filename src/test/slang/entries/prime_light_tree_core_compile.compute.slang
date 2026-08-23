@@ -1,5 +1,5 @@
 import "prime_abi.slang";
-import "core/light_tree_math.slang";
+import "math/light_tree.slang";
 
 [[vk::binding(0, 3)]] RWStructuredBuffer<float4> primeLightTreeProbe;
 

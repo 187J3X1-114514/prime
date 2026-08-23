@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-import "core/celestial.slang";
+import "model/atmosphere/celestial.slang";
 import "prime_abi_types.slang";
 
 static const float PRIME_PI = 3.14159265358979323846;

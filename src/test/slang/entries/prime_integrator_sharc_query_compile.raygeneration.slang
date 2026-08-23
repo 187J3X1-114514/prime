@@ -1,7 +1,11 @@
 #define PRIME_ENABLE_SER 1
 
-#include "integrator/integrator.slang"
-#include "realtime/sharc_query_policy.slang"
+import "prime_abi_types.slang";
+import "service/trace/context.slang";
+import "service/trace/surface.slang";
+import "policy/realtime/sharc_query.slang";
+import "transport/scatter/path_update.slang";
+import "transport/surface/emission.slang";
 
 [shader("raygeneration")]
 void main()

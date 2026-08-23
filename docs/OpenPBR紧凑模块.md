@@ -18,7 +18,7 @@ delta/solid-angle measure、采样分布、PDF、eta 和介质状态转换必须
 
 ## 当前覆盖
 
-`bsdf/compact/openpbr_opaque.slang` 覆盖 Prime 当前 opaque 翻译可产生的四类精确
+`bsdf/compact/opaque/{state,lobes,evaluate,sample,energy,discrete}.slang` 覆盖 Prime 当前 opaque 翻译可产生的四类精确
 OpenPBR 退化拓扑：
 
 - dielectric base：Lambert base 与 dielectric specular 的能量感知层叠；
@@ -39,7 +39,7 @@ diffuse/subsurface 混合；这属于标准一致性修复，不是模型近似�
 紧凑状态不保存完整材质、未激活的 transmission/coat/fuzz/thin-film/diffraction 状态或通用
 OpenPBR 组合树；sampling flags 作为操作参数传入，分量求值不再通过复制整个状态切换 flags。
 
-`bsdf/compact/openpbr_transmission.slang` 覆盖当前 dielectric transmission 的完整生产集合：厚介质
+`bsdf/compact/dielectric/{state,refract,evaluate,sample,energy,discrete,thin_wall,volume}.slang` 覆盖当前 dielectric transmission 的完整生产集合：厚介质
 进入/退出、thin-wall、smooth/rough GGX、全闭包与条件 reflection/transmission 采样，以及相邻介质
 和 air-gap 适配。状态只保留界面 ONB、相对/原始 IOR、两个实际使用的 microfacet、Fresnel、薄壁
 tint、体积参数和多次散射补偿；sampling flags 不再驻留在状态中。dispersion 仍由支持判断明确拒绝。
@@ -49,26 +49,29 @@ tint、体积参数和多次散射补偿；sampling flags 不再驻留在状态�
 转换必须由同一个离散事件决定。锁定 RoboCute 版本已经包含该缩放；author overlay 只提供单独
 锁定的 dielectric highlight energy compensation，两者均只作行为参考，不进入编译闭包。
 
-`bsdf/compact/openpbr_foliage.slang` 覆盖当前固定薄壁 foliage 子集：dielectric diffuse/subsurface、
+`bsdf/compact/foliage/{state,lobes,evaluate,sample,energy}.slang` 覆盖当前固定薄壁 foliage 子集：dielectric diffuse/subsurface、
 specular layer 和 15% colored thin-wall transmission，以及材质编码允许的 conductor 旁路。它复用
 紧凑 opaque substrate，只增加 transmission microfacet、tint 和能量感知的 dielectric mix 状态。
 普通 diffuse 也保留通用 OpenPBR EON 在零粗糙度时的随机数到方向映射。
 
-`bsdf/compact/openpbr_material.slang` 机械承接默认 metallic 材质初始化和 outside-IOR 查询，使生产
+`bsdf/compact/model/{material,volume}.slang` 承接默认 metallic 材质初始化和 outside-IOR 查询，使生产
 适配器不再仅为这两个边界函数导入完整 OpenPBR 组合模块。
 
-`bsdf/compact/openpbr_common.slang` 定义生产自有的 `PrimeOpenPbr*` 材质、采样、事件和两层体积栈
-ABI，但不定义通用组合树或完整 BSDF state。`openpbr_fresnel.slang` 只保留当前拓扑可达的
+`bsdf/compact/contract/{flags,material,sample,volume}.slang` 定义生产自有的 `PrimeOpenPbr*`
+材质、采样、事件和两层体积栈 ABI，但不定义通用组合树或完整 BSDF state。
+`bsdf/compact/math/fresnel.slang` 只保留当前拓扑可达的
 dielectric、conductor 和 F82 tint 公式；紧凑 Fresnel state 不携带三个 thin-film 字段，因为支持
-边界精确拒绝非零 thin-film。`openpbr_microfacet.slang` 只保留可达的 GGX 分布、采样、PDF、
-directional energy 和反射基础操作，不包含依赖完整状态的通用折射入口。
+边界精确拒绝非零 thin-film。`bsdf/compact/math/microfacet_measure.slang` 只判定离散测度，
+`microfacet_energy.slang` 只实现 directional energy 与多次散射补偿，
+`microfacet_distribution.slang` 才包含有限立体角 GGX 分布、采样、PDF 和反射基础操作。
+因此 discrete-only entry 不会仅为分类或 albedo 看见粗糙采样代码。
 
 ## 切换策略
 
 opaque、dielectric transmission 和 foliage 生产入口均已切换到紧凑状态。生产 ABI、Fresnel、
 microfacet、材质初始化和体积栈全部由 compact 所有；仓库中不再保留第二套 RoboCute 组合树。
-`verifyShaderIncludeGraph` 会拒绝恢复已删除的 `shaders/bsdf/core` 或历史 reference
-specialization，并继续检查所有现存 Slang 依赖可解析且无环。
+`verifyShaderArchitecture` 会拒绝恢复 `shaders/bsdf/core`、非 compact BSDF 或历史 reference
+specialization，并检查所有现存 Slang 依赖可解析、无环且遵守层级预算。
 
 尚未支持的 coat、fuzz、thin-film、diffraction 和非零 diffuse roughness 不进入材质翻译。是否
 增加新的精确拓扑由产品需求决定；在实现、测试和性能边界完整前不得提前暴露。

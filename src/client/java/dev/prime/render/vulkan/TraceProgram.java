@@ -20,12 +20,12 @@ final class TraceProgram implements Destroyable {
     static final int HIT_GROUP_COUNT = 6;
     private static final int FIXED_MODULE_COUNT = 6;
     private static final String[] FIXED_RESOURCES = {
-        "/prime/shaders/world.rmiss.spv",
-        "/prime/shaders/shadow.rmiss.spv",
-        "/prime/shaders/world.rchit.spv",
-        "/prime/shaders/world.rahit.spv",
-        "/prime/shaders/shadow.rahit.spv",
-        "/prime/shaders/shadow.rchit.spv"
+        GeneratedShaderPrograms.resource("world_rmiss"),
+        GeneratedShaderPrograms.resource("shadow_rmiss"),
+        GeneratedShaderPrograms.resource("world_rchit"),
+        GeneratedShaderPrograms.resource("world_rahit"),
+        GeneratedShaderPrograms.resource("shadow_rahit"),
+        GeneratedShaderPrograms.resource("shadow_rchit")
     };
     private static final int RECORD_DATA_SIZE = Integer.BYTES;
 

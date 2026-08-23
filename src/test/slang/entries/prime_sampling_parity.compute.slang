@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-import "core/sampling.slang";
+import "math/sampling.slang";
 
 static const uint PRIME_SAMPLING_INPUT_WORDS = 2;
 static const uint PRIME_SAMPLING_OUTPUT_WORDS = 3;

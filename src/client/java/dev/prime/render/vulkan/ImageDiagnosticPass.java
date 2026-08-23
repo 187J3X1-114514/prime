@@ -70,12 +70,20 @@ public final class ImageDiagnosticPass implements Destroyable {
 
     public static ImageDiagnosticPass createSdr(
             VulkanContext context, VulkanImage output, VulkanImage... sources) {
-        return create(context, output, "/prime/shaders/image_diagnostic_rgba8.comp.spv", sources);
+        return create(
+                context,
+                output,
+                GeneratedShaderPrograms.resource("image_diagnostic_rgba8"),
+                sources);
     }
 
     public static ImageDiagnosticPass createHdr(
             VulkanContext context, VulkanImage output, VulkanImage... sources) {
-        return create(context, output, "/prime/shaders/image_diagnostic_rgba16.comp.spv", sources);
+        return create(
+                context,
+                output,
+                GeneratedShaderPrograms.resource("image_diagnostic_rgba16"),
+                sources);
     }
 
     private static ImageDiagnosticPass create(

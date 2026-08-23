@@ -1,5 +1,5 @@
 
-import "core/atmosphere_epipolar.slang";
+import "model/atmosphere/epipolar.slang";
 
 
 

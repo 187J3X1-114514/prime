@@ -1,8 +1,17 @@
 #include "core/prime_test_abi.slang"
-import "bsdf/adapter/transmission_ggx_energy.slang";
-import "bsdf/compact/openpbr_common.slang";
-import "bsdf/compact/openpbr_foliage.slang";
-import "bsdf/compact/openpbr_material.slang";
+import "service/bsdf/support/transmission_energy.slang";
+import "bsdf/compact/foliage/contract.slang";
+import "bsdf/compact/foliage/lobes.slang";
+import "bsdf/compact/foliage/state.slang";
+import "bsdf/compact/foliage/evaluate.slang";
+import "bsdf/compact/foliage/sample.slang";
+import "bsdf/compact/foliage/energy.slang";
+import "bsdf/compact/contract/material.slang";
+
+import "bsdf/compact/contract/flags.slang";
+import "bsdf/compact/contract/volume.slang";
+import "bsdf/compact/contract/sample.slang";
+import "bsdf/compact/model/material.slang";
 
 static const uint PRIME_COMPACT_FOLIAGE_INPUT_WORDS = 4u;
 static const float PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT = 0.15;

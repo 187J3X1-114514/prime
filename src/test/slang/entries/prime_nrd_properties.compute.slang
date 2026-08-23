@@ -1,11 +1,15 @@
 
 #include "core/prime_test_abi.slang"
 import "core/numerical.slang";
-import "core/nrd_common.slang";
-import "material/default_material.slang";
-import "core/nrd_sh.slang";
-import "integrator/integration_result.slang";
-import "integrator/path_contract.slang";
+import "math/direction.slang";
+import "service/reconstruct/nrd/common.slang";
+import "model/material/defaults.slang";
+import "service/reconstruct/nrd/sh.slang";
+import "contract/path.slang";
+
+import "contract/realtime/resolved.slang";
+import "service/reconstruct/ordinary.slang";
+import "service/reconstruct/resolved.slang";
 
 static const uint PRIME_NRD_INPUT_WORDS = 4u;
 static const uint PRIME_NRD_WITNESS_WORDS = 9u;
@@ -52,7 +56,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     float4 third = asfloat(primeTestInput[inputOffset + 3u]);
     uint kind = control.x;
     uint mask = 0u;
-    PrimeIntegrationResult reflectionOnly = primeEmptyIntegrationResult();
+    PrimeResolvedSample reflectionOnly =
+            primeResolveOrdinarySample(primeEmptyOrdinarySample());
     reflectionOnly.transparentPrimary = true;
     reflectionOnly.transparentReflectionOnly = true;
     reflectionOnly.reflectionGuides.primaryHitKind = PRIME_HIT_SURFACE;
@@ -78,7 +83,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
                     reflectionOnly, true, false, false).primaryDistance != -1.0) {
         mask |= PRIME_TEST_FAILURE_STATE;
     }
-    PrimeIntegrationResult capturedReflection = primeEmptyIntegrationResult();
+    PrimeResolvedSample capturedReflection =
+            primeResolveOrdinarySample(primeEmptyOrdinarySample());
     capturedReflection.reflectionGuides.primaryPosition = float3(2.0, 3.0, 4.0);
     float4 unavailableReflection =
             primeCapturedReflectionPreviousVirtualPosition(capturedReflection, false);

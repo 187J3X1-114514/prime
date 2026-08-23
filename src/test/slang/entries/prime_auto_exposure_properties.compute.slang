@@ -1,7 +1,7 @@
 #include "core/prime_test_abi.slang"
-import "core/auto_exposure.slang";
-import "core/color_space.slang";
-import "post/display_transform.slang";
+import "service/reconstruct/auto_exposure.slang";
+import "math/color_space.slang";
+import "service/reconstruct/display.slang";
 
 static const uint PRIME_AUTO_EXPOSURE_INPUT_WORDS = 2;
 static const uint PRIME_AUTO_EXPOSURE_WITNESS_WORDS = 4;

@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan.nrd;
 
+import dev.prime.render.vulkan.GeneratedShaderPrograms;
 import dev.prime.render.post.nrd.NrdCameraTransform;
 import dev.prime.render.post.nrd.NrdFrameInput;
 import dev.prime.render.post.nrd.NrdFramePlan;
@@ -171,7 +172,10 @@ public final class NrdDenoiser implements Destroyable {
             linearSampler = createSampler(context, true, debugPrefix + " linear-clamp sampler");
             pipelines = createPipelines(context, description, nearestSampler, linearSampler);
             inputPreparationPipeline = NrdInputPreparationPass.create(
-                    context, images, "/prime/shaders/nrd_motion.comp.spv", debugPrefix);
+                    context,
+                    images,
+                    GeneratedShaderPrograms.resource("nrd_motion"),
+                    debugPrefix);
             composite = NrdCompositePass.create(
                     context, output, stableAccumulation, images, atmosphere);
             return new NrdDenoiser(

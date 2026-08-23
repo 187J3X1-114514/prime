@@ -1,6 +1,7 @@
 #include "core/prime_test_abi.slang"
-import "material/medium_boundary.slang";
-import "bsdf/bsdf_common.slang";
+import "model/material/medium_boundary.slang";
+import "service/bsdf/contract/sample.slang";
+import "service/bsdf/support/sanitization.slang";
 
 static const uint PRIME_BSDF_CONTRACT_INPUT_WORDS = 4;
 static const uint PRIME_BSDF_CONTRACT_OUTPUT_WORDS = 5;

@@ -1,14 +1,17 @@
 #include "core/prime_test_abi.slang"
-import "bsdf/compact/openpbr_common.slang";
-import "bsdf/bsdf_common.slang";
-import "core/color_space.slang";
-import "core/light_tree_math.slang";
-import "core/transport_math.slang";
-import "core/packed_geometry.slang";
-import "integrator/path_contract.slang";
-import "integrator/transparent_guide_coincidence.slang";
-import "material/transparent_material.slang";
-import "realtime/wavefront_medium.slang";
+import "service/bsdf/contract/sample.slang";
+import "math/color_space.slang";
+import "math/light_tree.slang";
+import "math/transport.slang";
+import "math/packed_geometry.slang";
+import "transport/guide/coincidence.slang";
+import "model/material/transparent.slang";
+import "state/realtime/medium.slang";
+
+import "bsdf/compact/contract/volume.slang";
+import "contract/path.slang";
+import "policy/transport/light_family.slang";
+import "policy/transport/path.slang";
 
 static const uint PRIME_TRANSPORT_INPUT_WORDS = 6;
 static const uint PRIME_TRANSPORT_WITNESS_WORDS = 10;

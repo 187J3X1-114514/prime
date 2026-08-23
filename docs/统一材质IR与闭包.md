@@ -6,13 +6,14 @@ Prime 的材质数据只能沿以下方向流动：
 Minecraft 表面语义 / LabPBR / 默认值
   → MaterialRecipe
   → PrimeMaterialSample
-  → PrimeCompiledClosure
-  → 紧凑 OpenPBR BSDF
+  → opaque / dielectric / foliage 紧凑状态
+  → traits / evaluate / sample / albedo operation dispatcher
 ```
 
 源格式只在输入适配层出现。命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
 的规范语义；它们不得根据 LabPBR 字节、纹理来源或 roughness 猜测材质类别和离散事件。
-Prime 的 OpenPBR ABI、公式、翻译和专用状态均位于 `shaders/bsdf/compact` 与 adapter；
+Prime 的 OpenPBR ABI、公式和专用状态位于 `shaders/bsdf/compact`，材质翻译与窄适配位于
+`shaders/model/material` 和 `shaders/service/bsdf`；
 固定第三方参考仅用于仓库外核对，不存在可编译的本地参考闭包。
 
 ## CPU 配方与图元编码
@@ -136,10 +137,11 @@ water/thin/decorative、Fresnel code 相同且颜色满足既有兼容条件时�
 分辨率以下的切割反射，不增加几何、descriptor、闭包或额外光线迭代。关闭后退化为规范单
 边界，而不会恢复重叠 authored faces。
 
-## 闭包测度
+## 闭包操作与测度
 
-Prime 在紧凑 OpenPBR state 初始化后编译 `PrimeCompiledClosure`，并附带
-`PrimeClosureTraits { measureMask, eventMask }`。measure 只有：
+Prime 不保存通用 compiled-closure 对象。每个 family 直接构造窄紧凑 state；traits、evaluate、
+sample 与 albedo 由相互独立的 operation dispatcher 暴露，调用方只导入所需操作。
+`PrimeClosureTraits { measureMask, eventMask }` 的 measure 只有：
 
 - `PRIME_MEASURE_SOLID_ANGLE`：可由有限立体角 PDF 求值并参与 NEE；
 - `PRIME_MEASURE_DISCRETE`：离散镜面事件。

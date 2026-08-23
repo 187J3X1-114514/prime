@@ -24,7 +24,8 @@ final class NoisyCompositePass implements Destroyable {
     private static final int IMAGE_COUNT = 8;
     private static final int PUSH_SIZE = 24;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final String SHADER = "/prime/shaders/noisy_composite.comp.spv";
+    private static final String SHADER =
+            GeneratedShaderPrograms.resource("noisy_composite");
 
     private final VulkanContext context;
     private final long descriptorSetLayout;

@@ -1,8 +1,8 @@
 #define SHARC_UPDATE 0
 #define SHARC_QUERY 0
 
-import "material/material.slang";
-#include "lighting/sharc.slang"
+import "service/material/surface.slang";
+#include "service/sharc/vendor_bridge.h"
 
 [shader("compute")]
 [numthreads(1, 1, 1)]

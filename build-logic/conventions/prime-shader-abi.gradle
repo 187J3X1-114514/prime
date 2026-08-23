@@ -1,5 +1,6 @@
 def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
 def shaderAbiSlangRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/slang')
+def shaderProgramJavaRoot = layout.buildDirectory.dir('generated/sources/shaderPrograms/java')
 def compiledSlangShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
 def compiledSlangTestShaderRoot = layout.buildDirectory.dir('generated/testSlangShaders')
 
@@ -72,6 +73,13 @@ def generateShaderAbi = tasks.register(
 	schemaFile = file('shaders/abi.json')
 	javaOutputDirectory = shaderAbiJavaRoot
 	slangOutputDirectory = shaderAbiSlangRoot
+}
+
+def shaderProgramManifest = layout.projectDirectory.file('shaders/programs.json')
+def generateShaderPrograms = tasks.register(
+        'generateShaderPrograms', primeShaderTaskTypes.generatePrograms) {
+	manifestFile = shaderProgramManifest
+	javaOutputDirectory = shaderProgramJavaRoot
 }
 
 def shaderIncludeReport = layout.buildDirectory.file(
@@ -236,23 +244,78 @@ def compileSlangTestShaders = tasks.register(
 	spirvValidator = resolveVulkanTool('spirv-val')
 }
 
+def productionShaderIncludes = [
+		file('shaders'),
+		file('third_party/sharc/include'),
+		shaderAbiSlangRoot.get().asFile
+]
+def productionShaderDebug = providers.gradleProperty('primeShaderFullDebug')
+		.map { value -> value.toBoolean() ? '-g2' : '-g1' }
+		.orElse('-g2')
+def productionSlangCompiler = providers.gradleProperty('primeSlangCompiler')
+		.orElse(resolveVulkanTool('slangc'))
+def productionSpirvValidator = resolveVulkanTool('spirv-val')
+def compilerGate = gradle.sharedServices.registerIfAbsent(
+		'primeSlangCompilerGate', primeShaderTaskTypes.compilerGate) {
+	maxParallelUsages = slangCompilerProcesses
+}
+
+def shaderArchitectureReport = layout.buildDirectory.file(
+		'reports/prime-shaders/architecture.txt')
+def verifyShaderArchitecture = tasks.register(
+		'verifyShaderArchitecture', primeShaderTaskTypes.verifyArchitecture) {
+	group = 'verification'
+	description = 'Verifies the manifest and production Slang visibility graph.'
+	dependsOn generateShaderAbi
+	shaderDirectory = shaderSourceRoot
+	includeDirectories.from(sharcIncludeRoot, shaderAbiSlangRoot)
+	programManifest = shaderProgramManifest
+	closureBudget = layout.projectDirectory.file('shaders/closure-budgets.json')
+	reportFile = shaderArchitectureReport
+}
+def programManifest = new groovy.json.JsonSlurper().parse(shaderProgramManifest.asFile)
+def compiledProgramFiles = objects.fileCollection()
+programManifest.artifacts.each { String id, artifact ->
+	def taskName = 'compileSlangProgram' + id.split('_').collect { part ->
+		part.capitalize()
+	}.join('')
+	def source = file(artifact.source)
+	def output = layout.buildDirectory.file(
+			"shaderPrograms/${id}/${artifact.resource}")
+	def compileProgram = tasks.register(
+			taskName, primeShaderTaskTypes.compileProgram) {
+		group = 'build'
+		description = "Compiles the ${id} production Slang artifact."
+		dependsOn generateShaderAbi, verifyRoboCuteReference,
+				verifyShaderArchitecture, 'verifySlangToolchain'
+		usesService compilerGate
+		sourceFile = source
+		shaderDependencies.from(objects.newInstance(
+				primeShaderTaskTypes.dependencyClosure, source, productionShaderIncludes))
+		includeDirectories.from(productionShaderIncludes)
+		artifactId = id
+		stage = artifact.stage
+		definitions = artifact.definitions ?: []
+		slangCompiler = productionSlangCompiler
+		slangToolchainVersion = providers.gradleProperty('primeSlangVersion')
+		spirvValidator = productionSpirvValidator
+		debugLevel = productionShaderDebug
+		canonicalWorkspacePath = rootProject.layout.projectDirectory.asFile.canonicalPath
+		outputFile = output
+		dependencyFile = layout.buildDirectory.file(
+				"shaderPrograms/${id}/${artifact.resource}.d")
+		metricsFile = layout.buildDirectory.file(
+				"reports/prime-shaders/programs/${id}.json")
+	}
+	compiledProgramFiles.from(compileProgram.flatMap { it.outputFile })
+}
+
 def compileSlangShaders = tasks.register(
-		'compileSlangShaders', primeShaderTaskTypes.compileSlang) {
-	dependsOn generateShaderAbi, verifyRoboCuteReference, verifyShaderIncludeGraph, 'verifySlangToolchain'
-	sourceDirectory = file('shaders')
-	includeDirectories.from(
-			file('shaders'),
-			file('third_party/sharc/include'),
-			shaderAbiSlangRoot)
+		'compileSlangShaders', primeShaderTaskTypes.assemblePrograms) {
+	group = 'build'
+	description = 'Publishes independently compiled production Slang artifacts.'
+	programs.from(compiledProgramFiles)
 	outputDirectory = compiledSlangShaderRoot
-	debugLevel = providers.gradleProperty('primeShaderFullDebug')
-			.map { value -> value.toBoolean() ? '-g2' : '-g1' }
-			.orElse('-g2')
-	maxCompilerProcesses = slangCompilerProcesses
-	compilerGateRoot = rootProject.layout.projectDirectory
-	slangCompiler = providers.gradleProperty('primeSlangCompiler')
-			.orElse(resolveVulkanTool('slangc'))
-	spirvValidator = resolveVulkanTool('spirv-val')
 }
 
 def verifySlangRayPayloadAbi = tasks.register(
@@ -315,6 +378,7 @@ def verifyGeneratedSlangAbi = tasks.register(
 }
 
 sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
+sourceSets.client.java.srcDir(files(shaderProgramJavaRoot).builtBy(generateShaderPrograms))
 sourceSets.client.resources.srcDir(files(compiledSlangShaderRoot).builtBy(compileSlangShaders))
 sourceSets.test.compileClasspath += sourceSets.client.output
 sourceSets.test.runtimeClasspath += sourceSets.client.output

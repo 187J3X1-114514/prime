@@ -1,13 +1,6 @@
 
-import "core/sun_shadow_hierarchy.slang";
-
-
-
-static const int SUN_SHADOW_CASCADE_COUNT = 5;
-static const float SUN_SHADOW_MAX_DISTANCE_METERS = 2048.0;
-static const float SUN_SHADOW_DEPTH_BIAS_METERS = 0.02;
-static const float SUN_SHADOW_CASCADE_RADIUS_TEXELS = 254.0;
-static const float SUN_SHADOW_TRAVERSAL_EPSILON = 1.0e-5;
+import "math/sun_shadow_hierarchy.slang";
+import "service/atmosphere/epipolar_shadow.slang";
 
 struct PrimeProfileCase {
     float4 cameraDirection;
@@ -19,30 +12,20 @@ struct PrimeProfileCase {
 
 [[vk::binding(1, 0)]] RWStructuredBuffer<float> primeProfileOutput;
 
-struct PrimeTestAtmospherePush {
-    float4 shadowCameraEnabled;
-};
-
-static const PrimeTestAtmospherePush atmospherePush =
-        PrimeTestAtmospherePush(float4(0.0, 0.0, 0.0, 1.0));
 groupshared uint primeProfileCaseIndex;
 
-float sunShadowTexelSize(int cascade) {
-    return cascade == 0 ? 0.5
-            : (cascade == 1 ? 1.0
-            : (cascade == 2 ? 2.0
-            : (cascade == 3 ? 4.0 : 8.0)));
-}
+struct PrimeTestSunShadowProfileSource : IPrimeSunShadowProfileSource {
+    bool enabled() { return true; }
 
-float2 sunShadowHierarchyRange(
-        int cascade, int level, int2 worldNode) {
-    float blocker = primeProfileInput
-            [primeProfileCaseIndex]
-            .rayBlocker.w;
-    return float2(blocker);
-}
+    float texelSize(int cascade) {
+        return sunShadowTexelSize(cascade);
+    }
 
-#include "core/atmosphere_epipolar_shadow.slang"
+    float2 hierarchyRange(int cascade, int level, int2 worldNode) {
+        float blocker = primeProfileInput[primeProfileCaseIndex].rayBlocker.w;
+        return float2(blocker);
+    }
+};
 
 [numthreads(128, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID, uint3 groupId : SV_GroupID, uint groupIndex : SV_GroupIndex) {
@@ -50,19 +33,15 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint3 groupThreadId : SV
     PrimeProfileCase value = primeProfileInput[caseIndex];
     if (groupIndex == 0) {
         primeProfileCaseIndex = caseIndex;
-        sunShadowProfileBasisU = float3(1.0, 0.0, 0.0);
-        sunShadowProfileBasisV = float3(0.0, 1.0, 0.0);
-        sunShadowProfileDirectionToSun = float3(0.0, 0.0, 1.0);
-        sunShadowProfileCamera = value.cameraDirection.xy;
-        sunShadowProfileDirection = normalize(value.cameraDirection.zw);
-        sunShadowProfileDirectionMax = max(
-                abs(sunShadowProfileDirection.x),
-                abs(sunShadowProfileDirection.y));
-        sunShadowProfileCameraDepth = value.intervalDepth.z;
+        primeInitializeSunShadowProfile(
+                float3(0.0, 0.0, 1.0),
+                float3(value.cameraDirection.xy, value.intervalDepth.z),
+                float3(normalize(value.cameraDirection.zw), 0.0));
     }
     GroupMemoryBarrierWithGroupSync();
     if (groupIndex < SUN_SHADOW_CASCADE_COUNT) {
-        sunShadowBuildProfileCascade(int(groupIndex));
+        sunShadowBuildProfileCascade(
+                PrimeTestSunShadowProfileSource(), int(groupIndex));
     }
     GroupMemoryBarrierWithGroupSync();
     if (groupIndex == 0) {
@@ -71,14 +50,15 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint3 groupThreadId : SV
                 cascade < SUN_SHADOW_CASCADE_COUNT;
                 ++cascade) {
             primeProfileOutput[outputBase + cascade] =
-                    float(sunShadowProfileCounts[cascade]);
+                    float(primeSunShadowProfileCount(cascade));
         }
-        int last = sunShadowProfileCounts[0] - 1;
+        int last = primeSunShadowProfileCount(0) - 1;
         primeProfileOutput[outputBase + 5] = last >= 0
-                ? sunShadowProfileEntries[last].x
+                ? primeSunShadowProfileEntry(last).x
                 : -1.0;
         primeProfileOutput[outputBase + 6] =
                 localSunVisibilityInterval(
+                        PrimeTestSunShadowProfileSource(),
                         value.rayBlocker.xyz,
                         value.intervalDepth.x,
                         value.intervalDepth.y);

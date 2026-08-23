@@ -33,7 +33,7 @@ final class VulkanSharedPrograms implements AutoCloseable {
             this.displayTransform =
                 SharedComputeProgram.create(this.context, "common display-transform", 28,
                     new int[] {SAMPLED_IMAGE, STORAGE_IMAGE, STORAGE_BUFFER, STORAGE_IMAGE},
-                    new String[] {"/prime/shaders/fsr_display.comp.spv"});
+                    new String[] {GeneratedShaderPrograms.resource("fsr_display")});
         }
         return this.displayTransform.retain();
     }
@@ -44,8 +44,8 @@ final class VulkanSharedPrograms implements AutoCloseable {
             this.autoExposure = SharedComputeProgram.create(this.context, "auto-exposure", 16,
                 new int[] {
                     SAMPLED_IMAGE, STORAGE_IMAGE, STORAGE_IMAGE, STORAGE_BUFFER, STORAGE_BUFFER},
-                new String[] {"/prime/shaders/auto_exposure_histogram.comp.spv",
-                    "/prime/shaders/auto_exposure_update.comp.spv"});
+                new String[] {GeneratedShaderPrograms.resource("auto_exposure_histogram"),
+                    GeneratedShaderPrograms.resource("auto_exposure_update")});
         }
         return this.autoExposure.retain();
     }
@@ -58,7 +58,7 @@ final class VulkanSharedPrograms implements AutoCloseable {
                     "HDR presentation",
                     16,
                     new int[] {SAMPLED_IMAGE, SAMPLED_IMAGE, SAMPLED_IMAGE, STORAGE_IMAGE},
-                    new String[] {"/prime/shaders/hdr_present.comp.spv"});
+                    new String[] {GeneratedShaderPrograms.resource("hdr_present")});
         }
         return this.hdrPresent.retain();
     }

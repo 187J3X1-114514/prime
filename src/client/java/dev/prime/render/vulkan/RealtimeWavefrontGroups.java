@@ -1,7 +1,5 @@
 package dev.prime.render.vulkan;
 
-import java.util.List;
-
 /** Shared two-stage group topology with execution-mode-specific steady modules. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
@@ -30,43 +28,19 @@ final class RealtimeWavefrontGroups {
     private RealtimeWavefrontGroups() {}
 
     static RaygenSchedule standardSchedule(String suffix) {
-        String prefix = "/prime/shaders/realtime_wavefront_";
-        return RaygenSchedule.of(List.of(
-                prefix + "head" + suffix,
-                prefix + "primary_direct" + suffix,
-                prefix + "two_stage_primary" + suffix,
-                prefix + "primary_chain" + suffix,
-                prefix + "primary_landing" + suffix,
-                prefix + "primary_landing_primary" + suffix,
-                prefix + "primary_landing_secondary" + suffix,
-                prefix + "primary_landing_advance" + suffix,
-                prefix + "steady_classify" + suffix,
-                prefix + "steady_none" + suffix,
-                prefix + "steady_sun" + suffix,
-                prefix + "steady_area" + suffix,
-                prefix + "two_stage_transparent_resolve" + suffix,
-                prefix + "resolve" + suffix), MODULES, CONTROLS);
+        return GeneratedShaderPrograms.schedule("realtime.standard." + mode(suffix));
     }
 
     static RaygenSchedule sharcSchedule(String suffix) {
-        String prefix = "/prime/shaders/realtime_wavefront_";
-        return RaygenSchedule.of(List.of(
-                prefix + "head" + suffix,
-                prefix + "primary_direct" + suffix,
-                prefix + "two_stage_primary" + suffix,
-                prefix + "primary_chain" + suffix,
-                prefix + "primary_landing" + suffix,
-                prefix + "primary_landing_primary" + suffix,
-                prefix + "primary_landing_secondary" + suffix,
-                prefix + "primary_landing_advance" + suffix,
-                prefix + "sharc_steady_classify" + suffix,
-                prefix + "sharc_steady_none" + suffix,
-                prefix + "sharc_steady_sun" + suffix,
-                prefix + "sharc_steady_area" + suffix,
-                prefix + "two_stage_transparent_resolve" + suffix,
-                prefix + "resolve" + suffix),
-                MODULES,
-                CONTROLS);
+        return GeneratedShaderPrograms.schedule("realtime.sharc." + mode(suffix));
+    }
+
+    private static String mode(String suffix) {
+        return switch (suffix) {
+            case ".rgen.spv" -> "scalar";
+            case "_ser.rgen.spv" -> "ser";
+            default -> throw new IllegalArgumentException("Unknown wavefront shader suffix: " + suffix);
+        };
     }
 
     static int module(int group) {

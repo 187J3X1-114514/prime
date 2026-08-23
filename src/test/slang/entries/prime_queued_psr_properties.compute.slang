@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-import "core/queued_psr_math.slang";
+import "math/queued_psr.slang";
 
 static const uint PRIME_PSR_INPUT_WORDS = 21;
 static const uint PRIME_PSR_WITNESS_WORDS = 6;

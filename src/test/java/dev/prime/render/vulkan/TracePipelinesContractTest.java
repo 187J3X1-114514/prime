@@ -498,6 +498,11 @@ final class TracePipelinesContractTest {
 
     private static String wavefrontShader(
             String renderer, String stage, String suffix) {
+        if ("_ser".equals(suffix)
+                && ("resolve".equals(stage)
+                        || ("realtime".equals(renderer) && "primary_direct".equals(stage)))) {
+            suffix = "";
+        }
         return renderer + "_wavefront_" + stage + suffix + ".rgen.spv";
     }
 

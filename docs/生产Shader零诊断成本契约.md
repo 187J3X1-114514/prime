@@ -7,10 +7,10 @@
 数值观察状态只存在于专用测试 shader entry point。关闭图像诊断时不创建诊断图像资源，也不提交
 诊断 GPU 工作。
 
-这项约束以编译后的生产 SPIR-V 为准，不以运行时开关关闭某个分支视为零成本。生产 entry 的
-descriptor/push-constant 反射、ray payload 和 wavefront stride 门禁不得出现诊断字段；测试
-entry 显式创建启用的数值观察状态，生产 adapter 只创建编译期恒为禁用的观察值。生产 SPIR-V
-不得保留对应状态、分类指令或分支。
+这项约束首先由源码可达性保证，再以编译后的生产 SPIR-V 验收；不以运行时开关或 `-O2` 删除
+某个分支视为零成本。数值观察类型只存在于 `src/test/slang`，生产 adapter 不创建、传递或提交
+任何观察值。除独立 `image_diagnostic_*` 显示 entry 外，生产 entry 的传递闭包不得触达诊断或
+测试模块；descriptor/push-constant、ray payload 和 wavefront stride 也不得出现诊断字段。
 
 ## 图像诊断域
 

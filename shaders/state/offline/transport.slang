@@ -1,0 +1,81 @@
+#language slang 2026
+module "state/offline/transport.slang";
+
+import "prime_abi_types.slang";
+import "policy/runtime/config.slang";
+import "state/realtime/medium.slang";
+import "state/offline/contract.slang";
+import "bsdf/compact/contract/volume.slang";
+
+public uint primePackOfflinePathControl(PathState path) {
+    return (min(path.bounce, PRIME_OFFLINE_PATH_BYTE_MASK)
+                    << PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
+            | ((path.flags & PRIME_OFFLINE_PATH_FLAGS_MASK)
+                    << PRIME_OFFLINE_PATH_FLAGS_SHIFT);
+}
+
+public PrimeOfflineTransportRecord primeMakeOfflineTransport(
+        PathState path,
+        PrimeOpenPbrVolumeStack volumeStack,
+        bool enabled) {
+    PrimeOfflineTransportRecord record;
+    record.physicalOriginAndPreviousBsdfPdf =
+            float4(path.physicalOrigin, path.previousBsdfPdf);
+    record.sourceAndPathControl = uint4(
+            path.sourcePrimitive,
+            path.sourceReserved,
+            primePackOfflinePathControl(path));
+    uint control = enabled ? PRIME_OFFLINE_CONTROL_ACTIVE : 0u;
+    control |= min(volumeStack.count, 2u) << PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT;
+    record.rayDirectionAndControl =
+            float4(path.rayDirection, asfloat(control));
+    record.throughput = float4(path.throughput, path.etaScale);
+    record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
+    record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
+    return record;
+}
+
+public PathState primeOfflinePath(
+        uint2 pixel,
+        PrimeOfflineTransportRecord record,
+        uint previousLightNormal) {
+    PathState path;
+    uint pathControl = record.sourceAndPathControl.w;
+    path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
+    path.bounce = (pathControl >> PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
+            & PRIME_OFFLINE_PATH_BYTE_MASK;
+    path.sourcePrimitive = record.sourceAndPathControl.xy;
+    path.sourceReserved = record.sourceAndPathControl.z;
+    path.sampleDimension = 0u;
+    path.rayDirection = record.rayDirectionAndControl.xyz;
+    path.flags = (pathControl >> PRIME_OFFLINE_PATH_FLAGS_SHIFT)
+            & PRIME_OFFLINE_PATH_FLAGS_MASK;
+    path.throughput = record.throughput.xyz;
+    path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
+    path.etaScale = record.throughput.w;
+    path.previousLightNormal = previousLightNormal;
+    path.pixel = pixel;
+    path.sampleIndex = primeSampleIndex();
+    path.sampleEpoch = primeSampleEpoch();
+    path.previousSharcRoughness = 0.0;
+    path.previousSharcEvent = 0u;
+    return path;
+}
+
+public PrimeOpenPbrVolumeStack primeOfflineVolumeStack(
+        PrimeOfflineTransportRecord record) {
+    PrimeOpenPbrVolumeStack stack;
+    stack.values[0] = primeUnpackWavefrontMedium(record.medium0);
+    stack.values[1] = primeUnpackWavefrontMedium(record.medium1);
+    uint control = asuint(record.rayDirectionAndControl.w);
+    stack.count = min(
+            (control >> PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT)
+                    & PRIME_OFFLINE_CONTROL_MEDIUM_MASK,
+            2u);
+    return stack;
+}
+
+public bool primeOfflineIsActive(PrimeOfflinePathRecord record) {
+    return (asuint(record.transport.rayDirectionAndControl.w)
+            & PRIME_OFFLINE_CONTROL_ACTIVE) != 0u;
+}

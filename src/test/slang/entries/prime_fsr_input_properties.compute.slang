@@ -1,8 +1,8 @@
 
 #include "core/prime_test_abi.slang"
-import "core/nrd_common.slang";
-import "material/default_material.slang";
-import "post/fsr_input.slang";
+import "service/reconstruct/nrd/common.slang";
+import "model/material/defaults.slang";
+import "service/reconstruct/fsr_input.slang";
 import "prime_fsr_contract.slang";
 
 static const uint PRIME_FSR_INPUT_WORDS = 3u;

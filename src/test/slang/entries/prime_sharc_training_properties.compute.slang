@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-#include "lighting/sharc_training_core.slang"
+#include "service/sharc/training_core.h"
 
 static const uint PRIME_SHARC_TRAINING_INPUT_WORDS = 4u;
 static const uint PRIME_SHARC_TRAINING_WITNESS_WORDS = 4u;

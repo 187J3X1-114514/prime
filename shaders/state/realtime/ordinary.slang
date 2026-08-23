@@ -1,0 +1,218 @@
+#language slang 2026
+module "state/realtime/ordinary.slang";
+
+import "prime_abi_types.slang";
+import "contract/realtime/guide.slang";
+import "math/queued_psr.slang";
+import "policy/runtime/config.slang";
+import "math/sampling.slang";
+import "math/transport.slang";
+import "state/realtime/medium.slang";
+import "state/realtime/contract.slang";
+import "state/realtime/transport.slang";
+import "model/realtime/transport.slang";
+import "bsdf/compact/contract/volume.slang";
+import "contract/realtime/ordinary.slang";
+import "contract/realtime/transparent.slang";
+
+public PathState primeWavefrontPath(
+        uint2 pixel, PrimeWavefrontTransportRecord record) {
+    PathState path;
+    uint pathControl = record.sourceAndPathControl.w;
+    path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
+    path.bounce = (pathControl >> PRIME_WAVEFRONT_BOUNCE_SHIFT)
+            & PRIME_WAVEFRONT_BYTE_MASK;
+    path.sourcePrimitive = record.sourceAndPathControl.xy;
+    path.sourceReserved = record.sourceAndPathControl.z;
+    uint denoiserControl =
+            asuint(record.rayDirectionAndDenoiserControl.w);
+    path.sampleDimension =
+            (denoiserControl & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u
+            ? 1u
+            : 0u;
+    path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
+    path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
+            & PRIME_WAVEFRONT_PATH_FLAGS_MASK;
+    path.throughput = record.throughputAndSharcState.xyz;
+    path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
+    path.etaScale = primeUnpackWavefrontEtaScale(
+            (pathControl >> PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
+                    & PRIME_WAVEFRONT_ETA_SCALE_MASK);
+    path.previousLightNormal = 0u;
+    path.pixel = pixel;
+    path.sampleIndex = primeSampleIndex();
+    path.sampleEpoch = primeSampleEpoch();
+    uint packedSharc = asuint(record.throughputAndSharcState.w)
+            >> PRIME_WAVEFRONT_SHARC_SHIFT;
+    path.previousSharcRoughness = float(
+            packedSharc & PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK)
+            / float(PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK);
+    path.previousSharcEvent = packedSharc >> PRIME_WAVEFRONT_SHARC_EVENT_SHIFT;
+    return path;
+}
+
+public PrimeOpenPbrVolumeStack primeWavefrontVolumeStack(
+        PrimeWavefrontTransportRecord record) {
+    PrimeOpenPbrVolumeStack volumeStack;
+    volumeStack.values[0] = primeUnpackWavefrontMedium(record.medium0);
+    volumeStack.values[1] = primeUnpackWavefrontMedium(record.medium1);
+    uint denoiserControl =
+            asuint(record.rayDirectionAndDenoiserControl.w);
+    volumeStack.count = min(
+            (denoiserControl >> PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT)
+                    & PRIME_WAVEFRONT_MEDIUM_COUNT_MASK,
+            2u);
+    return volumeStack;
+}
+
+public PrimeDenoiserState primeWavefrontDenoiserState(
+        uint denoiserControl,
+        PrimeOrdinarySample result) {
+    PrimeDenoiserState state;
+    state.hasPrimarySurface = true;
+    state.reachedSolidAngle =
+            (denoiserControl & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
+    state.diffuseAlbedoProduct = result.guides.primaryAlbedo;
+    state.specularAlbedoProduct = result.guides.primarySpecularAlbedo;
+    state.diffusePath =
+            (denoiserControl & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
+    state.primaryBounce =
+            (denoiserControl >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
+            & PRIME_WAVEFRONT_BYTE_MASK;
+    return state;
+}
+
+public PrimeWavefrontTransportRecord primeMakeUpdatedWavefrontRecord(
+        PathState path,
+        PrimeOpenPbrVolumeStack volumeStack,
+        PrimeDenoiserState denoiserState,
+        uint previousDenoiserControl,
+        uint psrControl,
+        bool enabled) {
+    uint persistedControl =
+            previousDenoiserControl & PRIME_WAVEFRONT_BRANCH_CONTROL_MASK;
+    uint primaryMaterialFlags = (previousDenoiserControl
+            >> PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT)
+            & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK;
+    PrimeWavefrontTransportRecord record = primeMakeWavefrontTransportRecord(
+path,
+            volumeStack,
+            denoiserState,
+            primaryMaterialFlags,
+            enabled);
+    uint denoiserControl =
+            asuint(record.rayDirectionAndDenoiserControl.w)
+                    | persistedControl;
+    record.rayDirectionAndDenoiserControl.w = asfloat(denoiserControl);
+    record = primeWavefrontWithQueuedPsrControl(record, psrControl);
+    return record;
+}
+
+public PrimeWavefrontTransportRecord primeWavefrontWithBounce(
+        PrimeWavefrontTransportRecord record, uint bounce) {
+    record.sourceAndPathControl.w =
+            (record.sourceAndPathControl.w & ~PRIME_WAVEFRONT_BYTE_MASK)
+            | min(bounce, PRIME_WAVEFRONT_BYTE_MASK);
+    return record;
+}
+
+public PrimeWavefrontTransportRecord primeWavefrontSteadyState(
+        PrimeWavefrontTransportRecord record) {
+    record = primeWavefrontWithBounce(record, 0u);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    control &= ~(PRIME_WAVEFRONT_BYTE_MASK
+            << PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT);
+    record.rayDirectionAndDenoiserControl.w = asfloat(control);
+    record = primeWavefrontWithQueuedPsrControl(record, 0u);
+    return primeWavefrontWithGuideProbeFallback(record, false);
+}
+
+public PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
+        PathState path,
+        PrimeOpenPbrVolumeStack volumeStack,
+        PrimeTransparentBranchResult branchResult,
+        PrimeQueuedPsrState psrState,
+        bool transmissionBranch,
+        bool guideEnabled,
+        bool hasGuide,
+        bool diffusePath,
+        uint guideBounce,
+        bool primaryReflectionOnly,
+        bool guideProbeFallback,
+        bool enabled) {
+    PrimeDenoiserState denoiserState;
+    denoiserState.hasPrimarySurface = true;
+    denoiserState.reachedSolidAngle = hasGuide;
+    denoiserState.diffuseAlbedoProduct = branchResult.guides.primaryAlbedo;
+    denoiserState.specularAlbedoProduct =
+            branchResult.guides.primarySpecularAlbedo;
+    denoiserState.diffusePath = diffusePath;
+    denoiserState.primaryBounce = guideBounce;
+    PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(
+path,
+            volumeStack,
+            denoiserState,
+            branchResult.guides,
+            enabled);
+    uint control = asuint(
+            record.transport.rayDirectionAndDenoiserControl.w)
+            | PRIME_WAVEFRONT_TRANSPARENT_BRANCH;
+    if (transmissionBranch) {
+        control |= PRIME_WAVEFRONT_TRANSMISSION_BRANCH;
+    }
+    if (guideEnabled) {
+        control |= PRIME_WAVEFRONT_GUIDE_ENABLED;
+    }
+    if (branchResult.directionalGuide) {
+        control |= PRIME_WAVEFRONT_DIRECTIONAL_GUIDE;
+    }
+    if (primaryReflectionOnly) {
+        control |= PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY;
+    }
+    record.transport.rayDirectionAndDenoiserControl.w = asfloat(control);
+    record = primeWavefrontWithQueuedPsrState(record, psrState);
+    record.transport = primeWavefrontWithGuideProbeFallback(
+            record.transport, guideProbeFallback);
+    return record;
+}
+
+public PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
+        PathState path,
+        PrimeOpenPbrVolumeStack volumeStack,
+        PrimeTransparentBranchResult branchResult,
+        PrimeQueuedPsrState psrState,
+        bool hasGuide,
+        bool diffusePath,
+        uint guideBounce,
+        bool directionalGuide,
+        uint previousDenoiserControl,
+        bool guideProbeFallback,
+        bool enabled) {
+    PrimeDenoiserState denoiserState;
+    denoiserState.hasPrimarySurface = true;
+    denoiserState.reachedSolidAngle = hasGuide;
+    denoiserState.diffuseAlbedoProduct = branchResult.guides.primaryAlbedo;
+    denoiserState.specularAlbedoProduct =
+            branchResult.guides.primarySpecularAlbedo;
+    denoiserState.diffusePath = diffusePath;
+    denoiserState.primaryBounce = guideBounce;
+    PrimeWavefrontTransportRecord record = primeMakeUpdatedWavefrontRecord(
+path,
+            volumeStack,
+            denoiserState,
+            previousDenoiserControl,
+            psrState.control,
+            enabled);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    control = directionalGuide
+            ? control | PRIME_WAVEFRONT_DIRECTIONAL_GUIDE
+            : control & ~PRIME_WAVEFRONT_DIRECTIONAL_GUIDE;
+    control &= ~(PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK
+            << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
+    control |= (branchResult.guides.primaryMaterialFlags
+            & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK)
+            << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT;
+    record.rayDirectionAndDenoiserControl.w = asfloat(control);
+    record = primeWavefrontWithGuideProbeFallback(record, guideProbeFallback);
+    return record;
+}

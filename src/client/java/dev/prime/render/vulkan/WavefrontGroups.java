@@ -1,7 +1,5 @@
 package dev.prime.render.vulkan;
 
-import java.util.List;
-
 /** Shared ray-generation group order for both wavefront integrators. */
 final class WavefrontGroups {
     static final int HEAD = 0;
@@ -15,12 +13,12 @@ final class WavefrontGroups {
     }
 
     static RaygenSchedule schedule(String suffix) {
-        String prefix = "/prime/shaders/offline_wavefront_";
-        return RaygenSchedule.of(List.of(
-                prefix + "head" + suffix,
-                prefix + "step" + suffix,
-                prefix + "area" + suffix,
-                prefix + "resolve" + suffix), MODULES, CONTROLS);
+        String mode = switch (suffix) {
+            case ".rgen.spv" -> "scalar";
+            case "_ser.rgen.spv" -> "ser";
+            default -> throw new IllegalArgumentException("Unknown wavefront shader suffix: " + suffix);
+        };
+        return GeneratedShaderPrograms.schedule("offline." + mode);
     }
 
     static int module(int group) {

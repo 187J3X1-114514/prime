@@ -7,7 +7,11 @@
 bool primeUsesAirGap() { return true; }
 bool primeUsesSeamlessGlass() { return false; }
 
-#include "bsdf/adapter/bsdf.slang"
+import "service/bsdf/contract/sample.slang";
+import "core/numerical.slang";
+import "service/bsdf/support/conversion.slang";
+import "bsdf/compact/contract/flags.slang";
+import "bsdf/compact/contract/sample.slang";
 
 static const uint PRIME_BSDF_DIAGNOSTIC_INPUT_WORDS = 1u;
 static const uint PRIME_BSDF_DIAGNOSTIC_WITNESS_WORDS = 2u;
@@ -48,7 +52,11 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     PrimeNumericalObservation observation =
             primeNumericalObservationCreate(enabled);
-    bool accepted = primeOpenPbrHasSample(sampleValue, observation);
+    primeObserveNonnegative(observation, sampleValue.throughput.value);
+    primeObserveNonnegative(observation, sampleValue.pdf);
+    primeObserveNonnegative(observation, sampleValue.eta);
+    primeObserveDirection(observation, sampleValue.wo);
+    bool accepted = primeOpenPbrHasSample(sampleValue);
     uint mask = 0u;
     if (uint(accepted) != expected.y) mask |= PRIME_TEST_FAILURE_STATE;
     if (observation.flags != expected.z) mask |= PRIME_TEST_FAILURE_VALUE;

@@ -1,9 +1,24 @@
 #include "core/prime_test_abi.slang"
-import "bsdf/adapter/transmission_ggx_energy.slang";
-import "bsdf/compact/openpbr_common.slang";
-import "bsdf/compact/openpbr_material.slang";
-import "bsdf/compact/openpbr_opaque.slang";
-import "bsdf/compact/openpbr_transmission.slang";
+import "service/bsdf/support/transmission_energy.slang";
+import "bsdf/compact/contract/material.slang";
+import "bsdf/compact/opaque/state.slang";
+import "bsdf/compact/opaque/lobes.slang";
+import "bsdf/compact/opaque/traits.slang";
+import "bsdf/compact/opaque/evaluate.slang";
+import "bsdf/compact/opaque/sample.slang";
+import "bsdf/compact/opaque/energy.slang";
+import "bsdf/compact/dielectric/contract.slang";
+import "bsdf/compact/dielectric/refract.slang";
+import "bsdf/compact/dielectric/state.slang";
+import "bsdf/compact/dielectric/evaluate.slang";
+import "bsdf/compact/dielectric/sample.slang";
+import "bsdf/compact/dielectric/energy.slang";
+
+import "bsdf/compact/contract/flags.slang";
+import "bsdf/compact/contract/volume.slang";
+import "bsdf/compact/contract/sample.slang";
+import "bsdf/compact/math/spectrum.slang";
+import "bsdf/compact/model/material.slang";
 
 static const uint PRIME_STAT_SAMPLE = 0u;
 static const uint PRIME_STAT_INTEGRATE = 1u;

@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan.nrd;
 
+import dev.prime.render.vulkan.GeneratedShaderPrograms;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanContext;
@@ -87,7 +88,7 @@ final class NrdCompositePass implements Destroyable {
 
             LongBuffer pointer = stack.mallocLong(1);
             long shaderModule = VulkanShaderModules.create(
-                    context, stack, "/prime/shaders/nrd_composite.comp.spv");
+                    context, stack, GeneratedShaderPrograms.resource("nrd_composite"));
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                         .sType$Default()

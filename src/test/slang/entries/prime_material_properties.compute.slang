@@ -1,7 +1,7 @@
 #include "core/prime_test_abi.slang"
-import "material/labpbr.slang";
-import "material/default_material.slang";
-import "material/material_translation.slang";
+import "model/material/labpbr.slang";
+import "model/material/defaults.slang";
+import "model/material/translation.slang";
 
 static const uint PRIME_MATERIAL_INPUT_WORDS = 3;
 static const uint PRIME_MATERIAL_WITNESS_WORDS = 8;

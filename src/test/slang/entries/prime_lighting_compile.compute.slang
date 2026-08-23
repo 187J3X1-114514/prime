@@ -1,4 +1,4 @@
-import "lighting/lights.slang";
+import "service/light/sample.slang";
 import "prime_abi.slang";
 import "prime_abi_types.slang";
 

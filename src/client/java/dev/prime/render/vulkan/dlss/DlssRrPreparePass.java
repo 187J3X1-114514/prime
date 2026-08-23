@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan.dlss;
 
+import dev.prime.render.vulkan.GeneratedShaderPrograms;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
@@ -34,7 +35,7 @@ final class DlssRrPreparePass implements Destroyable {
     private static final int IMAGE_COUNT = 17;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int LOCAL_SIZE = 8;
-    private static final String SHADER = "/prime/shaders/rr_prepare.comp.spv";
+    private static final String SHADER = GeneratedShaderPrograms.resource("rr_prepare");
 
     private final VulkanContext context;
     private final long descriptorSetLayout;

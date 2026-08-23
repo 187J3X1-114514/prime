@@ -180,6 +180,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 - [透明渲染与实时重建](docs/透明渲染与实时重建.md)
 - [着色器属性测试与数值诊断](docs/着色器属性测试与数值诊断架构.md)
 - [OpenPBR 紧凑实现](docs/OpenPBR紧凑模块.md)
+- [生产 Shader 编译边界](docs/生产Shader编译边界契约.md)
 - [TODO](docs/TODO.md)
 
 ## 相关开源项目

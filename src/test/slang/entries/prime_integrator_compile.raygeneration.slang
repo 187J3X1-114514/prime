@@ -1,5 +1,10 @@
 #define PRIME_ENABLE_SER 1
-#include "integrator/integrator.slang"
+import "prime_abi_types.slang";
+import "service/light/sample.slang";
+import "service/bsdf/support/volume_transition.slang";
+import "service/trace/context.slang";
+import "service/trace/surface.slang";
+import "transport/direct/shadow.slang";
 
 [shader("raygeneration")]
 void main()

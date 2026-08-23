@@ -4,8 +4,7 @@
 #define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
 #define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #include "core/prime_test_abi.slang"
-import "core/numerical.slang";
-import "integrator/transparent_guide_coincidence.slang";
+import "transport/guide/coincidence.slang";
 
 bool primeUsesAirGap() {
     return true;
@@ -15,7 +14,61 @@ bool primeUsesSeamlessGlass() {
     return false;
 }
 
-#include "bsdf/adapter/bsdf.slang"
+import "service/bsdf/contract/sample.slang";
+import "service/bsdf/support/sanitization.slang";
+import "bsdf/compact/opaque/state.slang";
+import "bsdf/compact/opaque/lobes.slang";
+import "bsdf/compact/opaque/traits.slang";
+import "bsdf/compact/opaque/evaluate.slang";
+import "bsdf/compact/opaque/sample.slang";
+import "bsdf/compact/opaque/energy.slang";
+import "bsdf/compact/dielectric/contract.slang";
+import "bsdf/compact/dielectric/refract.slang";
+import "bsdf/compact/dielectric/state.slang";
+import "bsdf/compact/dielectric/evaluate.slang";
+import "bsdf/compact/dielectric/sample.slang";
+import "bsdf/compact/dielectric/energy.slang";
+import "bsdf/compact/foliage/contract.slang";
+import "bsdf/compact/foliage/lobes.slang";
+import "bsdf/compact/foliage/state.slang";
+import "bsdf/compact/foliage/evaluate.slang";
+import "bsdf/compact/foliage/sample.slang";
+import "bsdf/compact/foliage/energy.slang";
+import "service/bsdf/contract/albedo.slang";
+import "service/bsdf/contract/components.slang";
+import "service/bsdf/support/conversion.slang";
+import "service/bsdf/support/volume_transition.slang";
+import "service/bsdf/opaque/albedo.slang";
+import "service/bsdf/opaque/state.slang";
+import "service/bsdf/opaque/material.slang";
+import "service/bsdf/opaque/discrete.slang";
+import "bsdf/compact/opaque/discrete.slang";
+import "service/bsdf/opaque/traits.slang";
+import "service/bsdf/opaque/evaluate.slang";
+import "service/bsdf/opaque/sample.slang";
+import "service/bsdf/dielectric/albedo.slang";
+import "service/bsdf/dielectric/state.slang";
+import "service/bsdf/dielectric/traits.slang";
+import "service/bsdf/dielectric/conditional.slang";
+import "service/bsdf/dielectric/evaluate.slang";
+import "service/bsdf/dielectric/sample.slang";
+import "service/bsdf/dielectric/discrete.slang";
+import "service/bsdf/foliage/albedo.slang";
+import "service/bsdf/foliage/state.slang";
+import "service/bsdf/foliage/traits.slang";
+import "service/bsdf/foliage/evaluate.slang";
+import "service/bsdf/foliage/sample.slang";
+import "service/bsdf/dielectric/primary.slang";
+import "bsdf/compact/contract/flags.slang";
+import "bsdf/compact/contract/material.slang";
+import "bsdf/compact/contract/volume.slang";
+import "bsdf/compact/contract/sample.slang";
+import "bsdf/compact/math/spectrum.slang";
+import "bsdf/compact/math/frame.slang";
+import "model/material/defaults.slang";
+import "model/material/medium_boundary.slang";
+import "model/material/translation.slang";
+import "model/material/transparent.slang";
 bool3 equal(float3 first, float3 second) { return first == second; }
 bool3 greaterThan(float3 first, float3 second) { return first > second; }
 bool2 greaterThan(uint2 first, uint2 second) { return first > second; }
@@ -40,7 +93,7 @@ float primeSurfaceOpacity(SurfaceInteraction surface) {
     return clamp(surface.opacity, 0.0, 1.0);
 }
 
-#include "offline/offline_bsdf.slang"
+#include "core/offline_bsdf_test.h"
 
 static const uint PRIME_ADAPTER_INPUT_WORDS = 7u;
 static const uint PRIME_ADAPTER_WITNESS_WORDS = 12u;
@@ -418,6 +471,24 @@ void primeAdapterProperties(
                 minimumLinearRoughness);
         result.albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_OPAQUE);
+        if (primeClosureIsDiscreteOnly(opaqueTraits)) {
+            PrimeCompactOpaqueDiscreteState discreteState = primeOpaqueDiscreteState(
+                    baseColor,
+                    outwardNormal,
+                    roughness,
+                    opticalControl,
+                    materialControl,
+                    rayT);
+            BsdfSample discreteSample = primeSampleOpaqueDiscreteFromState(
+                    discreteState, outwardNormal, viewDirection, stack);
+            PrimeDenoiseAlbedos discreteAlbedos = primeOpaqueDiscreteAlbedosFromState(
+                    discreteState, viewDirection);
+            if (!primeAdapterSameSample(result.first, discreteSample)
+                    || !all(equal(result.albedos.diffuse, discreteAlbedos.diffuse))
+                    || !all(equal(result.albedos.specular, discreteAlbedos.specular))) {
+                result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        }
     } else if (kind == PRIME_ADAPTER_FOLIAGE) {
         result.first = primeSampleMinecraftFoliage(
                 baseColor,
@@ -460,19 +531,11 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
-        PrimeCompiledClosure foliageClosure = primeCompileFoliageClosure(
-                baseColor,
-                outwardNormal,
-                roughness,
-                opticalControl,
-                materialControl,
-                viewDirection,
-                rayT,
-                stack);
         PrimeClosureTraits fastFoliageTraits = primeFoliageClosureTraits(
                 roughness, opticalControl, materialControl);
-        if (foliageClosure.traits.measureMask != fastFoliageTraits.measureMask
-                || foliageClosure.traits.eventMask != fastFoliageTraits.eventMask) {
+        if ((fastFoliageTraits.eventMask & PRIME_BSDF_EVENT_DIFFUSE) == 0u
+                || (fastFoliageTraits.eventMask
+                        & PRIME_BSDF_EVENT_TRANSMISSION) == 0u) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
         const float minimumLinearRoughness = 0.4;
@@ -515,7 +578,8 @@ void primeAdapterProperties(
                         opticalControl,
                         viewDirection,
                         stack,
-                        0u);
+                        0u,
+                        primeUsesAirGap());
         if (transmissionTraits.measureMask != fastTransmissionTraits.measureMask
                 || transmissionTraits.eventMask != fastTransmissionTraits.eventMask) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
@@ -526,16 +590,9 @@ void primeAdapterProperties(
         if (transmissionTraits.measureMask != expectedMeasure) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
-        PrimeCompiledClosure mixedClosure = primeCompileOpaqueClosure(
-                float3(1.0),
-                outwardNormal,
-                0.0,
-                0u,
-                PRIME_MATERIAL_FAMILY_OPAQUE,
-                viewDirection,
-                rayT,
-                stack);
-        if (mixedClosure.traits.measureMask
+        PrimeClosureTraits mixedTraits = primeOpaqueClosureTraits(
+                0.0, 0u, PRIME_MATERIAL_FAMILY_OPAQUE);
+        if (mixedTraits.measureMask
                 != (PRIME_MEASURE_SOLID_ANGLE | PRIME_MEASURE_DISCRETE)) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
@@ -925,7 +982,8 @@ void primeAdapterProperties(
                 rayT,
                 stack,
                 adjacentBaseColor,
-                adjacentInterfaceControl);
+                adjacentInterfaceControl,
+                primeUsesAirGap());
         PrimeClosureTraits boundaryTraits =
                 primeMinecraftTransmissionClosureTraits(state);
         PrimeClosureTraits fastBoundaryTraits =
@@ -936,7 +994,8 @@ void primeAdapterProperties(
                         opticalControl,
                         viewDirection,
                         stack,
-                        adjacentInterfaceControl);
+                        adjacentInterfaceControl,
+                        primeUsesAirGap());
         if (boundaryTraits.measureMask != fastBoundaryTraits.measureMask
                 || boundaryTraits.eventMask != fastBoundaryTraits.eventMask) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
@@ -953,7 +1012,8 @@ void primeAdapterProperties(
                         rayT,
                         stack,
                         adjacentBaseColor,
-                        adjacentInterfaceControl);
+                        adjacentInterfaceControl,
+                        primeUsesAirGap());
         result.first = sampled.bsdfSample;
         result.stackCounts.x = sampled.volumeStack.count;
         float expectedInterfaceIor = state.originalIor / adjacent.ior;
@@ -1010,7 +1070,8 @@ void primeAdapterProperties(
                 rayT,
                 stack,
                 adjacentBaseColor,
-                adjacentInterfaceControl);
+                adjacentInterfaceControl,
+                primeUsesAirGap());
         PrimeClosureTraits airGapTraits =
                 primeMinecraftTransmissionClosureTraits(state);
         PrimeClosureTraits fastAirGapTraits =
@@ -1021,7 +1082,8 @@ void primeAdapterProperties(
                         opticalControl,
                         viewDirection,
                         stack,
-                        adjacentInterfaceControl);
+                        adjacentInterfaceControl,
+                        primeUsesAirGap());
         if (airGapTraits.measureMask != fastAirGapTraits.measureMask
                 || airGapTraits.eventMask != fastAirGapTraits.eventMask) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
@@ -1038,7 +1100,8 @@ void primeAdapterProperties(
                         rayT,
                         stack,
                         adjacentBaseColor,
-                        adjacentInterfaceControl);
+                        adjacentInterfaceControl,
+                        primeUsesAirGap());
         result.first = sampled.bsdfSample;
         result.stackCounts.x = sampled.volumeStack.count;
         bool expectedEntering = dot(outwardNormal, viewDirection) >= 0.0;
@@ -1109,6 +1172,15 @@ void primeAdapterProperties(
         result.stackCounts.x = sampled.volumeStack.count;
         PrimeClosureTraits transmissionTraits =
                 primeMinecraftTransmissionClosureTraits(state);
+        if (primeClosureIsDiscreteOnly(transmissionTraits)) {
+            PrimeTransmissiveBsdfSample discrete =
+                    primeSampleMinecraftTransmissionDiscreteFromState(
+                            state, viewDirection, firstSample.z, stack);
+            if (!primeAdapterSameSample(sampled.bsdfSample, discrete.bsdfSample)
+                    || !primeAdapterSameStack(sampled.volumeStack, discrete.volumeStack)) {
+                result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        }
         if (result.first.eventFlags != 0u
                 && ((result.first.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
                         ? !primeClosureSupports(

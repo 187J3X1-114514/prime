@@ -34,8 +34,9 @@ final class RealtimeSharc implements Destroyable {
     private static final float LOGARITHM_BASE = 2.0F;
     private static final float SCENE_SCALE = 50.0F;
     private static final String INTEGRATED_UPDATE_SHADER =
-            "/prime/shaders/sharc_integrated_update.comp.spv";
-    private static final String RESOLVE_SHADER = "/prime/shaders/sharc_resolve.comp.spv";
+            GeneratedShaderPrograms.resource("sharc_integrated_update");
+    private static final String RESOLVE_SHADER =
+            GeneratedShaderPrograms.resource("sharc_resolve");
 
     private final VulkanContext context;
     private final TraceProgram queryProgram;

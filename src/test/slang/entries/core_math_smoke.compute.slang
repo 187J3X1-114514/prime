@@ -1,5 +1,5 @@
-import "core/transport_math.slang";
-import "core/color_space.slang";
+import "math/transport.slang";
+import "math/color_space.slang";
 
 [[vk::binding(0, 0)]] StructuredBuffer<float4> inputs;
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> outputs;

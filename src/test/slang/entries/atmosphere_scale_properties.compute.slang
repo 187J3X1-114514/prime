@@ -1,5 +1,5 @@
 
-import "core/atmosphere.slang";
+import "model/atmosphere/sky.slang";
 
 
 

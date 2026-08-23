@@ -1,5 +1,5 @@
 import "prime_abi_types.slang";
-import "rt/shadow_payload.slang";
+import "contract/trace/shadow_payload.slang";
 
 [[vk::binding(0, 0)]]
 RaytracingAccelerationStructure primeTestScene;

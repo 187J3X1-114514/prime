@@ -222,6 +222,7 @@ The technical documents are currently written in Chinese.
 - [Transparency and realtime reconstruction](docs/透明渲染与实时重建.md)
 - [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)
 - [Compact OpenPBR implementation](docs/OpenPBR紧凑模块.md)
+- [Production shader compilation boundaries](docs/生产Shader编译边界契约.md)
 - [TODO](docs/TODO.md)
 
 ## Related Open-Source Projects

@@ -1,8 +1,15 @@
 
 #include "core/prime_test_abi.slang"
-import "bsdf/compact/openpbr_common.slang";
-import "bsdf/compact/openpbr_fresnel.slang";
-import "bsdf/compact/openpbr_microfacet.slang";
+import "bsdf/compact/math/fresnel.slang";
+import "bsdf/compact/math/microfacet_distribution.slang";
+import "bsdf/compact/math/microfacet_energy.slang";
+import "bsdf/compact/math/microfacet_measure.slang";
+
+import "bsdf/compact/contract/flags.slang";
+import "bsdf/compact/contract/material.slang";
+import "bsdf/compact/contract/sample.slang";
+import "bsdf/compact/math/spectrum.slang";
+import "bsdf/compact/math/frame.slang";
 bool3 greaterThanEqual(float3 first, float3 second) { return first >= second; }
 bool3 lessThanEqual(float3 first, float3 second) { return first <= second; }
 bool2 lessThan(float2 first, float2 second) { return first < second; }

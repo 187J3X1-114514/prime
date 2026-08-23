@@ -2,6 +2,13 @@
 
 本页只记录非缺陷型增强；可复现的当前问题见 [FIXME](FIXME.md)。
 
+## Shader 编译边界
+
+- 按[生产 Shader 编译边界契约](生产Shader编译边界契约.md)补齐同机冷编译、驱动冷/热缓存
+  pipeline 创建和 GPU frame/transport 基线；源码闭包、逐 artifact 缓存与 primary-chain 离散岛
+  已落地。只有实机证明无帧性能、寄存器、occupancy 或显存回退后，才试验 opaque/complex
+  queue/group；只有前端重复工作超过冷编译 CPU 时间 10% 后，才试验 Slang module 预编译。
+
 ## 生命周期与地形性能
 
 - 按 Vulkan timeline 完成点循环复用 descriptor set/pool，保持在途 command buffer 的资源

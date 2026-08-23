@@ -202,7 +202,7 @@ public record LabPbrAtlasFrame(
                     baseFrameWidth,
                     baseFrameHeight,
                     specular);
-            return blendArgb(current, next, progress, specular);
+            return blendFiltered(current, next, progress, specular);
         }
 
         private int filteredFrame(
@@ -297,8 +297,12 @@ public record LabPbrAtlasFrame(
                     | (int) ((blue + count / 2L) / count);
         }
 
-        private static int blendArgb(
+        /** Blends two already filtered animation texels without repeating mip filtering. */
+        public static int blendFiltered(
                 int current, int next, int progress, boolean specular) {
+            if (progress < 0 || progress > 999) {
+                throw new IllegalArgumentException("Invalid material animation progress");
+            }
             int inverse = 1000 - progress;
             int currentAlpha = current >>> 24;
             int nextAlpha = next >>> 24;

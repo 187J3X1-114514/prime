@@ -113,7 +113,7 @@ public final class MaterialTexturePages implements AutoCloseable {
         for (AnimationUpdate update : this.animationUpdates) {
             requiredCapacity = Math.max(
                     requiredCapacity,
-                    animationEndOffset(0L, update.owner, current));
+                    animationEndOffset(0L, update.owner));
         }
         StagingArena.Batch batch = this.stagingArena.tryBeginBatch(requiredCapacity);
         if (batch == null) {
@@ -124,39 +124,36 @@ public final class MaterialTexturePages implements AutoCloseable {
             int acceptedCount = 0;
             for (int index = 0; index < this.animationUpdates.size(); index++) {
                 AnimationUpdate change = this.animationUpdates.get(index);
-                LabPbrAtlasFrame.Sprite sprite = change.sprite;
-                long spriteBudget = animationEndOffset(budget, change.owner, current);
+                long spriteBudget = animationEndOffset(budget, change.owner);
                 if (spriteBudget > batch.capacity()) {
                     continue;
                 }
                 if (change.owner.normal != null) {
-                    PageResource page = current.normalPages.get(change.owner.normal.page());
-                    int mipLevels = textureMipLevels(sprite, page.image.mipLevels());
+                    TexturePageLayout.Placement placement = change.owner.normal.placement();
+                    PageResource page = current.normalPages.get(placement.page());
+                    int mipLevels = change.owner.normal.mipLevels();
                     for (int mip = 0; mip < mipLevels; mip++) {
                         addAnimatedCopy(
                                 this.animationCopies,
                                 batch,
                                 page.image,
                                 change.owner.normal,
-                                sprite.normal(),
                                 change.sample,
-                                mip,
-                                false);
+                                mip);
                     }
                 }
                 if (change.owner.specular != null) {
-                    PageResource page = current.opticalPages.get(change.owner.specular.page());
-                    int mipLevels = textureMipLevels(sprite, page.image.mipLevels());
+                    TexturePageLayout.Placement placement = change.owner.specular.placement();
+                    PageResource page = current.opticalPages.get(placement.page());
+                    int mipLevels = change.owner.specular.mipLevels();
                     for (int mip = 0; mip < mipLevels; mip++) {
                         addAnimatedCopy(
                                 this.animationCopies,
                                 batch,
                                 page.image,
                                 change.owner.specular,
-                                sprite.specular(),
                                 change.sample,
-                                mip,
-                                true);
+                                mip);
                     }
                 }
                 budget = spriteBudget;
@@ -299,6 +296,7 @@ public final class MaterialTexturePages implements AutoCloseable {
         List<PageResource> normalPages = List.of();
         List<PageResource> opticalPages = List.of();
         VulkanBuffer textureRecords = null;
+        Resources resources = null;
         try {
             normalPages = this.buildPages(
                     source, normalLayout, true, NORMAL_DEFAULT_ARGB);
@@ -306,15 +304,7 @@ public final class MaterialTexturePages implements AutoCloseable {
                     source, opticalLayout, false, OPTICAL_DEFAULT_ARGB);
             textureRecords = this.buildTextureRecords(
                     source, normalLayout, opticalLayout, normalPages, opticalPages);
-            PrimeInfo.LOGGER.info(
-                    "Translated material storage: {} textures, normal={} pages/{} bytes, optical={} pages/{} bytes, records={} bytes",
-                    source.sprites().size(),
-                    normalPages.size(),
-                    pageBytes(normalPages),
-                    opticalPages.size(),
-                    pageBytes(opticalPages),
-                    textureRecords.size());
-            return new Resources(
+            resources = new Resources(
                     sourceGeneration,
                     vanillaAtlasView,
                     normalPages,
@@ -324,7 +314,20 @@ public final class MaterialTexturePages implements AutoCloseable {
                     source.sprites(),
                     normalLayout,
                     opticalLayout);
+            PrimeInfo.LOGGER.info(
+                    "Translated material storage: {} textures, normal={} pages/{} bytes, optical={} pages/{} bytes, records={} bytes, animation cache={} bytes",
+                    source.sprites().size(),
+                    normalPages.size(),
+                    pageBytes(normalPages),
+                    opticalPages.size(),
+                    pageBytes(opticalPages),
+                    textureRecords.size(),
+                    resources.animationFrameBytes());
+            return resources;
         } catch (RuntimeException exception) {
+            if (resources != null) {
+                throw ResourceCleanup.destroy(resources, exception);
+            }
             RuntimeException failure = ResourceCleanup.destroy(textureRecords, exception);
             failure = destroyPages(opticalPages, failure);
             failure = destroyPages(normalPages, failure);
@@ -528,7 +531,7 @@ public final class MaterialTexturePages implements AutoCloseable {
         upload.flush(0L, byteSize);
     }
 
-    private static void writeSprite(
+    static void writeSprite(
             long target,
             long baseOffset,
             int rowWidth,
@@ -598,18 +601,16 @@ public final class MaterialTexturePages implements AutoCloseable {
             List<Copy> copies,
             StagingArena.Batch batch,
             VulkanImage image,
-            TexturePageLayout.Placement placement,
-            LabPbrAtlasFrame.MaterialSource source,
+            MaterialAnimationFrames frames,
             LabPbrAtlasFrame.AnimationSample sample,
-            int mip,
-            boolean specular) {
+            int mip) {
+        TexturePageLayout.Placement placement = frames.placement();
         LabPbrAtlasFrame.Sprite sprite = placement.sprite();
         int width = sprite.mipWidth(mip);
         int height = sprite.mipHeight(mip);
         long byteSize = Math.multiplyExact(Math.multiplyExact((long) width, height), 4L);
         StagingArena.Slice slice = batch.allocate(byteSize, 4L);
-        writeSprite(
-                slice.mappedAddress(), 0L, width, placement, source, sample, mip, true, specular);
+        frames.write(slice.mappedAddress(), sample, mip);
         copies.add(new Copy(
                 image,
                 slice.buffer(),
@@ -719,7 +720,7 @@ public final class MaterialTexturePages implements AutoCloseable {
         target.put(offset + 3, (byte) (argb >>> 24));
     }
 
-    private static void writeArgb(long target, long offset, int argb) {
+    static void writeArgb(long target, long offset, int argb) {
         MemoryUtil.memPutByte(target + offset, (byte) (argb >>> 16));
         MemoryUtil.memPutByte(target + offset + 1L, (byte) (argb >>> 8));
         MemoryUtil.memPutByte(target + offset + 2L, (byte) argb);
@@ -762,12 +763,10 @@ public final class MaterialTexturePages implements AutoCloseable {
 
     private static long animationEndOffset(
             long cursor,
-            AnimatedMaterialSprite animation,
-            Resources resources) {
+            AnimatedMaterialSprite animation) {
         long result = cursor;
         if (animation.normal != null) {
-            VulkanImage image = resources.normalPages.get(animation.normal.page()).image;
-            int mipLevels = textureMipLevels(animation.sprite, image.mipLevels());
+            int mipLevels = animation.normal.mipLevels();
             for (int mip = 0; mip < mipLevels; mip++) {
                 result = animationEndOffset(
                         result,
@@ -778,8 +777,7 @@ public final class MaterialTexturePages implements AutoCloseable {
             }
         }
         if (animation.specular != null) {
-            VulkanImage image = resources.opticalPages.get(animation.specular.page()).image;
-            int mipLevels = textureMipLevels(animation.sprite, image.mipLevels());
+            int mipLevels = animation.specular.mipLevels();
             for (int mip = 0; mip < mipLevels; mip++) {
                 result = animationEndOffset(
                         result,
@@ -826,27 +824,72 @@ public final class MaterialTexturePages implements AutoCloseable {
     }
 
     private record AnimationUpdate(
-            LabPbrAtlasFrame.Sprite sprite,
             LabPbrAtlasFrame.AnimationSample sample,
             AnimatedMaterialSprite owner) {
     }
 
-    private static final class AnimatedMaterialSprite {
+    private static final class AnimatedMaterialSprite
+            implements com.mojang.blaze3d.vulkan.Destroyable {
         private final LabPbrAtlasFrame.Sprite sprite;
-        private final TexturePageLayout.Placement normal;
-        private final TexturePageLayout.Placement specular;
+        private final MaterialAnimationFrames normal;
+        private final MaterialAnimationFrames specular;
         private final int animationIndex;
         private LabPbrAtlasFrame.AnimationSample lastSample;
 
-        AnimatedMaterialSprite(
+        static AnimatedMaterialSprite create(
                 LabPbrAtlasFrame.Sprite source,
                 TexturePageLayout.Placement normal,
-                TexturePageLayout.Placement specular) {
+                TexturePageLayout.Placement specular,
+                List<PageResource> normalPages,
+                List<PageResource> opticalPages) {
+            MaterialAnimationFrames normalFrames = null;
+            MaterialAnimationFrames specularFrames = null;
+            try {
+                if (normal != null && source.normal().frameCount() > 1) {
+                    VulkanImage image = normalPages.get(normal.page()).image;
+                    normalFrames = MaterialAnimationFrames.create(
+                            normal,
+                            source.normal(),
+                            textureMipLevels(source, image.mipLevels()),
+                            false);
+                }
+                if (specular != null && source.specular().frameCount() > 1) {
+                    VulkanImage image = opticalPages.get(specular.page()).image;
+                    specularFrames = MaterialAnimationFrames.create(
+                            specular,
+                            source.specular(),
+                            textureMipLevels(source, image.mipLevels()),
+                            true);
+                }
+                return new AnimatedMaterialSprite(source, normalFrames, specularFrames);
+            } catch (RuntimeException | Error failure) {
+                ResourceCleanup.destroy(specularFrames, null);
+                ResourceCleanup.destroy(normalFrames, null);
+                throw failure;
+            }
+        }
+
+        private AnimatedMaterialSprite(
+                LabPbrAtlasFrame.Sprite source,
+                MaterialAnimationFrames normal,
+                MaterialAnimationFrames specular) {
             this.sprite = source;
             this.normal = normal;
             this.specular = specular;
             this.animationIndex = source.animationIndex();
             this.lastSample = null;
+        }
+
+        long frameBytes() {
+            return (this.normal == null ? 0L : this.normal.byteSize())
+                    + (this.specular == null ? 0L : this.specular.byteSize());
+        }
+
+        @Override
+        public void destroy() {
+            RuntimeException failure = ResourceCleanup.destroy(this.specular, null);
+            failure = ResourceCleanup.destroy(this.normal, failure);
+            ResourceCleanup.throwIfFailed(failure);
         }
     }
 
@@ -919,14 +962,37 @@ public final class MaterialTexturePages implements AutoCloseable {
             this.textureRecords = textureRecords;
             this.materials = materials;
             ArrayList<AnimatedMaterialSprite> animated = new ArrayList<>();
-            for (LabPbrAtlasFrame.Sprite sprite : sprites) {
-                TexturePageLayout.Placement normal = normalLayout.placement(sprite.textureId());
-                TexturePageLayout.Placement specular = opticalLayout.placement(sprite.textureId());
-                if (sprite.animated() && (normal != null || specular != null)) {
-                    animated.add(new AnimatedMaterialSprite(sprite, normal, specular));
+            try {
+                for (LabPbrAtlasFrame.Sprite sprite : sprites) {
+                    TexturePageLayout.Placement normal =
+                            normalLayout.placement(sprite.textureId());
+                    TexturePageLayout.Placement specular =
+                            opticalLayout.placement(sprite.textureId());
+                    boolean animatedNormal = normal != null && sprite.normal().frameCount() > 1;
+                    boolean animatedSpecular =
+                            specular != null && sprite.specular().frameCount() > 1;
+                    if (sprite.animated() && (animatedNormal || animatedSpecular)) {
+                        animated.add(AnimatedMaterialSprite.create(
+                                sprite,
+                                normal,
+                                specular,
+                                normalPages,
+                                opticalPages));
+                    }
                 }
+            } catch (RuntimeException | Error failure) {
+                destroyAnimations(animated, null);
+                throw failure;
             }
             this.animated = List.copyOf(animated);
+        }
+
+        long animationFrameBytes() {
+            long result = 0L;
+            for (AnimatedMaterialSprite animation : this.animated) {
+                result = Math.addExact(result, animation.frameBytes());
+            }
+            return result;
         }
 
         List<VulkanImage> normalImages() {
@@ -969,7 +1035,7 @@ public final class MaterialTexturePages implements AutoCloseable {
                 }
                 LabPbrAtlasFrame.AnimationSample sample = samples.get(animation.animationIndex);
                 if (!sample.equals(animation.lastSample)) {
-                    result.add(new AnimationUpdate(animation.sprite, sample, animation));
+                    result.add(new AnimationUpdate(sample, animation));
                 }
             }
         }
@@ -986,11 +1052,21 @@ public final class MaterialTexturePages implements AutoCloseable {
         public void destroy() {
             if (!this.destroyed) {
                 this.destroyed = true;
-                RuntimeException failure = ResourceCleanup.destroy(this.textureRecords, null);
+                RuntimeException failure = destroyAnimations(this.animated, null);
+                failure = ResourceCleanup.destroy(this.textureRecords, failure);
                 failure = destroyPages(this.opticalPages, failure);
                 failure = destroyPages(this.normalPages, failure);
                 ResourceCleanup.throwIfFailed(failure);
             }
+        }
+
+        private static RuntimeException destroyAnimations(
+                List<AnimatedMaterialSprite> animations,
+                RuntimeException failure) {
+            for (int index = animations.size() - 1; index >= 0; index--) {
+                failure = ResourceCleanup.destroy(animations.get(index), failure);
+            }
+            return failure;
         }
     }
 

@@ -10,6 +10,7 @@ import dev.prime.render.terrain.LabPbrMaterialSet;
 import java.nio.ByteBuffer;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.lwjgl.system.MemoryUtil;
 
 final class MaterialTexturePagesTest {
     @Test
@@ -82,6 +83,38 @@ final class MaterialTexturePagesTest {
                 true);
 
         assertEquals(0xff800000, blended);
+    }
+
+    @Test
+    void cachedAnimationFramesPreserveFilteredInterpolation() {
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
+                new int[] {0xff000000, 0xffff0000},
+                1,
+                2,
+                1,
+                1,
+                1,
+                2);
+        LabPbrAtlasFrame.Sprite sprite = new LabPbrAtlasFrame.Sprite(
+                1, 0, 0, 1, 1, 0, null, source, 0);
+        TexturePageLayout.Placement placement =
+                new TexturePageLayout.Placement(0, 0, 0, sprite);
+        MaterialAnimationFrames frames =
+                MaterialAnimationFrames.create(placement, source, 1, true);
+        ByteBuffer target = MemoryUtil.memAlloc(4);
+        try {
+            frames.write(
+                    MemoryUtil.memAddress(target),
+                    new LabPbrAtlasFrame.AnimationSample(0, 1, 500),
+                    0);
+
+            assertArrayEquals(
+                    new byte[] {(byte) 0x80, 0, 0, (byte) 0xff},
+                    new byte[] {target.get(0), target.get(1), target.get(2), target.get(3)});
+        } finally {
+            MemoryUtil.memFree(target);
+            frames.destroy();
+        }
     }
 
     @Test

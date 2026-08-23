@@ -8,10 +8,13 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.infrastructure.PrimeInfo;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.runtime.terrain.TerrainStreamer;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.scene.vanilla.DynamicSceneMotion;
+import dev.prime.render.scene.vanilla.VanillaLabPbrAtlas;
+import dev.prime.render.terrain.LabPbrAtlasFrame;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.FrozenExposureState;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
@@ -40,6 +43,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private final OfflineRenderer offlineRenderer;
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
+    private final VanillaLabPbrAtlas labPbrSource = new VanillaLabPbrAtlas();
     private final LabPbrTextureAtlas labPbrAtlas;
     private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private final TraceBackend traceBackend;
@@ -154,7 +158,7 @@ public final class VulkanRenderer implements AutoCloseable {
         // Atlas objects exist before their GPU texture is uploaded. getTextureView() deliberately
         // throws during that short interval, which is normal startup state rather than a renderer
         // failure. The stitch map becomes non-empty in the same upload that creates the view.
-        if (!LabPbrTextureAtlas.hasStitchedSprites(atlas)) {
+        if (!VanillaLabPbrAtlas.hasStitchedSprites(atlas)) {
             this.blockAtlasFrame = null;
             return;
         }
@@ -162,9 +166,10 @@ public final class VulkanRenderer implements AutoCloseable {
                 || !(atlas.getSampler() instanceof VulkanGpuSampler atlasSampler)) {
             throw new IllegalStateException("Prime expected Vulkan block atlas resources");
         }
+        LabPbrAtlasFrame labPbrFrame = this.labPbrSource.ensure(minecraft, atlas);
         this.terrain.setLabPbrMaterials(
-                this.labPbrAtlas.ensure(minecraft, atlas, atlasView.vkImageView()));
-        long sourceGeneration = this.labPbrAtlas.sourceGeneration();
+                this.labPbrAtlas.ensure(labPbrFrame, atlasView.vkImageView()));
+        long sourceGeneration = labPbrFrame.sourceGeneration();
         BlockAtlasFrame previous = this.blockAtlasFrame;
         boolean changed = previous == null
                 || previous.view().vkImageView() != atlasView.vkImageView()
@@ -635,7 +640,7 @@ public final class VulkanRenderer implements AutoCloseable {
         if (!this.acceptsResourceReloadEffects) {
             return;
         }
-        this.labPbrAtlas.requestReload();
+        this.labPbrSource.requestReload();
         // Minecraft's initial resource load completes after Prime has already constructed all
         // pipelines from packaged SPIR-V. Later explicit reloads replace them before rendering.
         if (reloadShaders) {

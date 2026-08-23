@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.terrain.OpacityMicromapData;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;

@@ -3,7 +3,7 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.RealtimeFramePlan;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.diagnostic.ImageDiagnosticSelection;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import dev.prime.render.vulkan.terrain.TerrainScene;

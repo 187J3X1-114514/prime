@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.ReinhardGamutOutput;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.vulkan.VulkanSharedPrograms.SharedComputeProgram;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

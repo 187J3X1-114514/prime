@@ -1,6 +1,6 @@
 package dev.prime.render.scene.vanilla;
 
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.scene.CapturedSectionGeometry;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;

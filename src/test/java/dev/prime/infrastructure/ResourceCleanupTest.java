@@ -1,4 +1,4 @@
-package dev.prime.render;
+package dev.prime.infrastructure;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;

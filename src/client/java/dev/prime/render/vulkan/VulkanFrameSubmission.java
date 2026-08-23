@@ -2,7 +2,7 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;

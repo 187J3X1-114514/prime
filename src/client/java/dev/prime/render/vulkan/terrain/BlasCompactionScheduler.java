@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan.terrain;
 
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.vulkan.PreparedBlas;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;

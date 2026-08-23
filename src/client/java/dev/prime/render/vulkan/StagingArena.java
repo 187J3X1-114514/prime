@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;

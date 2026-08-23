@@ -1,22 +1,19 @@
 package dev.prime.render.terrain;
 
 import dev.prime.render.scene.CapturedSectionGeometry;
-import java.util.List;
 import java.util.Objects;
 
-/** CPU-only physical surface semantics, independent of the packed GPU relation ABI. */
-final class SurfaceDefinition {
+/** Closed CPU representation of the surface topologies supported by the packed GPU ABI. */
+sealed interface SurfaceDefinition permits
+        SurfaceDefinition.Single,
+        SurfaceDefinition.Overlay,
+        SurfaceDefinition.Bilateral,
+        SurfaceDefinition.Boundary {
     enum InterfaceMode {
         SINGLE,
         OVERLAY,
         BILATERAL,
-        BOUNDARY,
-        THIN_AIR_FILM
-    }
-
-    enum Coverage {
-        FULL,
-        ALPHA_CUTOUT
+        BOUNDARY
     }
 
     record UvMapping(
@@ -61,7 +58,7 @@ final class SurfaceDefinition {
     record MaterialBinding(
             CapturedSectionGeometry.Surface surface,
             UvMapping uv) {
-        MaterialBinding {
+        public MaterialBinding {
             Objects.requireNonNull(surface, "surface");
             Objects.requireNonNull(uv, "uv");
         }
@@ -71,38 +68,11 @@ final class SurfaceDefinition {
         }
     }
 
-    record SurfaceLayer(MaterialBinding material, Coverage coverage) {
-        SurfaceLayer {
-            Objects.requireNonNull(material, "material");
-            Objects.requireNonNull(coverage, "coverage");
-        }
-    }
-
-    record SurfaceSide(
-            List<SurfaceLayer> overlays,
-            MaterialBinding substrate) {
-        SurfaceSide {
-            overlays = List.copyOf(overlays);
-        }
-
-        static SurfaceSide substrate(MaterialBinding material) {
-            return new SurfaceSide(List.of(), material);
-        }
-
-        static SurfaceSide overlay(
-                MaterialBinding overlay,
-                MaterialBinding substrate) {
-            return new SurfaceSide(
-                    List.of(new SurfaceLayer(overlay, Coverage.ALPHA_CUTOUT)),
-                    substrate);
-        }
-    }
-
     record MediumEndpoint(
             CapturedSectionGeometry.Surface surface,
             float referenceU,
             float referenceV) {
-        MediumEndpoint {
+        public MediumEndpoint {
             Objects.requireNonNull(surface, "surface");
             if (!Float.isFinite(referenceU) || !Float.isFinite(referenceV)) {
                 throw new IllegalArgumentException("Medium reference UV must be finite");
@@ -110,110 +80,88 @@ final class SurfaceDefinition {
         }
     }
 
-    private final MaterialBinding primary;
-    private final MaterialBinding secondary;
-    private final SurfaceSide positiveSide;
-    private final SurfaceSide negativeSide;
-    private final MediumEndpoint positiveMedium;
-    private final MediumEndpoint negativeMedium;
-    private final InterfaceMode interfaceMode;
+    record Single(MaterialBinding primary) implements SurfaceDefinition {
+        public Single {
+            Objects.requireNonNull(primary, "primary");
+        }
 
-    private SurfaceDefinition(
+        @Override
+        public InterfaceMode interfaceMode() {
+            return InterfaceMode.SINGLE;
+        }
+    }
+
+    record Overlay(
             MaterialBinding primary,
             MaterialBinding secondary,
-            SurfaceSide positiveSide,
-            SurfaceSide negativeSide,
+            boolean positiveOnly) implements SurfaceDefinition {
+        public Overlay {
+            Objects.requireNonNull(primary, "primary");
+            Objects.requireNonNull(secondary, "secondary");
+        }
+
+        @Override
+        public InterfaceMode interfaceMode() {
+            return InterfaceMode.OVERLAY;
+        }
+
+    }
+
+    record Bilateral(
+            MaterialBinding primary,
+            MaterialBinding secondary) implements SurfaceDefinition {
+        public Bilateral {
+            Objects.requireNonNull(primary, "primary");
+            Objects.requireNonNull(secondary, "secondary");
+        }
+
+        @Override
+        public InterfaceMode interfaceMode() {
+            return InterfaceMode.BILATERAL;
+        }
+    }
+
+    record Boundary(
+            MaterialBinding primary,
             MediumEndpoint positiveMedium,
-            MediumEndpoint negativeMedium,
-            InterfaceMode interfaceMode) {
-        this.primary = Objects.requireNonNull(primary, "primary");
-        this.secondary = secondary;
-        this.positiveSide = Objects.requireNonNull(positiveSide, "positiveSide");
-        this.negativeSide = Objects.requireNonNull(negativeSide, "negativeSide");
-        this.positiveMedium = positiveMedium;
-        this.negativeMedium = negativeMedium;
-        this.interfaceMode = Objects.requireNonNull(interfaceMode, "interfaceMode");
+            MediumEndpoint negativeMedium) implements SurfaceDefinition {
+        public Boundary {
+            Objects.requireNonNull(primary, "primary");
+            Objects.requireNonNull(positiveMedium, "positiveMedium");
+            Objects.requireNonNull(negativeMedium, "negativeMedium");
+        }
+
+        @Override
+        public InterfaceMode interfaceMode() {
+            return InterfaceMode.BOUNDARY;
+        }
     }
 
     static SurfaceDefinition single(MaterialBinding material) {
-        SurfaceSide side = SurfaceSide.substrate(material);
-        return new SurfaceDefinition(
-                material, null, side, side, null, null, InterfaceMode.SINGLE);
+        return new Single(material);
     }
 
     static SurfaceDefinition bilateral(
             MaterialBinding positive,
             MaterialBinding negative) {
-        return new SurfaceDefinition(
-                positive,
-                negative,
-                SurfaceSide.substrate(positive),
-                SurfaceSide.substrate(negative),
-                null,
-                null,
-                InterfaceMode.BILATERAL);
+        return new Bilateral(positive, negative);
     }
 
     static SurfaceDefinition overlay(
             MaterialBinding overlay,
             MaterialBinding substrate,
             boolean positiveOnly) {
-        SurfaceSide covered = SurfaceSide.overlay(overlay, substrate);
-        SurfaceSide plain = SurfaceSide.substrate(substrate);
-        return new SurfaceDefinition(
-                overlay,
-                substrate,
-                covered,
-                positiveOnly ? plain : covered,
-                null,
-                null,
-                InterfaceMode.OVERLAY);
+        return new Overlay(overlay, substrate, positiveOnly);
     }
 
-    SurfaceDefinition withBoundary(
+    static SurfaceDefinition boundary(
+            MaterialBinding primary,
             MediumEndpoint positiveMedium,
-            MediumEndpoint negativeMedium,
-            boolean thinAirFilm) {
-        return new SurfaceDefinition(
-                this.primary,
-                this.secondary,
-                this.positiveSide,
-                this.negativeSide,
-                positiveMedium,
-                negativeMedium,
-                thinAirFilm ? InterfaceMode.THIN_AIR_FILM : InterfaceMode.BOUNDARY);
+            MediumEndpoint negativeMedium) {
+        return new Boundary(primary, positiveMedium, negativeMedium);
     }
 
-    MaterialBinding primary() {
-        return this.primary;
-    }
+    MaterialBinding primary();
 
-    MaterialBinding secondary() {
-        return this.secondary;
-    }
-
-    SurfaceSide positiveSide() {
-        return this.positiveSide;
-    }
-
-    SurfaceSide negativeSide() {
-        return this.negativeSide;
-    }
-
-    MediumEndpoint positiveMedium() {
-        return this.positiveMedium;
-    }
-
-    MediumEndpoint negativeMedium() {
-        return this.negativeMedium;
-    }
-
-    InterfaceMode interfaceMode() {
-        return this.interfaceMode;
-    }
-
-    boolean overlayPositiveOnly() {
-        return this.interfaceMode == InterfaceMode.OVERLAY
-                && this.negativeSide.overlays().isEmpty();
-    }
+    InterfaceMode interfaceMode();
 }

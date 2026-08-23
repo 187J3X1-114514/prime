@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan.terrain;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.scene.SceneRevisionView;
 import dev.prime.render.terrain.*;
 import dev.prime.render.vulkan.PreparedBlas;
@@ -226,12 +226,16 @@ public final class TerrainScene implements AutoCloseable {
             return false;
         }
 
-        List<GpuCluster> replacements = new ArrayList<>(nonEmptyUploadCount);
+        TerrainUpdateTransaction transaction = new TerrainUpdateTransaction(
+                this.context,
+                this.voxelBlasPool,
+                clusterStagingBatch,
+                worldStagingBatch,
+                replacementTlas,
+                nonEmptyUploadCount);
+        List<GpuCluster> replacements = transaction.replacements();
         VulkanBuffer replacementWorldLights = null;
         VkCommandBuffer commandBuffer = null;
-        boolean submitted = false;
-        boolean ownershipTransferred = false;
-        boolean cleanupHandled = false;
         try {
             if (nonEmptyUploadCount > 0 || replacementTlas != null) {
                 commandBuffer = this.context.commandEncoder().allocateAndBeginTransientCommandBuffer();
@@ -278,6 +282,7 @@ public final class TerrainScene implements AutoCloseable {
                         VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                         false,
                         "Prime world light tree");
+                transaction.worldLights(replacementWorldLights);
                 StagingArena.Slice worldLightSlice = worldStagingBatch.write(
                         packedWorldLights, 16L);
                 copyBuffer(commandBuffer, worldLightSlice, replacementWorldLights);
@@ -384,22 +389,10 @@ public final class TerrainScene implements AutoCloseable {
                     worldStagingBatch.prepareForSubmission();
                 }
                 this.context.commandEncoder().execute(commandBuffer);
-                submitted = true;
-                RuntimeException stagingFailure = null;
-                if (clusterStagingBatch != null) {
-                    stagingFailure = ResourceCleanup.run(
-                            clusterStagingBatch::submitted, null);
-                }
-                if (worldStagingBatch != null) {
-                    stagingFailure = ResourceCleanup.run(
-                            worldStagingBatch::submitted, stagingFailure);
-                }
-                ResourceCleanup.throwIfFailed(stagingFailure);
+                transaction.submitted();
             }
             this.publish(preparedUpdate);
-            ownershipTransferred = true;
-            replacementTlas = null;
-            replacementWorldLights = null;
+            transaction.published();
             RuntimeException retirementFailure = null;
             for (GpuCluster replacement : replacements) {
                 retirementFailure = ResourceCleanup.run(
@@ -416,55 +409,9 @@ public final class TerrainScene implements AutoCloseable {
             ResourceCleanup.throwIfFailed(retirementFailure);
             return true;
         } catch (RuntimeException exception) {
-            RuntimeException failure = exception;
-            if (!ownershipTransferred) {
-                for (GpuCluster replacement : replacements) {
-                    if (submitted) {
-                        failure = ResourceCleanup.run(
-                                () -> {
-                                    Destroyable cleanup = replacement.prepareRetirement(
-                                            this.voxelBlasPool);
-                                    this.context.defer(cleanup);
-                                },
-                                failure);
-                    } else {
-                        failure = ResourceCleanup.run(
-                                () -> replacement
-                                        .prepareRetirement(this.voxelBlasPool)
-                                        .destroy(),
-                                failure);
-                    }
-                }
-                if (replacementTlas != null) {
-                    if (submitted) {
-                        TopLevelAccelerationStructure failedTlas = replacementTlas;
-                        failure = ResourceCleanup.run(
-                                () -> this.context.defer(failedTlas::release), failure);
-                    } else {
-                        failure = ResourceCleanup.run(replacementTlas::release, failure);
-                    }
-                }
-                if (replacementWorldLights != null) {
-                    if (submitted) {
-                        VulkanBuffer failedWorldLights = replacementWorldLights;
-                        failure = ResourceCleanup.run(
-                                () -> this.context.defer(failedWorldLights), failure);
-                    } else {
-                        failure = ResourceCleanup.destroy(replacementWorldLights, failure);
-                    }
-                }
-            }
-            failure = ResourceCleanup.close(clusterStagingBatch, failure);
-            failure = ResourceCleanup.close(worldStagingBatch, failure);
-            cleanupHandled = true;
-            throw failure;
+            throw transaction.abort(exception);
         } finally {
-            if (!cleanupHandled) {
-                RuntimeException failure = null;
-                failure = ResourceCleanup.close(clusterStagingBatch, failure);
-                failure = ResourceCleanup.close(worldStagingBatch, failure);
-                ResourceCleanup.throwIfFailed(failure);
-            }
+            transaction.close();
         }
     }
 

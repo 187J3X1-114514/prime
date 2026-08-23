@@ -327,9 +327,7 @@ public final class SectionMeshAccumulator {
                 surface,
                 quad,
                 indices,
-                surface.definition != null
-                                && surface.definition.interfaceMode()
-                                        == SurfaceDefinition.InterfaceMode.OVERLAY
+                surface.definition instanceof SurfaceDefinition.Overlay
                         ? flags | PrimitivePacking.CONTROL_ALPHA_CUTOUT
                         : flags));
         destination.triangleCount++;
@@ -341,19 +339,11 @@ public final class SectionMeshAccumulator {
             int[] indices,
             int primaryMaterialFlags) {
         SurfaceDefinition definition = surface.definition;
-        if (definition == null
-                || definition.interfaceMode()
-                        == SurfaceDefinition.InterfaceMode.SINGLE) {
+        if (definition == null || definition instanceof SurfaceDefinition.Single) {
             return null;
         }
-        if (definition.interfaceMode()
-                        == SurfaceDefinition.InterfaceMode.BOUNDARY
-                || definition.interfaceMode()
-                        == SurfaceDefinition.InterfaceMode.THIN_AIR_FILM) {
-            SurfaceDefinition.MediumEndpoint endpoint = definition.positiveMedium();
-            if (endpoint == null) {
-                return null;
-            }
+        if (definition instanceof SurfaceDefinition.Boundary boundary) {
+            SurfaceDefinition.MediumEndpoint endpoint = boundary.positiveMedium();
             CapturedSectionGeometry.Surface adjacent = endpoint.surface();
             int adjacentControl = PrimitivePacking.encode(
                     MaterialRecipeResolver.resolve(
@@ -377,20 +367,21 @@ public final class SectionMeshAccumulator {
                         ClusterSceneTranslator.averageColor(adjacent))
             };
         }
-        SurfaceDefinition.MaterialBinding secondary = definition.secondary();
-        if (secondary == null) {
-            return null;
-        }
-        int control = definition.interfaceMode()
-                        == SurfaceDefinition.InterfaceMode.OVERLAY
-                ? CpuSectionMesh.SURFACE_RELATION_OVERLAY
-                : CpuSectionMesh.SURFACE_RELATION_BILATERAL;
-        if (definition.overlayPositiveOnly()) {
-            control |= CpuSectionMesh.SURFACE_RELATION_POSITIVE_ONLY;
-        }
-        if (definition.interfaceMode()
-                == SurfaceDefinition.InterfaceMode.OVERLAY) {
+        SurfaceDefinition.MaterialBinding secondary;
+        int control;
+        if (definition instanceof SurfaceDefinition.Overlay overlay) {
+            secondary = overlay.secondary();
+            control = CpuSectionMesh.SURFACE_RELATION_OVERLAY;
+            if (overlay.positiveOnly()) {
+                control |= CpuSectionMesh.SURFACE_RELATION_POSITIVE_ONLY;
+            }
             control |= PrimitivePacking.materialRecipeControl(primaryMaterialFlags) << 8;
+        } else if (definition instanceof SurfaceDefinition.Bilateral bilateral) {
+            secondary = bilateral.secondary();
+            control = CpuSectionMesh.SURFACE_RELATION_BILATERAL;
+        } else {
+            throw new IllegalStateException(
+                    "Unhandled surface definition " + definition.getClass().getSimpleName());
         }
         int[] primitive = this.packMaterialPrimitive(
                 secondary, quad, indices);
@@ -657,9 +648,7 @@ public final class SectionMeshAccumulator {
         }
 
         boolean geometryCutout() {
-            return this.definition != null
-                            && this.definition.interfaceMode()
-                                    == SurfaceDefinition.InterfaceMode.OVERLAY
+            return this.definition instanceof SurfaceDefinition.Overlay
                     ? false
                     : this.cutout;
         }
@@ -670,14 +659,13 @@ public final class SectionMeshAccumulator {
 
         boolean hasSurfaceRelation() {
             return this.definition != null
-                    && this.definition.interfaceMode()
-                            != SurfaceDefinition.InterfaceMode.SINGLE;
+                    && !(this.definition instanceof SurfaceDefinition.Single);
         }
 
         boolean emitterTwoSided() {
             return this.cutout
-                    && (this.definition == null
-                            || !this.definition.overlayPositiveOnly());
+                    && (!(this.definition instanceof SurfaceDefinition.Overlay overlay)
+                            || !overlay.positiveOnly());
         }
     }
 

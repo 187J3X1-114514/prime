@@ -2,7 +2,7 @@ package dev.prime.render.vulkan.dlss;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.DisplaySettings;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.SunDirection;
 import dev.prime.render.diagnostic.RrInputView;
 import dev.prime.render.diagnostic.RendererImageView;

@@ -1,34 +1,11 @@
 package dev.prime.render.vulkan;
 
-import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.infrastructure.PrimeInfo;
-import dev.prime.mixin.SpriteContentsAccessor;
-import dev.prime.mixin.TextureAtlasAccessor;
-import dev.prime.mixin.TextureAtlasSpriteAccessor;
-import dev.prime.render.ResourceCleanup;
-import dev.prime.render.scene.SpriteId;
-import dev.prime.render.terrain.LabPbrEmissionMap;
-import dev.prime.render.terrain.LabPbrHeightMap;
-import dev.prime.render.terrain.LabPbrMaterialMap;
+import dev.prime.infrastructure.ResourceCleanup;
+import dev.prime.render.terrain.LabPbrAtlasFrame;
 import dev.prime.render.terrain.LabPbrMaterialSet;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.texture.SpriteContents;
-import net.minecraft.client.renderer.texture.TextureAtlas;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.resources.Identifier;
-import net.minecraft.server.packs.resources.Resource;
-import net.minecraft.server.packs.resources.ResourceManager;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -48,21 +25,14 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
  * source-frame sequence; a single-frame auxiliary map is intentionally reused for every frame.
  */
 public final class LabPbrTextureAtlas implements AutoCloseable {
-    public static boolean hasStitchedSprites(TextureAtlas atlas) {
-        return !((TextureAtlasAccessor) (Object) atlas).prime$texturesByName().isEmpty();
-    }
-
-    private static final Identifier FORMAT_RESOURCE = Identifier.withDefaultNamespace(
-            "optifine/texture.properties");
-    private static final String SUPPORTED_FORMAT = "lab-pbr/1.3";
     private static final int NORMAL_DEFAULT_ARGB = 0xff8080ff;
     private static final int SPECULAR_DEFAULT_ARGB = 0xff000400;
 
     private final VulkanContext context;
     private final StagingArena stagingArena;
-    private final AtomicLong requestedGeneration = new AtomicLong();
     private final ArrayList<AnimationUpdate> animationUpdates = new ArrayList<>();
     private final ArrayList<Copy> animationCopies = new ArrayList<>();
+    private List<LabPbrAtlasFrame.AnimationSample> animationSamples = List.of();
     private Resources resources;
     private FrameToken pending;
     private boolean closed;
@@ -73,11 +43,12 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     public LabPbrMaterialSet ensure(
-            Minecraft minecraft, TextureAtlas atlas, long vanillaAtlasView) {
+            LabPbrAtlasFrame frame, long vanillaAtlasView) {
         if (this.closed) {
             throw new IllegalStateException("LabPBR atlas is closed");
         }
-        long generation = this.requestedGeneration.get();
+        long generation = frame.sourceGeneration();
+        this.animationSamples = frame.animations();
         if (this.resources != null
                 && this.resources.sourceGeneration == generation
                 && this.resources.vanillaAtlasView == vanillaAtlasView) {
@@ -87,8 +58,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             throw new IllegalStateException(
                     "Cannot replace the LabPBR atlas with an outstanding upload");
         }
-        Resources replacement = build(
-                minecraft.getResourceManager(), atlas, vanillaAtlasView, generation);
+        Resources replacement = build(frame.snapshot(), vanillaAtlasView, generation);
         Resources previous = this.resources;
         this.resources = replacement;
         this.animationUpdates.clear();
@@ -101,11 +71,6 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             }
         }
         return replacement.materials;
-    }
-
-    /** Invalidates source-pack data while leaving GPU ownership changes on the render thread. */
-    public void requestReload() {
-        this.requestedGeneration.incrementAndGet();
     }
 
     /** Source-pack generation currently represented by the resident auxiliary atlases. */
@@ -133,7 +98,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (initialUpload) {
             recordInitialUpload(commandBuffer, current);
         }
-        current.collectAnimationChanges(this.animationUpdates);
+        current.collectAnimationChanges(this.animationSamples, this.animationUpdates);
         if (this.animationUpdates.isEmpty()) {
             return this.publish(null, current, initialUpload, 0);
         }
@@ -152,30 +117,30 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             int acceptedCount = 0;
             for (int index = 0; index < this.animationUpdates.size(); index++) {
                 AnimationUpdate change = this.animationUpdates.get(index);
-                AnimatedMaterialSprite sprite = change.sprite;
+                LabPbrAtlasFrame.Sprite sprite = change.sprite;
                 long spriteBudget = animationEndOffset(budget, sprite, current.mipLevels);
                 if (spriteBudget > batch.capacity()) {
                     continue;
                 }
                 for (int mip = 0; mip < current.mipLevels; mip++) {
-                    if (sprite.normal != null) {
+                    if (sprite.normal() != null) {
                         addAnimatedCopy(
                                 this.animationCopies,
                                 batch,
                                 current.normalAtlas,
                                 sprite,
-                                sprite.normal,
+                                sprite.normal(),
                                 change.sample,
                                 mip,
                                 false);
                     }
-                    if (sprite.specular != null) {
+                    if (sprite.specular() != null) {
                         addAnimatedCopy(
                                 this.animationCopies,
                                 batch,
                                 current.specularAtlas,
                                 sprite,
-                                sprite.specular,
+                                sprite.specular(),
                                 change.sample,
                                 mip,
                                 true);
@@ -237,7 +202,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
         for (int index = 0; index < token.animationUpdateCount; index++) {
             AnimationUpdate update = this.animationUpdates.get(index);
-            update.sprite.lastSample = update.sample;
+            update.owner.lastSample = update.sample;
         }
         RuntimeException failure = null;
         if (token.batch != null) {
@@ -315,81 +280,12 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private Resources build(
-            ResourceManager resourceManager,
-            TextureAtlas atlas,
+            LabPbrAtlasFrame.Snapshot source,
             long vanillaAtlasView,
             long sourceGeneration) {
-        TextureAtlasAccessor atlasAccess = (TextureAtlasAccessor) (Object) atlas;
-        int atlasWidth = atlasAccess.prime$width();
-        int atlasHeight = atlasAccess.prime$height();
-        int atlasMipLevels = Math.max(1, atlasAccess.prime$maxMipLevel() + 1);
-        boolean supported = readsLabPbr13(resourceManager);
-        Map<Identifier, TextureAtlasSprite> sprites = atlasAccess.prime$texturesByName();
-        Set<SpriteId> normalSprites = new HashSet<>();
-        Set<SpriteId> specularSprites = new HashSet<>();
-        Map<SpriteId, LabPbrEmissionMap> emissionMaps = new java.util.HashMap<>();
-        Map<SpriteId, LabPbrHeightMap> heightMaps = new java.util.HashMap<>();
-        Map<SpriteId, LabPbrMaterialMap> materialMaps = new java.util.HashMap<>();
-        ArrayList<MaterialSprite> materialSprites = new ArrayList<>();
-        if (supported) {
-            for (TextureAtlasSprite sprite : sprites.values()) {
-                Identifier name = sprite.contents().name();
-                SpriteId spriteId = spriteId(name);
-                MaterialSource normal = readMaterial(resourceManager, materialResource(name, "_n"), sprite);
-                MaterialSource specular = readMaterial(resourceManager, materialResource(name, "_s"), sprite);
-                if (normal != null) {
-                    normalSprites.add(spriteId);
-                    heightMaps.put(spriteId, LabPbrHeightMap.fromNormal(
-                            normal.pixels(),
-                            normal.width(),
-                            normal.height(),
-                            normal.frameWidth(),
-                            normal.frameHeight(),
-                            normal.columns(),
-                            normal.frameCount()));
-                }
-                if (specular != null) {
-                    specularSprites.add(spriteId);
-                    LabPbrEmissionMap emission = LabPbrEmissionMap.fromSpecular(
-                            specular.pixels(),
-                            specular.width(),
-                            specular.height(),
-                            specular.frameWidth(),
-                            specular.frameHeight(),
-                            specular.columns(),
-                            specular.frameCount());
-                    if (emission != null) {
-                        emissionMaps.put(spriteId, emission);
-                    }
-                }
-                if (normal != null || specular != null) {
-                    SpriteContents contents = sprite.contents();
-                    if (!contents.isAnimated()) {
-                        materialMaps.put(spriteId, new LabPbrMaterialMap(
-                                materialPixels(
-                                        normal,
-                                        contents.width(),
-                                        contents.height(),
-                                        false),
-                                materialPixels(
-                                        specular,
-                                        contents.width(),
-                                        contents.height(),
-                                        true)));
-                    }
-                    materialSprites.add(new MaterialSprite(
-                            sprite,
-                            normal,
-                            specular));
-                }
-            }
-        }
-        // Keep valid descriptors without paying for two full-size empty atlases when the active
-        // resource pack does not declare LabPBR or contains no auxiliary maps.
-        int width = materialSprites.isEmpty() ? 1 : atlasWidth;
-        int height = materialSprites.isEmpty() ? 1 : atlasHeight;
-        int mipLevels = materialSprites.isEmpty() ? 1 : atlasMipLevels;
-
+        int width = source.width();
+        int height = source.height();
+        int mipLevels = source.mipLevels();
         VulkanImage normalAtlas = null;
         VulkanImage specularAtlas = null;
         VulkanBuffer normalUpload = null;
@@ -414,7 +310,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     width,
                     height,
                     mipLevels,
-                    materialSprites,
+                    source.sprites(),
                     true,
                     NORMAL_DEFAULT_ARGB);
             fillAtlas(
@@ -422,19 +318,9 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     width,
                     height,
                     mipLevels,
-                    materialSprites,
+                    source.sprites(),
                     false,
                     SPECULAR_DEFAULT_ARGB);
-            List<AnimatedMaterialSprite> animated = bindAnimations(atlasAccess, materialSprites);
-            LabPbrMaterialSet materials = new LabPbrMaterialSet(
-                    normalSprites,
-                    specularSprites,
-                    emissionMaps,
-                    heightMaps,
-                    materialMaps);
-            PrimeInfo.LOGGER.info(
-                    "Loaded LabPBR 1.3 material atlas: {} normal maps, {} specular maps, {} emissive maps, {} animated sprites",
-                    normalSprites.size(), specularSprites.size(), emissionMaps.size(), animated.size());
             return new Resources(
                     sourceGeneration,
                     vanillaAtlasView,
@@ -445,8 +331,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     specularAtlas,
                     normalUpload,
                     specularUpload,
-                    materials,
-                    animated);
+                    source.materials(),
+                    source.sprites());
         } catch (RuntimeException exception) {
             RuntimeException failure = ResourceCleanup.destroy(specularUpload, exception);
             failure = ResourceCleanup.destroy(normalUpload, failure);
@@ -456,113 +342,12 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
     }
 
-    private static boolean readsLabPbr13(ResourceManager manager) {
-        Optional<Resource> resource = manager.getResource(FORMAT_RESOURCE);
-        if (resource.isEmpty()) {
-            return false;
-        }
-        Properties properties = new Properties();
-        try (InputStream input = resource.orElseThrow().open()) {
-            properties.load(input);
-        } catch (IOException exception) {
-            PrimeInfo.LOGGER.warn("Unable to read LabPBR format declaration", exception);
-            return false;
-        }
-        String format = properties.getProperty("format", "").trim();
-        if (!SUPPORTED_FORMAT.equalsIgnoreCase(format)) {
-            PrimeInfo.LOGGER.warn(
-                    "Ignoring unsupported material format '{}'; Prime currently requires {}",
-                    format,
-                    SUPPORTED_FORMAT);
-            return false;
-        }
-        return true;
-    }
-
-    private static Identifier materialResource(Identifier sprite, String suffix) {
-        return Identifier.fromNamespaceAndPath(
-                sprite.getNamespace(), "textures/" + sprite.getPath() + suffix + ".png");
-    }
-
-    private static SpriteId spriteId(Identifier identifier) {
-        return new SpriteId(identifier.getNamespace(), identifier.getPath());
-    }
-
-    private static LabPbrMaterialMap.Pixels materialPixels(
-            MaterialSource source,
-            int baseFrameWidth,
-            int baseFrameHeight,
-            boolean specular) {
-        if (source == null) {
-            return null;
-        }
-        int width = Math.multiplyExact(source.columns(), baseFrameWidth);
-        int rows = Math.floorDiv(
-                Math.addExact(source.frameCount(), source.columns() - 1),
-                source.columns());
-        int[] normalized = new int[Math.multiplyExact(
-                width, Math.multiplyExact(rows, baseFrameHeight))];
-        // Voxel primitives store one material texel per base-color texel. Normalize mixed
-        // resolutions with the same semantic filter as mip-0 atlas upload so baking cannot
-        // silently switch LabPBR values from an averaged footprint to a nearest source sample.
-        for (int frame = 0; frame < source.frameCount(); frame++) {
-            AnimationSample sample = new AnimationSample(frame, frame, 0);
-            int frameX = frame % source.columns() * baseFrameWidth;
-            int frameY = frame / source.columns() * baseFrameHeight;
-            for (int y = 0; y < baseFrameHeight; y++) {
-                for (int x = 0; x < baseFrameWidth; x++) {
-                    normalized[(frameY + y) * width + frameX + x] =
-                            source.filtered(
-                                    sample,
-                                    x,
-                                    y,
-                                    x + 1.0,
-                                    y + 1.0,
-                                    baseFrameWidth,
-                                    baseFrameHeight,
-                                    specular);
-                }
-            }
-        }
-        return new LabPbrMaterialMap.Pixels(
-                normalized,
-                width,
-                baseFrameWidth,
-                baseFrameHeight,
-                source.columns(),
-                source.frameCount());
-    }
-
-    private static MaterialSource readMaterial(
-            ResourceManager manager, Identifier resourceId, TextureAtlasSprite baseSprite) {
-        Optional<Resource> resource = manager.getResource(resourceId);
-        if (resource.isEmpty()) {
-            return null;
-        }
-        try (InputStream input = resource.orElseThrow().open();
-                NativeImage image = NativeImage.read(input)) {
-            SpriteContents contents = baseSprite.contents();
-            NativeImage baseImage = ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
-            return MaterialSource.create(
-                    image.getPixels(),
-                    image.getWidth(),
-                    image.getHeight(),
-                    contents.width(),
-                    contents.height(),
-                    baseImage.getWidth(),
-                    baseImage.getHeight());
-        } catch (IOException | RuntimeException exception) {
-            PrimeInfo.LOGGER.warn("Unable to read LabPBR material {}", resourceId, exception);
-            return null;
-        }
-    }
-
     private static void fillAtlas(
             VulkanBuffer upload,
             int atlasWidth,
             int atlasHeight,
             int mipLevels,
-            List<MaterialSprite> sprites,
+            List<LabPbrAtlasFrame.Sprite> sprites,
             boolean normal,
             int defaultArgb) {
         long byteSize = totalMipBytes(atlasWidth, atlasHeight, mipLevels);
@@ -571,15 +356,17 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         long mipOffset = 0L;
         for (int mip = 0; mip < mipLevels; mip++) {
             int mipWidth = Math.max(1, atlasWidth >> mip);
-            for (MaterialSprite sprite : sprites) {
-                MaterialSource source = normal ? sprite.normal : sprite.specular;
+            for (LabPbrAtlasFrame.Sprite sprite : sprites) {
+                LabPbrAtlasFrame.MaterialSource source =
+                        normal ? sprite.normal() : sprite.specular();
                 if (source != null) {
-                    sprite.write(
+                    writeSprite(
                             target,
                             mipOffset,
                             mipWidth,
+                            sprite,
                             source,
-                            AnimationSample.ZERO,
+                            LabPbrAtlasFrame.AnimationSample.ZERO,
                             mip,
                             false,
                             !normal);
@@ -590,32 +377,47 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         upload.flush(0L, byteSize);
     }
 
-    private static List<AnimatedMaterialSprite> bindAnimations(
-            TextureAtlasAccessor atlas,
-            List<MaterialSprite> materials) {
-        Map<Identifier, MaterialSprite> byName = new java.util.HashMap<>();
-        for (MaterialSprite material : materials) {
-            byName.put(material.sprite.contents().name(), material);
+    private static void writeSprite(
+            long target,
+            long baseOffset,
+            int rowWidth,
+            LabPbrAtlasFrame.Sprite sprite,
+            LabPbrAtlasFrame.MaterialSource source,
+            LabPbrAtlasFrame.AnimationSample sample,
+            int mip,
+            boolean tightlyPacked,
+            boolean specular) {
+        int outputWidth = sprite.mipWidth(mip);
+        int outputHeight = sprite.mipHeight(mip);
+        int destinationX = tightlyPacked ? 0 : sprite.mipX(mip);
+        int destinationY = tightlyPacked ? 0 : sprite.mipY(mip);
+        int baseWidth = sprite.contentWidth() + 2 * sprite.padding();
+        int baseHeight = sprite.contentHeight() + 2 * sprite.padding();
+        for (int y = 0; y < outputHeight; y++) {
+            double baseY0 = (double) y * baseHeight / outputHeight - sprite.padding();
+            double baseY1 = (double) (y + 1) * baseHeight / outputHeight - sprite.padding();
+            for (int x = 0; x < outputWidth; x++) {
+                double baseX0 = (double) x * baseWidth / outputWidth - sprite.padding();
+                double baseX1 = (double) (x + 1) * baseWidth / outputWidth - sprite.padding();
+                int pixel = source.filtered(
+                        sample,
+                        baseX0,
+                        baseY0,
+                        baseX1,
+                        baseY1,
+                        sprite.contentWidth(),
+                        sprite.contentHeight(),
+                        specular);
+                long offset = Math.addExact(
+                        baseOffset,
+                        Math.multiplyExact(
+                                Math.addExact(
+                                        Math.multiplyExact((long) destinationY + y, rowWidth),
+                                        (long) destinationX + x),
+                                4L));
+                writeArgb(target, offset, pixel);
+            }
         }
-        List<SpriteContents.AnimationState> states = atlas.prime$animatedTextureStates();
-        ArrayList<AnimatedMaterialSprite> result = new ArrayList<>();
-        int stateIndex = 0;
-        for (TextureAtlasSprite sprite : atlas.prime$sprites()) {
-            if (!sprite.contents().isAnimated()) {
-                continue;
-            }
-            if (stateIndex >= states.size()) {
-                break;
-            }
-            MaterialSprite material = byName.get(sprite.contents().name());
-            SpriteContents.AnimationState state = states.get(stateIndex++);
-            if (material != null && AnimationFrameAccess.hasMultipleFrames(state)) {
-                // The initial upload contains source frame zero. Force the first submitted frame
-                // to synchronize with vanilla even when the animation was already mid-sequence.
-                result.add(new AnimatedMaterialSprite(material, state, null));
-            }
-        }
-        return List.copyOf(result);
     }
 
     private static void recordInitialUpload(VkCommandBuffer commandBuffer, Resources resources) {
@@ -641,17 +443,17 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             List<Copy> copies,
             StagingArena.Batch batch,
             VulkanImage image,
-            AnimatedMaterialSprite sprite,
-            MaterialSource source,
-            AnimationSample sample,
+            LabPbrAtlasFrame.Sprite sprite,
+            LabPbrAtlasFrame.MaterialSource source,
+            LabPbrAtlasFrame.AnimationSample sample,
             int mip,
             boolean specular) {
         int width = sprite.mipWidth(mip);
         int height = sprite.mipHeight(mip);
         long byteSize = Math.multiplyExact(Math.multiplyExact((long) width, height), 4L);
         StagingArena.Slice slice = batch.allocate(byteSize, 4L);
-        sprite.write(
-                slice.mappedAddress(), 0L, width, source, sample, mip, true, specular);
+        writeSprite(
+                slice.mappedAddress(), 0L, width, sprite, source, sample, mip, true, specular);
         copies.add(new Copy(
                 image,
                 slice.buffer(),
@@ -812,15 +614,15 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private static long animationEndOffset(
-            long cursor, AnimatedMaterialSprite sprite, int mipLevels) {
+            long cursor, LabPbrAtlasFrame.Sprite sprite, int mipLevels) {
         long result = cursor;
         for (int mip = 0; mip < mipLevels; mip++) {
             result = animationEndOffset(
                     result,
                     sprite.mipWidth(mip),
                     sprite.mipHeight(mip),
-                    sprite.normal != null,
-                    sprite.specular != null);
+                    sprite.normal() != null,
+                    sprite.specular() != null);
         }
         return result;
     }
@@ -858,51 +660,41 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             int height) {
     }
 
-    private record AnimationUpdate(AnimatedMaterialSprite sprite, AnimationSample sample) {
-    }
-
-    record AnimationSample(int currentFrame, int nextFrame, int progressThousandths) {
-        private static final AnimationSample ZERO = new AnimationSample(0, 0, 0);
+    private record AnimationUpdate(
+            LabPbrAtlasFrame.Sprite sprite,
+            LabPbrAtlasFrame.AnimationSample sample,
+            AnimatedMaterialSprite owner) {
     }
 
     private static class MaterialSprite {
-        final TextureAtlasSprite sprite;
-        final MaterialSource normal;
-        final MaterialSource specular;
-        final int padding;
+        final LabPbrAtlasFrame.Sprite sprite;
 
-        MaterialSprite(
-                TextureAtlasSprite sprite,
-                MaterialSource normal,
-                MaterialSource specular) {
+        MaterialSprite(LabPbrAtlasFrame.Sprite sprite) {
             this.sprite = sprite;
-            this.normal = normal;
-            this.specular = specular;
-            this.padding = ((TextureAtlasSpriteAccessor) (Object) sprite).prime$padding();
         }
 
         int mipX(int mip) {
-            return this.sprite.getX() >> mip;
+            return this.sprite.mipX(mip);
         }
 
         int mipY(int mip) {
-            return this.sprite.getY() >> mip;
+            return this.sprite.mipY(mip);
         }
 
         int mipWidth(int mip) {
-            return Math.max(1, (this.sprite.contents().width() + 2 * this.padding) >> mip);
+            return this.sprite.mipWidth(mip);
         }
 
         int mipHeight(int mip) {
-            return Math.max(1, (this.sprite.contents().height() + 2 * this.padding) >> mip);
+            return this.sprite.mipHeight(mip);
         }
 
         void write(
                 long target,
                 long baseOffset,
                 int rowWidth,
-                MaterialSource source,
-                AnimationSample sample,
+                LabPbrAtlasFrame.MaterialSource source,
+                LabPbrAtlasFrame.AnimationSample sample,
                 int mip,
                 boolean tightlyPacked,
                 boolean specular) {
@@ -910,22 +702,22 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             int outputHeight = this.mipHeight(mip);
             int destinationX = tightlyPacked ? 0 : this.mipX(mip);
             int destinationY = tightlyPacked ? 0 : this.mipY(mip);
-            int baseWidth = this.sprite.contents().width() + 2 * this.padding;
-            int baseHeight = this.sprite.contents().height() + 2 * this.padding;
+            int baseWidth = this.sprite.contentWidth() + 2 * this.sprite.padding();
+            int baseHeight = this.sprite.contentHeight() + 2 * this.sprite.padding();
             for (int y = 0; y < outputHeight; y++) {
-                double baseY0 = (double) y * baseHeight / outputHeight - this.padding;
-                double baseY1 = (double) (y + 1) * baseHeight / outputHeight - this.padding;
+                double baseY0 = (double) y * baseHeight / outputHeight - this.sprite.padding();
+                double baseY1 = (double) (y + 1) * baseHeight / outputHeight - this.sprite.padding();
                 for (int x = 0; x < outputWidth; x++) {
-                    double baseX0 = (double) x * baseWidth / outputWidth - this.padding;
-                    double baseX1 = (double) (x + 1) * baseWidth / outputWidth - this.padding;
+                    double baseX0 = (double) x * baseWidth / outputWidth - this.sprite.padding();
+                    double baseX1 = (double) (x + 1) * baseWidth / outputWidth - this.sprite.padding();
                     int pixel = source.filtered(
                             sample,
                             baseX0,
                             baseY0,
                             baseX1,
                             baseY1,
-                            this.sprite.contents().width(),
-                            this.sprite.contents().height(),
+                            this.sprite.contentWidth(),
+                            this.sprite.contentHeight(),
                             specular);
                     long offset = Math.addExact(
                             baseOffset,
@@ -942,207 +734,13 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private static final class AnimatedMaterialSprite extends MaterialSprite {
-        private final SpriteContents.AnimationState state;
-        private AnimationSample lastSample;
+        private final int animationIndex;
+        private LabPbrAtlasFrame.AnimationSample lastSample;
 
-        AnimatedMaterialSprite(
-                MaterialSprite source,
-                SpriteContents.AnimationState state,
-                AnimationSample lastSample) {
-            super(source.sprite, source.normal, source.specular);
-            this.state = state;
-            this.lastSample = lastSample;
-        }
-    }
-
-    record MaterialSource(
-            int[] pixels,
-            int width,
-            int height,
-            int frameWidth,
-            int frameHeight,
-            int columns,
-            int frameCount) {
-        static MaterialSource create(
-                int[] pixels,
-                int width,
-                int height,
-                int baseFrameWidth,
-                int baseFrameHeight,
-                int baseImageWidth,
-                int baseImageHeight) {
-            int baseColumns = Math.max(1, baseImageWidth / baseFrameWidth);
-            int baseRows = Math.max(1, baseImageHeight / baseFrameHeight);
-            int frameWidth;
-            int frameHeight;
-            int columns;
-            int frameCount;
-            if (width == baseFrameWidth && height == baseFrameHeight) {
-                frameWidth = width;
-                frameHeight = height;
-                columns = 1;
-                frameCount = 1;
-            } else if (width % baseColumns == 0 && height % baseRows == 0) {
-                frameWidth = width / baseColumns;
-                frameHeight = height / baseRows;
-                columns = baseColumns;
-                frameCount = baseColumns * baseRows;
-            } else {
-                frameWidth = width;
-                frameHeight = height;
-                columns = 1;
-                frameCount = 1;
-            }
-            return new MaterialSource(
-                    pixels, width, height, frameWidth, frameHeight, columns, frameCount);
-        }
-
-        int filtered(
-                AnimationSample sample,
-                double baseX0,
-                double baseY0,
-                double baseX1,
-                double baseY1,
-                int baseFrameWidth,
-                int baseFrameHeight) {
-            return filtered(
-                    sample,
-                    baseX0,
-                    baseY0,
-                    baseX1,
-                    baseY1,
-                    baseFrameWidth,
-                    baseFrameHeight,
-                    false);
-        }
-
-        int filtered(
-                AnimationSample sample,
-                double baseX0,
-                double baseY0,
-                double baseX1,
-                double baseY1,
-                int baseFrameWidth,
-                int baseFrameHeight,
-                boolean specular) {
-            int current = filteredFrame(
-                    sample.currentFrame,
-                    baseX0,
-                    baseY0,
-                    baseX1,
-                    baseY1,
-                    baseFrameWidth,
-                    baseFrameHeight,
-                    specular);
-            int progress = this.frameCount == 1 ? 0 : sample.progressThousandths;
-            if (progress <= 0 || sample.currentFrame == sample.nextFrame) {
-                return current;
-            }
-            int next = filteredFrame(
-                    sample.nextFrame,
-                    baseX0,
-                    baseY0,
-                    baseX1,
-                    baseY1,
-                    baseFrameWidth,
-                    baseFrameHeight,
-                    specular);
-            return blendArgb(current, next, progress, specular);
-        }
-
-        private int filteredFrame(
-                int requestedFrame,
-                double baseX0,
-                double baseY0,
-                double baseX1,
-                double baseY1,
-                int baseFrameWidth,
-                int baseFrameHeight,
-                boolean specular) {
-            int frame = this.frameCount == 1
-                    ? 0
-                    : Math.max(0, Math.min(requestedFrame, this.frameCount - 1));
-            int frameX = frame % this.columns * this.frameWidth;
-            int frameY = frame / this.columns * this.frameHeight;
-            int sourceX0 = clamp(
-                    (int) Math.floor(baseX0 * this.frameWidth / baseFrameWidth),
-                    0,
-                    this.frameWidth - 1);
-            int sourceY0 = clamp(
-                    (int) Math.floor(baseY0 * this.frameHeight / baseFrameHeight),
-                    0,
-                    this.frameHeight - 1);
-            int sourceX1 = clamp(
-                    (int) Math.ceil(baseX1 * this.frameWidth / baseFrameWidth),
-                    sourceX0 + 1,
-                    this.frameWidth);
-            int sourceY1 = clamp(
-                    (int) Math.ceil(baseY1 * this.frameHeight / baseFrameHeight),
-                    sourceY0 + 1,
-                    this.frameHeight);
-            long alpha = 0L;
-            long red = 0L;
-            long green = 0L;
-            long blue = 0L;
-            int count = 0;
-            long emission = 0L;
-            int sentinelCount = 0;
-            for (int y = sourceY0; y < sourceY1; y++) {
-                for (int x = sourceX0; x < sourceX1; x++) {
-                    int pixel = this.pixels[(frameY + y) * this.width + frameX + x];
-                    int encodedAlpha = pixel >>> 24;
-                    alpha += encodedAlpha;
-                    if (specular) {
-                        if (encodedAlpha == 255) {
-                            sentinelCount++;
-                        } else {
-                            emission += encodedAlpha;
-                        }
-                    }
-                    red += pixel >>> 16 & 0xff;
-                    green += pixel >>> 8 & 0xff;
-                    blue += pixel & 0xff;
-                    count++;
-                }
-            }
-            int filteredAlpha = specular
-                    ? (sentinelCount == count
-                            ? 255
-                            : (int) ((emission + count / 2L) / count))
-                    : (int) ((alpha + count / 2L) / count);
-            return filteredAlpha << 24
-                    | (int) ((red + count / 2L) / count) << 16
-                    | (int) ((green + count / 2L) / count) << 8
-                    | (int) ((blue + count / 2L) / count);
-        }
-
-        private static int blendArgb(
-                int current, int next, int progress, boolean specular) {
-            int inverse = 1000 - progress;
-            int currentAlpha = current >>> 24;
-            int nextAlpha = next >>> 24;
-            int alpha;
-            if (specular) {
-                if (currentAlpha == 255 && nextAlpha == 255) {
-                    alpha = 255;
-                } else {
-                    int currentEmission = currentAlpha == 255 ? 0 : currentAlpha;
-                    int nextEmission = nextAlpha == 255 ? 0 : nextAlpha;
-                    alpha = (currentEmission * inverse + nextEmission * progress + 500) / 1000;
-                }
-            } else {
-                alpha = (currentAlpha * inverse + nextAlpha * progress + 500) / 1000;
-            }
-            int red = ((current >>> 16 & 0xff) * inverse
-                    + (next >>> 16 & 0xff) * progress + 500) / 1000;
-            int green = ((current >>> 8 & 0xff) * inverse
-                    + (next >>> 8 & 0xff) * progress + 500) / 1000;
-            int blue = ((current & 0xff) * inverse + (next & 0xff) * progress + 500) / 1000;
-            return alpha << 24 | red << 16 | green << 8 | blue;
-        }
-
-        private static int clamp(int value, int minimum, int maximum) {
-            return Math.max(minimum, Math.min(maximum, value));
+        AnimatedMaterialSprite(LabPbrAtlasFrame.Sprite source) {
+            super(source);
+            this.animationIndex = source.animationIndex();
+            this.lastSample = null;
         }
     }
 
@@ -1172,7 +770,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 VulkanBuffer normalUpload,
                 VulkanBuffer specularUpload,
                 LabPbrMaterialSet materials,
-                List<AnimatedMaterialSprite> animated) {
+                List<LabPbrAtlasFrame.Sprite> sprites) {
             this.sourceGeneration = sourceGeneration;
             this.vanillaAtlasView = vanillaAtlasView;
             this.width = width;
@@ -1183,15 +781,26 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             this.normalUpload = normalUpload;
             this.specularUpload = specularUpload;
             this.materials = materials;
-            this.animated = animated;
+            ArrayList<AnimatedMaterialSprite> animated = new ArrayList<>();
+            for (LabPbrAtlasFrame.Sprite sprite : sprites) {
+                if (sprite.animated()) {
+                    animated.add(new AnimatedMaterialSprite(sprite));
+                }
+            }
+            this.animated = List.copyOf(animated);
         }
 
-        void collectAnimationChanges(ArrayList<AnimationUpdate> result) {
+        void collectAnimationChanges(
+                List<LabPbrAtlasFrame.AnimationSample> samples,
+                ArrayList<AnimationUpdate> result) {
             result.clear();
-            for (AnimatedMaterialSprite sprite : this.animated) {
-                AnimationSample sample = AnimationFrameAccess.sample(sprite.state);
-                if (!sample.equals(sprite.lastSample)) {
-                    result.add(new AnimationUpdate(sprite, sample));
+            for (AnimatedMaterialSprite animation : this.animated) {
+                if (animation.animationIndex >= samples.size()) {
+                    throw new IllegalStateException("LabPBR animation sample set is incomplete");
+                }
+                LabPbrAtlasFrame.AnimationSample sample = samples.get(animation.animationIndex);
+                if (!sample.equals(animation.lastSample)) {
+                    result.add(new AnimationUpdate(animation.sprite, sample, animation));
                 }
             }
         }
@@ -1221,33 +830,4 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
     }
 
-    /** Reads Minecraft's authoritative immutable timeline and live animation cursor. */
-    private static final class AnimationFrameAccess {
-        private AnimationFrameAccess() {
-        }
-
-        static boolean hasMultipleFrames(SpriteContents.AnimationState state) {
-            return state.animationInfo.frames.size() > 1;
-        }
-
-        static AnimationSample sample(SpriteContents.AnimationState state) {
-            List<SpriteContents.FrameInfo> frames = state.animationInfo.frames;
-            if (frames.isEmpty()) {
-                return AnimationSample.ZERO;
-            }
-            int sequenceIndex = Math.max(
-                    0, Math.min(state.frame, frames.size() - 1));
-            SpriteContents.FrameInfo frame = frames.get(sequenceIndex);
-            if (!state.animationInfo.interpolateFrames) {
-                return new AnimationSample(frame.index(), frame.index(), 0);
-            }
-            SpriteContents.FrameInfo nextFrame = frames.get(
-                    (sequenceIndex + 1) % frames.size());
-            int frameTime = Math.max(1, frame.time());
-            int progress = Math.min(
-                    999,
-                    (int) ((long) state.subFrame * 1000L / frameTime));
-            return new AnimationSample(frame.index(), nextFrame.index(), progress);
-        }
-    }
 }

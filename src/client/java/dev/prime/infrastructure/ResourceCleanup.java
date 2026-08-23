@@ -1,8 +1,8 @@
-package dev.prime.render;
+package dev.prime.infrastructure;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 
-/** Failure-preserving cleanup for composite resource owners. */
+/** Failure-preserving cleanup for platform resource owners. */
 public final class ResourceCleanup {
     private ResourceCleanup() {}
 

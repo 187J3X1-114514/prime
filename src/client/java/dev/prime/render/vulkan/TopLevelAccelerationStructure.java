@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.shader.ShaderAbi;
 import java.nio.LongBuffer;
 import org.lwjgl.PointerBuffer;

@@ -14,59 +14,10 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.io.IOException;
-import java.io.Reader;
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.Properties;
-import net.fabricmc.loader.api.FabricLoader;
 
-/** Small, version-tolerant owner for Prime's user-facing settings. */
+/** Client-thread owner of Prime's live settings and renderer revision. */
 public final class PrimeConfig {
-    private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
-    private static final String SHARC_ENABLED_KEY = "renderer.sharc";
-    private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
-    private static final String PRIMARY_CHAIN_LIMIT_KEY =
-            "renderer.primary_chain_limit";
-    private static final String TERRAIN_WORKER_PERCENTAGE_KEY =
-            "terrain.worker_percentage";
-    private static final String LEGACY_WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
-    private static final String[] LEGACY_INTEGRATOR_KEYS = {
-        "renderer.integrator",
-        "renderer.integrator_mode",
-        "renderer.performance_maximum_bounces",
-        "renderer.lightweight_maximum_bounces"
-    };
-    private static final String VOXEL_TEXTURE_SURFACES_KEY =
-            "experimental.voxel_texture_surfaces";
-    private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
-            "experimental.voxel_texture_surface_strength";
-    private static final String MODE_KEY = "post_processing.mode";
-    private static final String QUALITY_KEY = "post_processing.quality";
-    private static final String LEGACY_QUALITY_KEY = "fsr.quality";
-    private static final String SUN_EV_KEY = "lighting.sun_ev";
-    private static final String STAR_EV_KEY = "lighting.star_ev";
-    private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
-    private static final String LATITUDE_DEGREES_KEY = "astronomy.latitude_degrees";
-    private static final String SOLAR_LONGITUDE_DEGREES_KEY =
-            "astronomy.solar_longitude_degrees";
-    private static final String FINAL_EXPOSURE_EV_KEY = "display.final_exposure_ev";
-    private static final String HDR_ENABLED_KEY = "display.hdr";
-    private static final String[] LEGACY_DISPLAY_TRANSFORM_KEYS = {
-        "display.transform",
-        "display.oklab_overexposure",
-        "display.oklab_curve_exponent"
-    };
-    private static final String AUTO_EXPOSURE_COMPENSATION_KEY =
-            "display.auto_exposure_compensation";
-    private static final String REFERENCE_WHITE_NITS_KEY = "display.reference_white_nits";
-    private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
-    private static final String SEAMLESS_GLASS_KEY = "material.seamless_glass";
-    private static final String AIR_GAP_KEY = "material.air_gap";
-    private static final String VANILLA_PBR_PRESETS_KEY = "material.vanilla_pbr_presets";
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
@@ -82,335 +33,15 @@ public final class PrimeConfig {
     }
 
     public static void load() {
-        Path path = configPath();
-        boolean pathTracingEnabled = true;
-        boolean sharcEnabled = true;
-        int loadedScatterCount = ScatterSettings.DEFAULT_COUNT;
-        int loadedPrimaryChainLimit = PrimaryChainSettings.DEFAULT_LIMIT;
-        int loadedTerrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
-        boolean voxelTextureSurfaces = false;
-        int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
-        PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
-        ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
-        int latitudeDegrees = AstronomySettings.DEFAULT_LATITUDE_DEGREES;
-        int solarLongitudeDegrees =
-                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES;
-        int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
-        int starQuarterSteps = LightingSettings.DEFAULT_STAR_QUARTER_STEPS;
-        int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
-        int finalExposureQuarterSteps =
-                DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
-        boolean loadedHdrEnabled = false;
-        int loadedReferenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
-        int autoExposureCompensationSteps =
-                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS;
-        int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
-        boolean seamlessGlass = MaterialSettings.DEFAULT_SEAMLESS_GLASS;
-        boolean airGap = MaterialSettings.DEFAULT_AIR_GAP;
-        boolean vanillaPbrPresets = MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS;
+        Path path = PrimeConfigFile.path();
+        PrimeConfigData loaded = PrimeConfigData.defaults();
         boolean rewriteNeeded = false;
-        if (Files.isRegularFile(path)) {
-            try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-                Properties properties = new Properties();
-                properties.load(reader);
-                String pathTracing = properties.getProperty(PATH_TRACING_ENABLED_KEY);
-                if (pathTracing != null) {
-                    try {
-                        pathTracingEnabled = parseBoolean(pathTracing);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime path-tracing switch '{}'; enabling path tracing",
-                                pathTracing);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String sharc = properties.getProperty(SHARC_ENABLED_KEY);
-                if (sharc != null) {
-                    try {
-                        sharcEnabled = parseBoolean(sharc);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime SHARC switch '{}'; enabling SHARC",
-                                sharc);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String count = properties.getProperty(SCATTER_COUNT_KEY);
-                if (count == null) {
-                    count = properties.getProperty(LEGACY_WAVEFRONT_ROUNDS_KEY);
-                    if (count != null) rewriteNeeded = true;
-                }
-                if (count != null) {
-                    try {
-                        loadedScatterCount = parseScatterCount(count);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime scatter count '{}'; using {}",
-                                count,
-                                ScatterSettings.DEFAULT_COUNT);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                if (hasLegacyIntegratorProperties(properties)) {
-                    rewriteNeeded = true;
-                }
-                String chainLimit = properties.getProperty(PRIMARY_CHAIN_LIMIT_KEY);
-                if (chainLimit != null) {
-                    try {
-                        loadedPrimaryChainLimit = parsePrimaryChainLimit(chainLimit);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime primary delta-chain limit '{}'; using {}",
-                                chainLimit,
-                                PrimaryChainSettings.DEFAULT_LIMIT);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String workerPercentage = properties.getProperty(
-                        TERRAIN_WORKER_PERCENTAGE_KEY);
-                if (workerPercentage != null) {
-                    try {
-                        loadedTerrainWorkerPercentage =
-                                parseTerrainWorkerPercentage(workerPercentage);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime terrain worker percentage '{}'; using {}%",
-                                workerPercentage,
-                                TerrainWorkerSettings.DEFAULT_PERCENTAGE);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String voxelSurfaces = properties.getProperty(
-                        VOXEL_TEXTURE_SURFACES_KEY);
-                if (voxelSurfaces != null) {
-                    try {
-                        voxelTextureSurfaces = parseBoolean(voxelSurfaces);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime voxel-texture surface switch '{}'; disabling it",
-                                voxelSurfaces);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String voxelSurfaceStrength = properties.getProperty(
-                        VOXEL_TEXTURE_SURFACE_STRENGTH_KEY);
-                if (voxelSurfaceStrength != null) {
-                    try {
-                        voxelTextureSurfaceStrengthSteps =
-                                parseVoxelSurfaceStrengthSteps(voxelSurfaceStrength);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime voxel-surface strength '{}'; using the default",
-                                voxelSurfaceStrength);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String postProcessingId = properties.getProperty(MODE_KEY);
-                if (postProcessingId != null) {
-                    PostProcessingMode parsed = PostProcessingMode.findById(postProcessingId).orElse(null);
-                    if (parsed == null) {
-                        PrimeInfo.LOGGER.warn(
-                                "Unknown Prime post-processing mode '{}'; using {}",
-                                postProcessingId,
-                                PostProcessingMode.DEFAULT.id());
-                        rewriteNeeded = true;
-                    } else if (parsed == PostProcessingMode.DISABLED) {
-                        PrimeInfo.LOGGER.info(
-                                "Migrating persistent Prime raw output to the session diagnostic; using {}",
-                                PostProcessingMode.DEFAULT.id());
-                        rewriteNeeded = true;
-                    } else {
-                        postProcessingMode = parsed;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String qualityId = configuredQualityId(properties);
-                if (!properties.containsKey(QUALITY_KEY)) {
-                    rewriteNeeded = true;
-                }
-                if (qualityId != null) {
-                    ReconstructionQualityMode parsed =
-                            ReconstructionQualityMode.findById(qualityId).orElse(null);
-                    if (parsed == null) {
-                        PrimeInfo.LOGGER.warn(
-                                "Unknown Prime reconstruction quality '{}'; using {}",
-                                qualityId,
-                                ReconstructionQualityMode.DEFAULT.id());
-                        rewriteNeeded = true;
-                    } else {
-                        quality = parsed;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                AstronomyLoad astronomy = parseAstronomy(properties);
-                latitudeDegrees = astronomy.settings().latitudeDegrees();
-                solarLongitudeDegrees =
-                        astronomy.settings().solarLongitudeDegrees();
-                rewriteNeeded |= astronomy.rewriteNeeded();
-                String sunEv = properties.getProperty(SUN_EV_KEY);
-                if (sunEv != null) {
-                    try {
-                        sunQuarterSteps = parseEvQuarterSteps(sunEv);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime sun exposure '{}'; using 0 EV",
-                                sunEv);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String starEv = properties.getProperty(STAR_EV_KEY);
-                if (starEv != null) {
-                    try {
-                        starQuarterSteps = parseStarEvQuarterSteps(starEv);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime star exposure '{}'; using 0 EV",
-                                starEv);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String blockLightEv = properties.getProperty(BLOCK_LIGHT_EV_KEY);
-                if (blockLightEv != null) {
-                    try {
-                        blockLightQuarterSteps = parseEvQuarterSteps(blockLightEv);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime block-light exposure '{}'; using 0 EV",
-                                blockLightEv);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String finalExposureEv = properties.getProperty(FINAL_EXPOSURE_EV_KEY);
-                if (finalExposureEv != null) {
-                    try {
-                        finalExposureQuarterSteps =
-                                parseFinalExposureQuarterSteps(finalExposureEv);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime final exposure '{}'; using 0 EV",
-                                finalExposureEv);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                rewriteNeeded |= hasLegacyDisplayTransformProperties(properties);
-                String hdr = properties.getProperty(HDR_ENABLED_KEY);
-                if (hdr != null) {
-                    try {
-                        loadedHdrEnabled = parseBoolean(hdr);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime HDR switch '{}'; disabling HDR",
-                                hdr);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String autoExposureCompensation =
-                        properties.getProperty(AUTO_EXPOSURE_COMPENSATION_KEY);
-                if (autoExposureCompensation != null) {
-                    try {
-                        autoExposureCompensationSteps =
-                                parseAutoExposureCompensationSteps(autoExposureCompensation);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime auto-exposure compensation '{}'; using the default",
-                                autoExposureCompensation);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String referenceWhite = properties.getProperty(REFERENCE_WHITE_NITS_KEY);
-                if (referenceWhite != null) {
-                    try {
-                        loadedReferenceWhiteNits = parseReferenceWhiteNits(referenceWhite);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime HDR reference white '{}'; using automatic",
-                                referenceWhite);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String defaultRoughness = properties.getProperty(DEFAULT_ROUGHNESS_KEY);
-                if (defaultRoughness != null) {
-                    try {
-                        defaultRoughnessSteps = parseRoughnessSteps(defaultRoughness);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime default material roughness '{}'; using the default",
-                                defaultRoughness);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String seamlessGlassValue = properties.getProperty(SEAMLESS_GLASS_KEY);
-                if (seamlessGlassValue != null) {
-                    try {
-                        seamlessGlass = parseBoolean(seamlessGlassValue);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime seamless-glass switch '{}'; disabling it",
-                                seamlessGlassValue);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String airGapValue = properties.getProperty(AIR_GAP_KEY);
-                if (airGapValue != null) {
-                    try {
-                        airGap = parseBoolean(airGapValue);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime air-gap switch '{}'; using the default",
-                                airGapValue);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String vanillaPbrPresetsValue = properties.getProperty(
-                        VANILLA_PBR_PRESETS_KEY);
-                if (vanillaPbrPresetsValue != null) {
-                    try {
-                        vanillaPbrPresets = parseBoolean(vanillaPbrPresetsValue);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime vanilla-PBR preset switch '{}'; using the default",
-                                vanillaPbrPresetsValue);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
+        if (PrimeConfigFile.exists(path)) {
+            try {
+                PrimeConfigCodec.DecodeResult decoded =
+                        PrimeConfigCodec.decode(PrimeConfigFile.read(path));
+                loaded = decoded.data();
+                rewriteNeeded = decoded.rewriteNeeded();
             } catch (IOException | IllegalArgumentException exception) {
                 PrimeInfo.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
@@ -419,64 +50,21 @@ public final class PrimeConfig {
                 rewriteNeeded = true;
             }
         }
-        settings = new PrimeSettings(
-                pathTracingEnabled,
-                sharcEnabled,
-                voxelTextureSurfaces,
-                voxelTextureSurfaceStrengthSteps,
-                postProcessingMode,
-                quality,
-                new AstronomySettings(latitudeDegrees, solarLongitudeDegrees),
-                new LightingSettings.Snapshot(
-                        sunQuarterSteps,
-                        starQuarterSteps,
-                        blockLightQuarterSteps,
-                        0L),
-                new DisplaySettings.Snapshot(
-                        finalExposureQuarterSteps,
-                        autoExposureCompensationSteps),
-                new MaterialSettings.Snapshot(
-                        defaultRoughnessSteps,
-                        seamlessGlass,
-                        airGap,
-                        vanillaPbrPresets,
-                        0L));
-        scatterCount = loadedScatterCount;
-        primaryChainLimit = loadedPrimaryChainLimit;
-        terrainWorkerPercentage = loadedTerrainWorkerPercentage;
-        hdrEnabled = loadedHdrEnabled;
-        HdrOutput.setRequested(loadedHdrEnabled);
-        referenceWhiteNits = loadedReferenceWhiteNits;
-        HdrOutput.setReferenceWhiteNits(loadedReferenceWhiteNits);
+        applyLoaded(loaded, rewriteNeeded);
+        PrimeConfigCodec.log(loaded);
+    }
+
+    private static void applyLoaded(PrimeConfigData loaded, boolean rewriteNeeded) {
+        settings = loaded.settings();
+        scatterCount = loaded.scatterCount();
+        primaryChainLimit = loaded.primaryChainLimit();
+        terrainWorkerPercentage = loaded.terrainWorkerPercentage();
+        hdrEnabled = loaded.hdrEnabled();
+        HdrOutput.setRequested(hdrEnabled);
+        referenceWhiteNits = loaded.referenceWhiteNits();
+        HdrOutput.setReferenceWhiteNits(referenceWhiteNits);
         rendererRevision = 0L;
         dirty = rewriteNeeded;
-        PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
-                pathTracingEnabled ? "enabled" : "disabled",
-                sharcEnabled ? "enabled" : "disabled",
-                loadedScatterCount,
-                loadedPrimaryChainLimit,
-                loadedTerrainWorkerPercentage,
-                voxelTextureSurfaces ? "enabled" : "disabled",
-                formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
-                postProcessingMode.id(),
-                quality.id(),
-                quality.upscaleRatio(),
-                latitudeDegrees,
-                solarLongitudeDegrees,
-                formatEv(sunQuarterSteps),
-                formatStarEv(starQuarterSteps),
-                formatEv(blockLightQuarterSteps),
-                formatFinalExposure(finalExposureQuarterSteps),
-                loadedHdrEnabled ? "enabled" : "disabled",
-                loadedReferenceWhiteNits == HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS
-                        ? "automatic"
-                        : loadedReferenceWhiteNits + " nits",
-                formatAutoExposureCompensation(autoExposureCompensationSteps),
-                formatRoughness(defaultRoughnessSteps),
-                seamlessGlass ? "enabled" : "disabled",
-                airGap ? "enabled" : "disabled",
-                vanillaPbrPresets ? "enabled" : "disabled");
     }
 
     public static PrimeSettings settings() {
@@ -671,197 +259,30 @@ public final class PrimeConfig {
     }
 
     public static void save() {
-        Path path = configPath();
-        if (!dirty && Files.isRegularFile(path)) {
+        Path path = PrimeConfigFile.path();
+        if (!dirty && PrimeConfigFile.exists(path)) {
             return;
         }
-
-        Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
-            Files.createDirectories(path.getParent());
-            String contents = serializedContents();
-            Files.writeString(
-                    temporary,
-                    contents,
-                    StandardCharsets.UTF_8);
-            try {
-                Files.move(
-                        temporary,
-                        path,
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
-            }
+            PrimeConfigFile.write(path, serializedContents());
             dirty = false;
         } catch (IOException exception) {
-            try {
-                Files.deleteIfExists(temporary);
-            } catch (IOException cleanupException) {
-                exception.addSuppressed(cleanupException);
-            }
             PrimeInfo.LOGGER.error("Could not save Prime settings to {}", path, exception);
         }
     }
 
-    static boolean hasLegacyDisplayTransformProperties(Properties properties) {
-        for (String key : LEGACY_DISPLAY_TRANSFORM_KEYS) {
-            if (properties.containsKey(key)) return true;
-        }
-        return false;
-    }
-
-    static boolean hasLegacyIntegratorProperties(Properties properties) {
-        for (String key : LEGACY_INTEGRATOR_KEYS) {
-            if (properties.containsKey(key)) return true;
-        }
-        return false;
-    }
-
     static String serializedContents() {
-        PrimeSettings current = settings;
-        return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
-                    + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
-                    + SCATTER_COUNT_KEY + "=" + scatterCount + "\n"
-                    + PRIMARY_CHAIN_LIMIT_KEY + "=" + primaryChainLimit + "\n"
-                    + TERRAIN_WORKER_PERCENTAGE_KEY + "="
-                    + terrainWorkerPercentage + "\n"
-                    + VOXEL_TEXTURE_SURFACES_KEY + "="
-                    + current.voxelTextureSurfaces() + "\n"
-                    + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
-                    + formatVoxelSurfaceStrength(
-                            current.voxelTextureSurfaceStrengthSteps()) + "\n"
-                    + MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
-                    + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
-                    + LATITUDE_DEGREES_KEY + "="
-                    + current.astronomy().latitudeDegrees() + "\n"
-                    + SOLAR_LONGITUDE_DEGREES_KEY + "="
-                    + current.astronomy().solarLongitudeDegrees() + "\n"
-                    + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"
-                    + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
-                    + BLOCK_LIGHT_EV_KEY + "="
-                    + formatEv(current.blockLightQuarterSteps()) + "\n"
-                    + FINAL_EXPOSURE_EV_KEY + "="
-                    + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
-                    + HDR_ENABLED_KEY + "=" + hdrEnabled + "\n"
-                    + REFERENCE_WHITE_NITS_KEY + "=" + referenceWhiteNits + "\n"
-                    + AUTO_EXPOSURE_COMPENSATION_KEY + "="
-                    + formatAutoExposureCompensation(
-                            current.autoExposureCompensationSteps()) + "\n"
-                    + DEFAULT_ROUGHNESS_KEY + "="
-                    + formatRoughness(current.defaultRoughnessSteps()) + "\n"
-                    + SEAMLESS_GLASS_KEY + "=" + current.seamlessGlass() + "\n"
-                    + AIR_GAP_KEY + "=" + current.airGap() + "\n"
-                    + VANILLA_PBR_PRESETS_KEY + "="
-                    + current.vanillaPbrPresets() + "\n";
+        return PrimeConfigCodec.encode(currentData());
     }
 
-    static boolean parseBoolean(String value) {
-        if ("true".equalsIgnoreCase(value)) {
-            return true;
-        }
-        if ("false".equalsIgnoreCase(value)) {
-            return false;
-        }
-        throw new IllegalArgumentException("Boolean setting must be true or false");
-    }
-
-    static int parseScatterCount(String value) {
-        try {
-            return ScatterSettings.validateCount(Integer.parseInt(value));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("Scatter count must be an integer", exception);
-        }
-    }
-
-    static int parsePrimaryChainLimit(String value) {
-        try {
-            return PrimaryChainSettings.validateLimit(Integer.parseInt(value));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Primary delta-chain limit must be an integer", exception);
-        }
-    }
-
-    static int parseTerrainWorkerPercentage(String value) {
-        try {
-            return TerrainWorkerSettings.validatePercentage(Integer.parseInt(value));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Terrain worker percentage must be an integer", exception);
-        }
-    }
-
-    static int parseLatitudeDegrees(String value) {
-        try {
-            int degrees = Integer.parseInt(value);
-            return new AstronomySettings(
-                    degrees,
-                    AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES)
-                    .latitudeDegrees();
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Observer latitude must be an integer degree", exception);
-        }
-    }
-
-    static int parseSolarLongitudeDegrees(String value) {
-        try {
-            int degrees = Integer.parseInt(value);
-            return new AstronomySettings(
-                    AstronomySettings.DEFAULT_LATITUDE_DEGREES,
-                    degrees)
-                    .solarLongitudeDegrees();
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Solar longitude must be an integer degree", exception);
-        }
-    }
-
-    static AstronomyLoad parseAstronomy(Properties properties) {
-        int latitudeDegrees = AstronomySettings.DEFAULT_LATITUDE_DEGREES;
-        int solarLongitudeDegrees =
-                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES;
-        boolean rewriteNeeded = false;
-        String latitude = properties.getProperty(LATITUDE_DEGREES_KEY);
-        if (latitude != null) {
-            try {
-                latitudeDegrees = parseLatitudeDegrees(latitude);
-            } catch (IllegalArgumentException exception) {
-                PrimeInfo.LOGGER.warn(
-                        "Invalid Prime observer latitude '{}'; using {} degrees north",
-                        latitude,
-                        AstronomySettings.DEFAULT_LATITUDE_DEGREES);
-                rewriteNeeded = true;
-            }
-        } else {
-            rewriteNeeded = true;
-        }
-        String solarLongitude =
-                properties.getProperty(SOLAR_LONGITUDE_DEGREES_KEY);
-        if (solarLongitude != null) {
-            try {
-                solarLongitudeDegrees =
-                        parseSolarLongitudeDegrees(solarLongitude);
-            } catch (IllegalArgumentException exception) {
-                PrimeInfo.LOGGER.warn(
-                        "Invalid Prime solar longitude '{}'; using the March equinox",
-                        solarLongitude);
-                rewriteNeeded = true;
-            }
-        } else {
-            rewriteNeeded = true;
-        }
-        return new AstronomyLoad(
-                new AstronomySettings(
-                        latitudeDegrees,
-                        solarLongitudeDegrees),
-                rewriteNeeded);
-    }
-
-    record AstronomyLoad(
-            AstronomySettings settings,
-            boolean rewriteNeeded) {
+    private static PrimeConfigData currentData() {
+        return new PrimeConfigData(
+                settings,
+                scatterCount,
+                primaryChainLimit,
+                terrainWorkerPercentage,
+                hdrEnabled,
+                referenceWhiteNits);
     }
 
     private static void update(PrimeSettings replacement) {
@@ -870,155 +291,5 @@ public final class PrimeConfig {
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
-    }
-
-    static int parseEvQuarterSteps(String value) {
-        try {
-            int quarterSteps = new BigDecimal(value)
-                    .multiply(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
-                    .intValueExact();
-            LightingSettings.linearMultiplier(quarterSteps);
-            return quarterSteps;
-        } catch (ArithmeticException | NumberFormatException exception) {
-            throw new IllegalArgumentException("EV must be an exact 0.25-EV step", exception);
-        }
-    }
-
-    static int parseVoxelSurfaceStrengthSteps(String value) {
-        try {
-            int steps = new BigDecimal(value)
-                    .multiply(BigDecimal.valueOf(VoxelSurfaceSettings.STEPS_PER_UNIT))
-                    .intValueExact();
-            VoxelSurfaceSettings.maximumHeight(steps);
-            return steps;
-        } catch (ArithmeticException | NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Voxel-surface strength must be an exact 0.01 step",
-                    exception);
-        }
-    }
-
-    static String formatVoxelSurfaceStrength(int steps) {
-        VoxelSurfaceSettings.maximumHeight(steps);
-        return BigDecimal.valueOf(steps)
-                .divide(BigDecimal.valueOf(VoxelSurfaceSettings.STEPS_PER_UNIT))
-                .toPlainString();
-    }
-
-    static String formatEv(int quarterSteps) {
-        LightingSettings.linearMultiplier(quarterSteps);
-        return BigDecimal.valueOf(quarterSteps)
-                .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
-                .toPlainString();
-    }
-
-    static int parseStarEvQuarterSteps(String value) {
-        try {
-            int quarterSteps = new BigDecimal(value)
-                    .multiply(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
-                    .intValueExact();
-            LightingSettings.starLinearMultiplier(quarterSteps);
-            return quarterSteps;
-        } catch (ArithmeticException | NumberFormatException exception) {
-            throw new IllegalArgumentException("Star EV must be an exact 0.25-EV step", exception);
-        }
-    }
-
-    static String formatStarEv(int quarterSteps) {
-        LightingSettings.starLinearMultiplier(quarterSteps);
-        return BigDecimal.valueOf(quarterSteps)
-                .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
-                .toPlainString();
-    }
-
-    static int parseFinalExposureQuarterSteps(String value) {
-        try {
-            int quarterSteps = new BigDecimal(value)
-                    .multiply(BigDecimal.valueOf(DisplaySettings.QUARTER_STEPS_PER_EV))
-                    .intValueExact();
-            DisplaySettings.finalExposureMultiplier(quarterSteps);
-            return quarterSteps;
-        } catch (ArithmeticException | NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Final exposure must be an exact 0.25-EV step",
-                    exception);
-        }
-    }
-
-    static String formatFinalExposure(int quarterSteps) {
-        DisplaySettings.finalExposureMultiplier(quarterSteps);
-        return BigDecimal.valueOf(quarterSteps)
-                .divide(BigDecimal.valueOf(DisplaySettings.QUARTER_STEPS_PER_EV))
-                .toPlainString();
-    }
-
-    static int parseAutoExposureCompensationSteps(String value) {
-        try {
-            int steps = parseHundredthSteps(value);
-            DisplaySettings.autoExposureCompensation(steps);
-            return steps;
-        } catch (ArithmeticException | NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Auto-exposure compensation must be an exact 0.01 step",
-                    exception);
-        }
-    }
-
-    static String formatAutoExposureCompensation(int steps) {
-        DisplaySettings.autoExposureCompensation(steps);
-        return formatHundredthSteps(steps);
-    }
-
-    static int parseReferenceWhiteNits(String value) {
-        try {
-            return HdrOutput.validateReferenceWhiteNits(Integer.parseInt(value));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "HDR reference white must be an integer number of nits",
-                    exception);
-        }
-    }
-
-    private static int parseHundredthSteps(String value) {
-        return new BigDecimal(value)
-                .multiply(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
-                .intValueExact();
-    }
-
-    private static String formatHundredthSteps(int steps) {
-        return BigDecimal.valueOf(steps)
-                .divide(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
-                .toPlainString();
-    }
-
-    static int parseRoughnessSteps(String value) {
-        try {
-            int steps = new BigDecimal(value)
-                    .multiply(BigDecimal.valueOf(MaterialSettings.STEPS_PER_UNIT))
-                    .intValueExact();
-            MaterialSettings.linearRoughness(steps);
-            return steps;
-        } catch (ArithmeticException | NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Default material roughness must be an exact 0.01 step",
-                    exception);
-        }
-    }
-
-    static String formatRoughness(int steps) {
-        MaterialSettings.linearRoughness(steps);
-        return BigDecimal.valueOf(steps)
-                .divide(BigDecimal.valueOf(MaterialSettings.STEPS_PER_UNIT))
-                .toPlainString();
-    }
-
-    /** New shared quality wins; otherwise the former FSR key is migrated verbatim. */
-    static String configuredQualityId(Properties properties) {
-        String quality = properties.getProperty(QUALITY_KEY);
-        return quality != null ? quality : properties.getProperty(LEGACY_QUALITY_KEY);
-    }
-
-    private static Path configPath() {
-        return FabricLoader.getInstance().getConfigDir().resolve("prime.properties");
     }
 }

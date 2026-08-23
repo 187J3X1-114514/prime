@@ -21,8 +21,21 @@ def packageName = { String name ->
     separator < 0 ? '' : name.substring(0, separator)
 }
 
+def architectureLayers = ['client', 'runtime', 'adapter', 'vulkan', 'core', 'support'] as Set
+def allowedLayerTargets = [
+        client:  ['client', 'runtime', 'adapter', 'vulkan', 'core', 'support'] as Set,
+        runtime: ['runtime', 'adapter', 'vulkan', 'core', 'support'] as Set,
+        adapter: ['adapter', 'core', 'support'] as Set,
+        vulkan:  ['vulkan', 'core', 'support'] as Set,
+        core:    ['core', 'support'] as Set,
+        support: ['support'] as Set]
+
 def layerOf = { String name ->
     String candidatePackage = packageName(name)
+    if (candidatePackage == 'dev.prime.mixin.accessor'
+            || candidatePackage.startsWith('dev.prime.mixin.accessor.')) {
+        return 'adapter'
+    }
     if (name == 'dev.prime.PrimeClient'
             || candidatePackage == 'dev.prime.client'
             || candidatePackage.startsWith('dev.prime.client.')
@@ -36,19 +49,21 @@ def layerOf = { String name ->
             || candidatePackage.startsWith('dev.prime.render.runtime.')) {
         return 'runtime'
     }
-    // Minecraft capture and LabPBR atlas access are side adapters, not semantic layers.
+    // Minecraft capture is a side adapter, not a semantic or GPU layer.
     if (candidatePackage == 'dev.prime.render.scene.vanilla'
-            || candidatePackage.startsWith('dev.prime.render.scene.vanilla.')
-            || name == 'dev.prime.render.vulkan.LabPbrTextureAtlas') {
+            || candidatePackage.startsWith('dev.prime.render.scene.vanilla.')) {
         return 'adapter'
     }
     if (candidatePackage == 'dev.prime.render.vulkan'
             || candidatePackage.startsWith('dev.prime.render.vulkan.')) {
         return 'vulkan'
     }
+    if (candidatePackage == 'dev.prime.infrastructure'
+            || candidatePackage.startsWith('dev.prime.infrastructure.')) {
+        return 'support'
+    }
     if (candidatePackage == 'dev.prime.render'
-            || candidatePackage.startsWith('dev.prime.render.')
-            || candidatePackage == 'dev.prime.infrastructure') {
+            || candidatePackage.startsWith('dev.prime.render.')) {
         return 'core'
     }
     return 'other'
@@ -100,31 +115,35 @@ def forbiddenEdges = { Map<String, Set<String>> graph ->
     List<String> violations = []
     graph.each { source, targets ->
         String sourcePackage = packageName(source)
+        String sourceLayer = layerOf(source)
         targets.each { target ->
             String targetPackage = packageName(target)
-            boolean pureSource = sourcePackage == 'dev.prime.render'
-                    || sourcePackage.startsWith('dev.prime.render.terrain')
-                    || sourcePackage.startsWith('dev.prime.render.post')
-                    || sourcePackage.startsWith('dev.prime.render.scene')
-                            && !sourcePackage.startsWith('dev.prime.render.scene.vanilla')
-            boolean forbiddenTarget = targetPackage == 'dev.prime.client'
-                    || targetPackage.startsWith('dev.prime.client.')
-                    || targetPackage == 'dev.prime.config'
-                    || targetPackage.startsWith('dev.prime.config.')
-                    || targetPackage == 'dev.prime.mixin'
-                    || targetPackage.startsWith('dev.prime.mixin.')
-                    || targetPackage == 'dev.prime.render.runtime'
-                    || targetPackage.startsWith('dev.prime.render.runtime.')
-            if (pureSource && forbiddenTarget) {
-                violations.add("pure reverse dependency: ${source} -> ${target}")
+            String targetLayer = layerOf(target)
+            if (target.startsWith('dev.prime.')
+                    && architectureLayers.contains(sourceLayer)
+                    && architectureLayers.contains(targetLayer)
+                    && !allowedLayerTargets[sourceLayer].contains(targetLayer)) {
+                violations.add(
+                        "forbidden layer dependency (${sourceLayer} -> ${targetLayer}): ${source} -> ${target}")
             }
-            if ((sourcePackage == 'dev.prime.render.terrain'
-                    || sourcePackage.startsWith('dev.prime.render.terrain.'))
-                    && (targetPackage == 'dev.prime.render.vulkan'
-                    || targetPackage.startsWith('dev.prime.render.vulkan.')
-                    || targetPackage == 'org.lwjgl.vulkan'
-                    || targetPackage.startsWith('org.lwjgl.vulkan.'))) {
-                violations.add("pure terrain depends on Vulkan: ${source} -> ${target}")
+            boolean corePlatformDependency = sourceLayer == 'core'
+                    && (targetPackage == 'net.minecraft.client'
+                            || targetPackage.startsWith('net.minecraft.client.')
+                            || targetPackage == 'com.mojang.blaze3d'
+                            || targetPackage.startsWith('com.mojang.blaze3d.')
+                            || targetPackage == 'org.lwjgl'
+                            || targetPackage.startsWith('org.lwjgl.')
+                            || targetPackage == 'org.spongepowered.asm.mixin'
+                            || targetPackage.startsWith('org.spongepowered.asm.mixin.')
+                            || targetPackage == 'net.fabricmc'
+                            || targetPackage.startsWith('net.fabricmc.'))
+            if (corePlatformDependency) {
+                violations.add("core depends on client/GPU platform: ${source} -> ${target}")
+            }
+            if (sourceLayer == 'adapter'
+                    && (targetPackage == 'org.lwjgl'
+                            || targetPackage.startsWith('org.lwjgl.'))) {
+                violations.add("Minecraft adapter depends on LWJGL: ${source} -> ${target}")
             }
         }
     }
@@ -183,16 +202,18 @@ def verifyArchitecture = tasks.register('verifyArchitecture') {
             }
         }
 
-        // Executable detector self-test: both a forbidden edge and a cross-layer SCC must trip.
+        // Executable detector self-test: layer, platform and SCC rules must all trip.
         Map<String, Set<String>> injected = [
                 'dev.prime.render.terrain.InjectedCore':
-                        ['dev.prime.client.InjectedClient'] as Set,
+                        ['dev.prime.client.InjectedClient', 'org.lwjgl.vulkan.VK12'] as Set,
                 'dev.prime.client.InjectedClient':
-                        ['dev.prime.render.terrain.InjectedCore'] as Set]
-        if (forbiddenEdges(injected).isEmpty()
+                        ['dev.prime.render.terrain.InjectedCore'] as Set,
+                'dev.prime.render.scene.vanilla.InjectedAdapter':
+                        ['dev.prime.render.vulkan.InjectedGpu'] as Set]
+        if (forbiddenEdges(injected).size() < 3
                 || !stronglyConnected(injected).any { component ->
                     component.collect { layerOf(it) }.toSet().intersect(
-                            ['client', 'runtime', 'vulkan', 'core'] as Set).size() > 1
+                            architectureLayers).size() > 1
                 }) {
             throw new GradleException('Architecture verifier injection self-test did not fail')
         }
@@ -200,9 +221,9 @@ def verifyArchitecture = tasks.register('verifyArchitecture') {
         List<String> violations = forbiddenEdges(dependencies)
         List<Set<String>> components = stronglyConnected(graph)
         List<Set<String>> crossLayer = components.findAll { component ->
-            component.size() > 1
+                    component.size() > 1
                     && component.collect { layerOf(it) }.toSet().intersect(
-                            ['client', 'runtime', 'vulkan', 'core'] as Set).size() > 1
+                            architectureLayers).size() > 1
         }
         crossLayer.each { component ->
             violations.add("cross-layer SCC: ${component.join(', ')}")

@@ -1,4 +1,4 @@
-package dev.prime.mixin;
+package dev.prime.mixin.accessor;
 
 import java.util.List;
 import java.util.Map;

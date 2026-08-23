@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.mixin.SpriteContentsAccessor;
+import dev.prime.mixin.accessor.SpriteContentsAccessor;
 import dev.prime.render.scene.CapturedSprite;
 import dev.prime.render.scene.SpriteId;
 import net.minecraft.client.renderer.texture.SpriteContents;

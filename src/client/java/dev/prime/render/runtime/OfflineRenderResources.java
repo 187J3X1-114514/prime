@@ -1,6 +1,6 @@
 package dev.prime.render.runtime;
 
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.vulkan.DisplayTransformPass;

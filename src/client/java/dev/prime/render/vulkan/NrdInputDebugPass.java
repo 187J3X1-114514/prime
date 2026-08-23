@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.vulkan.nrd.PreparedNrdFrame;
 import java.util.List;

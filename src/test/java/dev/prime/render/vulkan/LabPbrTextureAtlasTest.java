@@ -2,12 +2,43 @@ package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.terrain.LabPbrAtlasFrame;
+import dev.prime.render.terrain.LabPbrMaterialSet;
 import java.nio.ByteBuffer;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class LabPbrTextureAtlasTest {
+    @Test
+    void capturedMaterialPixelsAreImmutable() {
+        int[] pixels = {0xff102030};
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
+                pixels, 1, 1, 1, 1, 1, 1);
+
+        pixels[0] = 0;
+        int[] exposed = source.pixels();
+        exposed[0] = 0;
+
+        assertArrayEquals(new int[] {0xff102030}, source.pixels());
+    }
+
+    @Test
+    void frameRejectsMissingAnimationSamples() {
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
+                new int[] {0xff102030}, 1, 1, 1, 1, 1, 1);
+        LabPbrAtlasFrame.Sprite sprite = new LabPbrAtlasFrame.Sprite(
+                0, 0, 1, 1, 0, source, null, 0);
+        LabPbrAtlasFrame.Snapshot snapshot = new LabPbrAtlasFrame.Snapshot(
+                1, 1, 1, LabPbrMaterialSet.EMPTY, List.of(sprite));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LabPbrAtlasFrame(0, snapshot, List.of()));
+    }
+
     @Test
     void atlasAndAnimationBudgetsKeepOffsetsAboveTwoGibibytes() {
         long atlasBytes = LabPbrTextureAtlas.totalMipBytes(32_768, 32_768, 16);
@@ -31,7 +62,7 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void animatedAuxiliaryMapsUseBaseFrameIndicesAndInterpolationProgress() {
-        LabPbrTextureAtlas.MaterialSource source = LabPbrTextureAtlas.MaterialSource.create(
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff000000, 0xffff0000},
                 1,
                 2,
@@ -41,7 +72,7 @@ final class LabPbrTextureAtlasTest {
                 2);
 
         int blended = source.filtered(
-                new LabPbrTextureAtlas.AnimationSample(0, 1, 500),
+                new LabPbrAtlasFrame.AnimationSample(0, 1, 500),
                 0.0,
                 0.0,
                 1.0,
@@ -54,7 +85,7 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void singleFrameAuxiliaryMapsRemainStaticForAnimatedBaseSprites() {
-        LabPbrTextureAtlas.MaterialSource source = LabPbrTextureAtlas.MaterialSource.create(
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff204060},
                 1,
                 1,
@@ -64,7 +95,7 @@ final class LabPbrTextureAtlasTest {
                 4);
 
         int sampled = source.filtered(
-                new LabPbrTextureAtlas.AnimationSample(3, 0, 750),
+                new LabPbrAtlasFrame.AnimationSample(3, 0, 750),
                 0.0,
                 0.0,
                 1.0,
@@ -77,7 +108,7 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void semanticMipFilteringAveragesRawLinearChannels() {
-        LabPbrTextureAtlas.MaterialSource source = LabPbrTextureAtlas.MaterialSource.create(
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff000000, 0xffff0000, 0xff00ff00, 0xff0000ff},
                 2,
                 2,
@@ -87,7 +118,7 @@ final class LabPbrTextureAtlasTest {
                 2);
 
         int sampled = source.filtered(
-                new LabPbrTextureAtlas.AnimationSample(0, 0, 0),
+                new LabPbrAtlasFrame.AnimationSample(0, 0, 0),
                 0.0,
                 0.0,
                 2.0,
@@ -100,7 +131,7 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void specularFilteringTreatsThe255AlphaSentinelAsZeroEmission() {
-        LabPbrTextureAtlas.MaterialSource source = LabPbrTextureAtlas.MaterialSource.create(
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff000000, 0xfe000000},
                 2,
                 1,
@@ -110,7 +141,7 @@ final class LabPbrTextureAtlasTest {
                 1);
 
         int sampled = source.filtered(
-                new LabPbrTextureAtlas.AnimationSample(0, 0, 0),
+                new LabPbrAtlasFrame.AnimationSample(0, 0, 0),
                 0.0,
                 0.0,
                 2.0,
@@ -124,7 +155,7 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void specularFilteringPreservesAnAllSentinelRegion() {
-        LabPbrTextureAtlas.MaterialSource source = LabPbrTextureAtlas.MaterialSource.create(
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff000000, 0xff000000},
                 2,
                 1,
@@ -134,7 +165,7 @@ final class LabPbrTextureAtlasTest {
                 1);
 
         int sampled = source.filtered(
-                new LabPbrTextureAtlas.AnimationSample(0, 0, 0),
+                new LabPbrAtlasFrame.AnimationSample(0, 0, 0),
                 0.0,
                 0.0,
                 2.0,
@@ -148,7 +179,7 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void specularAnimationInterpolatesDecodedEmissionRatherThanTheSentinelByte() {
-        LabPbrTextureAtlas.MaterialSource source = LabPbrTextureAtlas.MaterialSource.create(
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff000000, 0xfe000000},
                 1,
                 2,
@@ -158,7 +189,7 @@ final class LabPbrTextureAtlasTest {
                 2);
 
         int sampled = source.filtered(
-                new LabPbrTextureAtlas.AnimationSample(0, 1, 500),
+                new LabPbrAtlasFrame.AnimationSample(0, 1, 500),
                 0.0,
                 0.0,
                 1.0,

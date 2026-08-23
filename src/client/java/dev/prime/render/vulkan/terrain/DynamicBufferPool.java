@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan.terrain;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import java.util.ArrayList;

@@ -3,7 +3,7 @@ package dev.prime.render.vulkan.fsr;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.DisplaySettings;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.post.ReconstructionQualityMode;

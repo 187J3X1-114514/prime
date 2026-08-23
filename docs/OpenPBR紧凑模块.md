@@ -44,6 +44,11 @@ OpenPBR 组合树；sampling flags 作为操作参数传入，分量求值不再
 和 air-gap 适配。状态只保留界面 ONB、相对/原始 IOR、两个实际使用的 microfacet、Fresnel、薄壁
 tint、体积参数和多次散射补偿；sampling flags 不再驻留在状态中。dispersion 仍由支持判断明确拒绝。
 
+厚介质辐亮度透射的 BSDF response 包含 `1/eta^2`；path-state `etaScale` 只修正 Russian roulette
+的存活度量，不写回 throughput。Snell 方向、TIR、Fresnel、PDF、返回的 `relativeEta` 和体积栈
+转换必须由同一个离散事件决定。锁定 RoboCute 版本已经包含该缩放；author overlay 只提供单独
+锁定的 dielectric highlight energy compensation，两者均只作行为参考，不进入编译闭包。
+
 `bsdf/compact/openpbr_foliage.slang` 覆盖当前固定薄壁 foliage 子集：dielectric diffuse/subsurface、
 specular layer 和 15% colored thin-wall transmission，以及材质编码允许的 conductor 旁路。它复用
 紧凑 opaque substrate，只增加 transmission microfacet、tint 和能量感知的 dielectric mix 状态。
@@ -65,26 +70,8 @@ microfacet、材质初始化和体积栈全部由 compact 所有；仓库中不�
 `verifyShaderIncludeGraph` 会拒绝恢复已删除的 `shaders/bsdf/core` 或历史 reference
 specialization，并继续检查所有现存 Slang 依赖可解析且无环。
 
-迁移期评估曾以两侧相同的 `-g1` 构建参数比较，最大的 transparent-shade SPIR-V 从迁移前 1,330,220 字节降至
-1,303,804 字节，减少 26,416 字节（1.99%）；函数体语义指令从 60,972 降至 59,775（1.96%），
-条件分支从 3,892 降至 3,865，Phi 从 4,419 增至 4,436。相对上一批产物，本次独立 ABI/数学模块
-只增加 168 字节，语义指令、条件分支和 Phi 均不变，说明参考依赖移除没有扩大执行程序。
-`-g0` probe 只用于指令审查，不能与默认生产产物直接比较体积。
-
-同机以四个 Slang 进程执行 51 个生产单元的
-`compileSlangShaders --no-build-cache --rerun-tasks`，用上一批提交 `87dfa25` 的隔离 worktree 做
-配对复测：上一批两次为 52.8/52.1 秒，本批三次为 50.7/44.5/43.6 秒；中位数由约 52.5 秒降至
-44.5 秒，约缩短 15.2%。该命令强制重新编译全部单元，但不清空操作系统文件缓存；数据用于确认
-优化器负担方向，不替代更多轮次和机器的基准。
-
-后续迁移和收口顺序：
-
-1. 用 Nsight 的寄存器、occupancy 和 SASS 指令确认 transmission/foliage 特化的运行成本；
-2. 在不改变公式、分布或有效 lobe 的前提下合并重复特化和公共子表达式；
-3. 按实际产品需求补齐 coat、fuzz 和 thin-film 的精确紧凑拓扑及测试。
-
-完整 OpenPBR 的 coat、fuzz 和 thin-film 随后作为精确拓扑补齐；RoboCute diffraction 与 coat
-roughening 是扩展状态，不混入 OpenPBR 标准核心。
+尚未支持的 coat、fuzz、thin-film、diffraction 和非零 diffuse roughness 不进入材质翻译。是否
+增加新的精确拓扑由产品需求决定；在实现、测试和性能边界完整前不得提前暴露。
 
 ## 测试
 

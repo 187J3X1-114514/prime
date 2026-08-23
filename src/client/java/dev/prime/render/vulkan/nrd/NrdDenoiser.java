@@ -8,11 +8,10 @@ import dev.prime.render.post.SubmittedFrame;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.FrameCamera;
-import dev.prime.render.ResourceCleanup;
+import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.SunDirection;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.ParallelPipelineCreation;
-import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.RawWavefrontFrame;
@@ -22,14 +21,9 @@ import dev.prime.render.vulkan.VulkanSync;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -39,11 +33,6 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
 import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkDescriptorBufferInfo;
-import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
@@ -51,7 +40,6 @@ import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkSamplerCreateInfo;
-import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /**
  * Vulkan realization of NRD Core's API-independent dispatch descriptions.
@@ -69,11 +57,11 @@ public final class NrdDenoiser implements Destroyable {
     // Wavefront resolve writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
-    private final VulkanContext context;
+    final VulkanContext context;
     private final int width;
     private final int height;
     private final NrdNative.Instance nativeInstance;
-    private final NrdNative.Description description;
+    final NrdNative.Description description;
     private final NrdImages images;
     private final RawWavefrontFrame rawFrame;
     private final PreparedNrdFrame preparedFrame;
@@ -81,15 +69,13 @@ public final class NrdDenoiser implements Destroyable {
     private final AtmospherePipeline atmosphere;
     private final long nearestSampler;
     private final long linearSampler;
-    private final ComputePipeline[] pipelines;
+    final ComputePipeline[] pipelines;
     private final NrdInputPreparationPass inputPreparationPipeline;
     private final NrdCompositePass composite;
     private final Matrix4f currentNrdProjection = new Matrix4f();
     private final Matrix4f previousNrdProjection = new Matrix4f();
     private final Matrix4f previousWorldToView = new Matrix4f();
-    private final ArrayDeque<FrameBindings> freeBindings = new ArrayDeque<>();
-    private final Set<FrameBindings> allBindings =
-            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final NrdFrameBindingPool bindingPool;
 
     private boolean destroyed;
 
@@ -143,6 +129,7 @@ public final class NrdDenoiser implements Destroyable {
         this.pipelines = pipelines;
         this.inputPreparationPipeline = inputPreparationPipeline;
         this.composite = composite;
+        this.bindingPool = new NrdFrameBindingPool(this);
     }
 
     static <T> void validateMotionBindings(
@@ -341,7 +328,7 @@ public final class NrdDenoiser implements Destroyable {
                 false,
                 input.sunDirection()));
         NrdNative.DispatchList dispatches = this.nativeInstance.getDispatches();
-        FrameBindings bindings = this.acquireBindings(dispatches.size());
+        NrdFrameBindings bindings = this.bindingPool.acquire(dispatches.size());
         try {
             computeToComputeBarrier(commandBuffer);
             bindings.prepare(dispatches, this, frame.inputs);
@@ -361,8 +348,8 @@ public final class NrdDenoiser implements Destroyable {
                             pipeline.pipelineLayout,
                             0,
                             stack.longs(
-                                    bindings.resourceDescriptorSets[dispatchIndex],
-                                    bindings.constantsDescriptorSets[dispatchIndex]),
+                                    bindings.resourceDescriptorSet(dispatchIndex),
+                                    bindings.constantsDescriptorSet(dispatchIndex)),
                             null);
                 }
                 VK12.vkCmdDispatch(
@@ -390,7 +377,7 @@ public final class NrdDenoiser implements Destroyable {
                     bindings,
                     frame.planned);
         } catch (RuntimeException exception) {
-            this.recycle(bindings);
+            this.bindingPool.recycle(bindings);
             throw exception;
         }
     }
@@ -402,7 +389,7 @@ public final class NrdDenoiser implements Destroyable {
             throw new IllegalArgumentException("NRD frame token does not belong to this submission");
         }
         token.submitted = true;
-        this.context.afterSubmission(() -> this.recycle(token.bindings));
+        this.context.afterSubmission(() -> this.bindingPool.recycle(token.bindings));
         return token.planned;
     }
 
@@ -414,35 +401,7 @@ public final class NrdDenoiser implements Destroyable {
                     "NRD frame token does not belong to this denoiser");
         }
         token.abandoned = true;
-        this.recycle(token.bindings);
-    }
-
-    private FrameBindings acquireBindings(int requiredDispatches) {
-        synchronized (this.freeBindings) {
-            for (Iterator<FrameBindings> iterator = this.freeBindings.iterator(); iterator.hasNext();) {
-                FrameBindings bindings = iterator.next();
-                if (bindings.dispatchCapacity >= requiredDispatches) {
-                    iterator.remove();
-                    return bindings;
-                }
-            }
-        }
-        FrameBindings created = FrameBindings.create(this, requiredDispatches);
-        synchronized (this.freeBindings) {
-            this.allBindings.add(created);
-        }
-        return created;
-    }
-
-    private void recycle(FrameBindings bindings) {
-        synchronized (this.freeBindings) {
-            if (this.destroyed) {
-                bindings.destroy();
-                this.allBindings.remove(bindings);
-            } else {
-                this.freeBindings.addLast(bindings);
-            }
-        }
+        this.bindingPool.recycle(token.bindings);
     }
 
     VulkanImage resolveResource(
@@ -493,16 +452,10 @@ public final class NrdDenoiser implements Destroyable {
             return;
         }
         // Submission-completion callbacks may race teardown. Publish terminal ownership first;
-        // the binding lock then makes each late recycle destroy rather than requeue its binding.
+        // the pool lock then makes each late recycle destroy rather than requeue its binding.
         this.destroyed = true;
         RuntimeException failure = null;
-        synchronized (this.freeBindings) {
-            for (FrameBindings bindings : this.allBindings) {
-                failure = ResourceCleanup.destroy(bindings, failure);
-            }
-            this.allBindings.clear();
-            this.freeBindings.clear();
-        }
+        failure = ResourceCleanup.destroy(this.bindingPool, failure);
         failure = ResourceCleanup.destroy(this.composite, failure);
         failure = ResourceCleanup.destroy(this.inputPreparationPipeline, failure);
         failure = destroyPipelines(this.pipelines, failure);
@@ -726,14 +679,14 @@ public final class NrdDenoiser implements Destroyable {
 
     public static final class FrameToken {
         private final NrdDenoiser owner;
-        private final FrameBindings bindings;
+        private final NrdFrameBindings bindings;
         private final SubmittedFrame<NrdFramePlan> planned;
         private boolean submitted;
         private boolean abandoned;
 
         private FrameToken(
                 NrdDenoiser owner,
-                FrameBindings bindings,
+                NrdFrameBindings bindings,
                 SubmittedFrame<NrdFramePlan> planned) {
             this.owner = owner;
             this.bindings = bindings;
@@ -789,10 +742,10 @@ public final class NrdDenoiser implements Destroyable {
         @Override public boolean usesShInputs() { return true; }
     }
 
-    private static final class ComputePipeline implements Destroyable {
+    static final class ComputePipeline implements Destroyable {
         private final VulkanContext context;
-        private final long resourceDescriptorSetLayout;
-        private final long constantsDescriptorSetLayout;
+        final long resourceDescriptorSetLayout;
+        final long constantsDescriptorSetLayout;
         private final long pipelineLayout;
         private final long pipeline;
         private boolean destroyed;
@@ -992,267 +945,4 @@ public final class NrdDenoiser implements Destroyable {
         return pointer.get(0);
     }
 
-    private static final class FrameBindings implements Destroyable {
-        private final NrdDenoiser owner;
-        private final long descriptorPool;
-        private final VulkanBuffer constantBuffer;
-        private final int dispatchCapacity;
-        private long[] resourceDescriptorSets = new long[0];
-        private long[] constantsDescriptorSets = new long[0];
-        private int[] allocatedPipelineIndices = new int[0];
-        private int allocatedSetCount;
-        private boolean destroyed;
-
-        private FrameBindings(
-                NrdDenoiser owner,
-                long descriptorPool,
-                VulkanBuffer constantBuffer,
-                int dispatchCapacity) {
-            this.owner = owner;
-            this.descriptorPool = descriptorPool;
-            this.constantBuffer = constantBuffer;
-            this.dispatchCapacity = dispatchCapacity;
-        }
-
-        private static FrameBindings create(NrdDenoiser owner, int requiredDispatches) {
-            NrdNative.Description description = owner.description;
-            // NRD's pool description can count identical denoiser dispatch names only once even
-            // though GetComputeDispatches returns one sequence per denoiser identifier.
-            int dispatchCapacity = Math.max(Math.max(description.setsMaxNum(), requiredDispatches), 1);
-            int maxTextures = 1;
-            int maxStorages = 1;
-            for (NrdNative.Pipeline pipeline : description.pipelines()) {
-                int textures = 0;
-                int storages = 0;
-                for (NrdNative.PipelineRange range : pipeline.ranges()) {
-                    if (range.descriptorType() == NrdNative.DESCRIPTOR_TEXTURE) {
-                        textures += range.descriptorsNum();
-                    } else {
-                        storages += range.descriptorsNum();
-                    }
-                }
-                maxTextures = Math.max(maxTextures, textures);
-                maxStorages = Math.max(maxStorages, storages);
-            }
-            long descriptorPool = 0L;
-            VulkanBuffer constantBuffer = null;
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
-                sizes.get(0)
-                        .type(VK12.VK_DESCRIPTOR_TYPE_SAMPLER)
-                        .descriptorCount(dispatchCapacity * description.samplers().size());
-                sizes.get(1)
-                        .type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                        .descriptorCount(dispatchCapacity);
-                sizes.get(2)
-                        .type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-                        .descriptorCount(dispatchCapacity * maxTextures);
-                sizes.get(3)
-                        .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                        .descriptorCount(dispatchCapacity * maxStorages);
-                VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .maxSets(Math.multiplyExact(dispatchCapacity, 2))
-                        .pPoolSizes(sizes);
-                LongBuffer poolPointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateDescriptorPool(owner.context.vkDevice(), poolInfo, null, poolPointer),
-                        "create Prime NRD frame descriptor pool");
-                descriptorPool = poolPointer.get(0);
-                long stride = VulkanContext.alignUp(
-                        Math.max(description.constantBufferMaxDataSize(), 1),
-                        Math.max(owner.context.uniformBufferOffsetAlignment(), 1L));
-                constantBuffer = owner.context.createBuffer(
-                        Math.multiplyExact(stride, dispatchCapacity),
-                        VK12.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                        true,
-                        "Prime NRD frame constants");
-                return new FrameBindings(
-                        owner,
-                        descriptorPool,
-                        constantBuffer,
-                        dispatchCapacity);
-            } catch (RuntimeException exception) {
-                if (constantBuffer != null) {
-                    constantBuffer.destroy();
-                }
-                if (descriptorPool != 0L) {
-                    VK12.vkDestroyDescriptorPool(owner.context.vkDevice(), descriptorPool, null);
-                }
-                throw exception;
-            }
-        }
-
-        private void prepare(
-                NrdNative.DispatchList dispatches,
-                NrdDenoiser denoiser,
-                PreparedNrdFrame prepared) {
-            if (this.destroyed) {
-                throw new IllegalStateException("NRD frame bindings are destroyed");
-            }
-            if (dispatches.size() > this.dispatchCapacity) {
-                throw new IllegalStateException("NRD dispatch count exceeds its descriptor pool contract");
-            }
-            if (dispatches.isEmpty()) {
-                return;
-            }
-            if (this.resourceDescriptorSets.length < dispatches.size()) {
-                this.resourceDescriptorSets = new long[dispatches.size()];
-                this.constantsDescriptorSets = new long[dispatches.size()];
-                this.allocatedPipelineIndices = new int[dispatches.size()];
-            }
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                if (!this.matchesAllocatedLayouts(dispatches)) {
-                    this.allocatedSetCount = 0;
-                    VulkanContext.check(
-                            VK12.vkResetDescriptorPool(
-                                    denoiser.context.vkDevice(), this.descriptorPool, 0),
-                            "reset Prime NRD descriptor pool");
-                    LongBuffer layouts = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
-                    for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                        int pipelineIndex = dispatches.pipelineIndex(dispatchIndex);
-                        ComputePipeline pipeline = denoiser.pipelines[pipelineIndex];
-                        layouts.put(pipeline.resourceDescriptorSetLayout);
-                        layouts.put(pipeline.constantsDescriptorSetLayout);
-                        this.allocatedPipelineIndices[dispatchIndex] = pipelineIndex;
-                    }
-                    layouts.flip();
-                    VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
-                            .sType$Default()
-                            .descriptorPool(this.descriptorPool)
-                            .pSetLayouts(layouts);
-                    LongBuffer sets = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
-                    VulkanContext.check(
-                            VK12.vkAllocateDescriptorSets(
-                                    denoiser.context.vkDevice(), allocateInfo, sets),
-                            "allocate Prime NRD frame descriptor sets");
-                    for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                        this.resourceDescriptorSets[dispatchIndex] = sets.get();
-                        this.constantsDescriptorSets[dispatchIndex] = sets.get();
-                    }
-                    this.allocatedSetCount = dispatches.size();
-                }
-
-                long constantStride = VulkanContext.alignUp(
-                        Math.max(denoiser.description.constantBufferMaxDataSize(), 1),
-                        Math.max(denoiser.context.uniformBufferOffsetAlignment(), 1L));
-                for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                    this.writeDispatch(
-                            stack,
-                            dispatchIndex,
-                            dispatches,
-                            constantStride,
-                            denoiser,
-                            prepared);
-                }
-            }
-        }
-
-        private boolean matchesAllocatedLayouts(NrdNative.DispatchList dispatches) {
-            if (this.allocatedSetCount != dispatches.size()) {
-                return false;
-            }
-            for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                if (this.allocatedPipelineIndices[dispatchIndex]
-                        != dispatches.pipelineIndex(dispatchIndex)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        private void writeDispatch(
-                MemoryStack stack,
-                int dispatchIndex,
-                NrdNative.DispatchList dispatches,
-                long constantStride,
-                NrdDenoiser denoiser,
-                PreparedNrdFrame prepared) {
-            boolean hasConstants = denoiser.description.pipelines()
-                    .get(dispatches.pipelineIndex(dispatchIndex))
-                    .hasConstantData();
-            int constantDataSize = dispatches.constantDataSize(dispatchIndex);
-            if (hasConstants && constantDataSize == 0) {
-                throw new IllegalStateException("NRD pipeline requires missing constant data");
-            }
-            if (constantDataSize > denoiser.description.constantBufferMaxDataSize()) {
-                throw new IllegalStateException("NRD constant data exceeds its declared maximum");
-            }
-            int resourceCount = dispatches.resourceCount(dispatchIndex);
-            int writeCount = resourceCount + (hasConstants ? 1 : 0);
-            VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(writeCount, stack);
-            VkDescriptorImageInfo.Buffer imageInfos =
-                    VkDescriptorImageInfo.calloc(resourceCount, stack);
-            int writeIndex = 0;
-            if (hasConstants) {
-                long constantOffset = constantStride * dispatchIndex;
-                this.constantBuffer.put(
-                        constantOffset,
-                        dispatches.constantDataAddress(dispatchIndex),
-                        constantDataSize);
-                VkDescriptorBufferInfo.Buffer bufferInfo = VkDescriptorBufferInfo.calloc(1, stack)
-                        .buffer(this.constantBuffer.handle())
-                        .offset(constantOffset)
-                        .range(constantDataSize);
-                writes.get(writeIndex++)
-                        .sType$Default()
-                        .dstSet(this.constantsDescriptorSets[dispatchIndex])
-                        .dstBinding(denoiser.description.constantBufferOffset()
-                                + denoiser.description.constantBufferRegisterIndex())
-                        .descriptorCount(1)
-                        .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                        .pBufferInfo(bufferInfo);
-            }
-            int textureIndex = 0;
-            int storageIndex = 0;
-            for (int resourceIndex = 0; resourceIndex < resourceCount; resourceIndex++) {
-                int resourceType = dispatches.resourceType(dispatchIndex, resourceIndex);
-                VulkanImage image = denoiser.resolveResource(
-                        prepared,
-                        resourceType,
-                        dispatches.resourceIndexInPool(dispatchIndex, resourceIndex),
-                        dispatches.identifier(dispatchIndex));
-                int binding;
-                int descriptorType;
-                int nativeDescriptorType = dispatches.resourceDescriptorType(
-                        dispatchIndex, resourceIndex);
-                if (nativeDescriptorType == NrdNative.DESCRIPTOR_TEXTURE) {
-                    binding = denoiser.description.textureOffset()
-                            + denoiser.description.resourcesBaseRegisterIndex()
-                            + textureIndex++;
-                    descriptorType = VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-                } else if (nativeDescriptorType == NrdNative.DESCRIPTOR_STORAGE_TEXTURE) {
-                    binding = denoiser.description.storageTextureOffset()
-                            + denoiser.description.resourcesBaseRegisterIndex()
-                            + storageIndex++;
-                    descriptorType = VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-                } else {
-                    throw new IllegalStateException(
-                            "Unknown NRD resource descriptor type " + nativeDescriptorType);
-                }
-                imageInfos.get(resourceIndex)
-                        .imageView(image.view())
-                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                writes.get(writeIndex++)
-                        .sType$Default()
-                        .dstSet(this.resourceDescriptorSets[dispatchIndex])
-                        .dstBinding(binding)
-                        .descriptorCount(1)
-                        .descriptorType(descriptorType)
-                        .pImageInfo(VkDescriptorImageInfo.create(
-                                imageInfos.get(resourceIndex).address(), 1));
-            }
-            VK12.vkUpdateDescriptorSets(denoiser.context.vkDevice(), writes, null);
-        }
-
-        @Override
-        public void destroy() {
-            if (!this.destroyed) {
-                this.destroyed = true;
-                this.constantBuffer.destroy();
-                VK12.vkDestroyDescriptorPool(
-                        this.owner.context.vkDevice(), this.descriptorPool, null);
-            }
-        }
-    }
 }

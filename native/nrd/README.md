@@ -30,32 +30,8 @@ require a source modification to the pinned SDK.
 
 Prime builds SPIR-V only, with one NRD instance containing two
 `REBLUR_DIFFUSE_SPECULAR_SH` denoisers and one `SIGMA_SHADOW`, no NRI and no quad-intrinsics extension.
-The main REBLUR handles ordinary primary surfaces and the transmission PSR signal on transparent pixels;
-the second REBLUR handles only the fixed reflection branch. Ordinary pixels continue one realtime
-radiance path. At the first visible transparent interface Prime instead launches fixed conditional
-transmission and reflection paths while reusing the interface hit and material work; later transparent
-interfaces use bounded single-branch sampling. Resolve separately retraces the visible interface and
-launches bounded deterministic guide walkers for both identities. Each walker folds smooth transparent
-boundaries, total internal reflections, and smooth conductor reflections until the first solid-angle
-surface. The walkers stabilize reconstruction identity and motion; they never add radiance samples or
-alter either transport path.
-The primary REBLUR uses 63 main/stabilized-history frames. The transparent-reflection REBLUR keeps
-the 63-frame main ceiling for rough reflections, caps stabilization at 10 frames, and uses NRD's
-roughness-responsive accumulation below 0.1 with a 3-frame floor for smooth water/glass. Both use
-10 fast-history frames, a 4-frame history fix, and a 1.5 sporadic-outlier relative scale for the 1 spp
-area-light and indirect signal. Direct sun on ordinary primary surfaces remains separate and
-consumes SIGMA's filtered visibility at composition; transparent-interface sun reflection remains
-in the dedicated reflection REBLUR so it retains the interface split.
-Demodulated diffuse and specular illumination share a bounded input, and remodulated output is
-bounded together with direct sun before composition. Probabilistically sampled diffuse and
-specular transport use the default 30/50-pixel prepasses. Ordinary pixels use the first visible surface.
-The guide walkers capture the first non-delta virtual surface's position, normal, roughness, material,
-albedo, hit distance, and directional energy. RR separately retains the real visible interface and the first
-reflection/transmission segment distances. A bounded invocation-local delta-chain record may fall back to
-an existing branch capture or the real first interface for guides only; it never truncates transport.
-The A2 normal channel classifies ordinary dielectrics, metals,
-transmissive interfaces and strand-like foliage; the bridge enables exact material comparison and
-the foliage strand ID. REBLUR hit-distance reconstruction uses NRD's 5x5 area mode.
+The denoiser roles, input semantics, history settings and transparent guide contract are renderer behavior;
+their canonical specification is [Transparency and realtime reconstruction](../../docs/透明渲染与实时重建.md).
 Copy the resulting `build/native/nrd/bin/Release/prime_nrd.dll` to
 `src/client/resources/prime/natives/windows-x86_64/prime_nrd.dll` and run the full Gradle build.
 

@@ -1,4 +1,4 @@
-package dev.prime.mixin;
+package dev.prime.mixin.accessor;
 
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import org.spongepowered.asm.mixin.Mixin;

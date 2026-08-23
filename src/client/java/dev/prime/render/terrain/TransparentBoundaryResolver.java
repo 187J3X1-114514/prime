@@ -958,13 +958,10 @@ final class TransparentBoundaryResolver {
                 SurfaceDefinition.MediumEndpoint adjacentMedium) {
             SurfaceDefinition.MaterialBinding primary = this.bindingForSlice(
                     this.quad.surface(), minimumU, maximumU, minimumV, maximumV);
-            SurfaceDefinition definition = SurfaceDefinition.single(primary);
-            if (adjacentMedium != null) {
-                definition = definition.withBoundary(
-                        adjacentMedium,
-                        this.mediumEndpoint(),
-                        false);
-            }
+            SurfaceDefinition definition = adjacentMedium == null
+                    ? SurfaceDefinition.single(primary)
+                    : SurfaceDefinition.boundary(
+                            primary, adjacentMedium, this.mediumEndpoint());
             return new ResolvedQuad(
                     this,
                     null,

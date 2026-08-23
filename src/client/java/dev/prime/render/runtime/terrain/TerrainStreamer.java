@@ -2,14 +2,8 @@ package dev.prime.render.runtime.terrain;
 
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.terrain.*;
-import dev.prime.render.ResourceCleanup;
-import dev.prime.render.scene.CapturedSectionGeometry;
-import dev.prime.render.scene.vanilla.VanillaSpriteResolver;
-import dev.prime.render.scene.vanilla.VanillaAssetSnapshot;
-import dev.prime.render.scene.vanilla.VanillaGeometryPolicy;
-import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
-import dev.prime.render.scene.vanilla.VanillaSectionCompileInput;
-import dev.prime.render.scene.vanilla.VanillaSectionSnapshot;
+import dev.prime.infrastructure.ResourceCleanup;
+import dev.prime.render.scene.vanilla.VanillaClusterCompiler;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.scene.vanilla.DynamicSceneMotion;
 import dev.prime.render.vulkan.StagingArena;
@@ -25,20 +19,10 @@ import java.util.PriorityQueue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.block.BlockStateModelSet;
-import net.minecraft.client.renderer.block.FluidStateModelSet;
-import net.minecraft.client.renderer.chunk.RenderRegionCache;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.SectionPos;
-import net.minecraft.data.AtlasIds;
 import net.minecraft.util.Util;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.chunk.LevelChunk;
-import net.fabricmc.fabric.api.client.renderer.v1.sprite.FabricTextureAtlas;
-import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 
 /**
  * Owns the terrain portion of Prime's scene independently from vanilla's raster renderer.
@@ -54,7 +38,7 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
  *
  * <p>Independence ends at mesh semantics. Once this class has selected the stable 6x6x6 snapshot
  * neighborhood around a cluster, each of its 64 inner Sections is delegated to
- * {@link VanillaSceneInterpreter}. Prime does not maintain a second block/fluid mesher and does
+ * {@link VanillaClusterCompiler}. Prime does not maintain a second block/fluid mesher and does
  * not merge geometry captured from vanilla's raster tasks.
  */
 public final class TerrainStreamer implements AutoCloseable {
@@ -65,7 +49,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 64;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
     private final TerrainScene scene;
-    private final VanillaSceneInterpreter sceneInterpreter;
+    private final VanillaClusterCompiler clusterCompiler;
     private final boolean opacityMicromapSupported;
     private final int maxOpacity2StateSubdivisionLevel;
     private final int maxOpacity4StateSubdivisionLevel;
@@ -118,7 +102,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 context.capabilities().maxOpacity4StateSubdivisionLevel();
         this.segmentTriangleTarget = TerrainMemoryBudget.segmentTriangleTarget(
                 context.capabilities().maxAccelerationStructurePrimitiveCount());
-        this.sceneInterpreter = new VanillaSceneInterpreter();
+        this.clusterCompiler = new VanillaClusterCompiler();
         // Prime shares vanilla's work-stealing pool, but admission stays below its full configured
         // capacity so scene translation cannot occupy every worker needed by world loading.
         this.workers = Util.backgroundExecutor();
@@ -293,7 +277,7 @@ public final class TerrainStreamer implements AutoCloseable {
         // The executor belongs to Minecraft and is shut down by Minecraft. World epochs and the
         // interpreter's closed flag make late results harmless without taking ownership here.
         RuntimeException failure = ResourceCleanup.close(this.resourceEpoch, null);
-        failure = ResourceCleanup.close(this.sceneInterpreter, failure);
+        failure = ResourceCleanup.close(this.clusterCompiler, failure);
         failure = ResourceCleanup.close(this.scene, failure);
         this.completed.clear();
         this.externalDirty.clear();
@@ -422,20 +406,9 @@ public final class TerrainStreamer implements AutoCloseable {
         if (dispatchBudget == 0 || this.requests.isEmpty()) {
             return;
         }
-        RenderRegionCache regionCache = new RenderRegionCache();
-        BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
-        FluidStateModelSet fluidModels = minecraft.getModelManager().getFluidStateModelSet();
-        BlockColors blockColors = minecraft.getBlockColors();
-        TextureAtlas blockAtlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
-        SpriteFinder blockSpriteFinder = ((FabricTextureAtlas) (Object) blockAtlas).spriteFinder();
-        boolean cutoutLeaves = minecraft.options.cutoutLeaves().get();
+        VanillaClusterCompiler.CaptureSession captureSession =
+                this.clusterCompiler.beginCapture(minecraft, level);
         LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
-        VanillaAssetSnapshot assetSnapshot = new VanillaAssetSnapshot(
-                models,
-                fluidModels,
-                blockColors,
-                blockSpriteFinder,
-                cutoutLeaves);
         this.unloadedRequests.clear();
         this.blockedRequests.clear();
         int examined = 0;
@@ -472,17 +445,21 @@ public final class TerrainStreamer implements AutoCloseable {
             float voxelSurfaceMaximumHeight = VoxelSurfaceSettings.maximumHeight(
                     this.voxelSurfaceStrengthSteps);
             ClusterTranslationSettings translationSettings =
-                    new ClusterTranslationSettings(
+                    VanillaClusterCompiler.translationSettings(
                             this.opacityMicromapSupported,
                             this.segmentTriangleTarget,
                             this.maxOpacity2StateSubdivisionLevel,
                             this.maxOpacity4StateSubdivisionLevel,
                             voxelSurfaces,
-                            voxelSurfaceMaximumHeight,
-                            VanillaGeometryPolicy.VANILLA_PARITY.closeCoveredFluidGap(),
-                            VanillaGeometryPolicy.VANILLA_PARITY
-                                    .suppressFluidFaceAgainstFullCollision());
-            if (!hasCompleteClusterNeighborhood(level, clusterX, clusterZ)) {
+                            voxelSurfaceMaximumHeight);
+            VanillaClusterCompiler.Capture capture = this.clusterCompiler.capture(
+                    captureSession,
+                    clusterX,
+                    clusterY,
+                    clusterZ,
+                    this.minimumSectionY,
+                    this.maximumSectionY);
+            if (capture == null) {
                 // A 4x4x4 virtual chunk needs one Section of source data around every face.
                 // Minecraft loads vertical Sections as part of the same chunk column, so checking
                 // the 6x6 horizontal chunk columns establishes the complete 6x6x6 snapshot.
@@ -490,41 +467,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
 
-            ArrayList<VanillaSectionSnapshot> snapshots = new ArrayList<>(
-                    SectionCluster.SECTION_COUNT);
-            for (int sectionZ = clusterZ;
-                    sectionZ < clusterZ + SectionCluster.SECTION_SIZE;
-                    sectionZ++) {
-                for (int sectionY = clusterY;
-                        sectionY < clusterY + SectionCluster.SECTION_SIZE;
-                        sectionY++) {
-                    if (sectionY < this.minimumSectionY || sectionY > this.maximumSectionY) {
-                        continue;
-                    }
-                    for (int sectionX = clusterX;
-                            sectionX < clusterX + SectionCluster.SECTION_SIZE;
-                            sectionX++) {
-                        LevelChunk chunk = level.getChunkSource().getChunk(
-                                sectionX, sectionZ, ChunkStatus.FULL, false);
-                        if (chunk == null) {
-                            throw new IllegalStateException(
-                                    "Complete cluster neighborhood lost a loaded chunk");
-                        }
-                        if (chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY))
-                                .hasOnlyAir()) {
-                            continue;
-                        }
-                        long sectionKey = SectionPos.asLong(sectionX, sectionY, sectionZ);
-                        snapshots.add(new VanillaSectionSnapshot(
-                                sectionX,
-                                sectionY,
-                                sectionZ,
-                                regionCache.createRegion(level, sectionKey)));
-                    }
-                }
-            }
-
-            if (snapshots.isEmpty()) {
+            if (capture.isEmpty()) {
                 if (this.scene.contains(request.key())) {
                     CompletedCluster result = new CompletedCluster(
                             this.generations.worldEpoch(),
@@ -560,35 +503,22 @@ public final class TerrainStreamer implements AutoCloseable {
                         workerResult = WorkerCancelled.INSTANCE;
                     } else {
                         try (workerLease) {
-                            VanillaSpriteResolver spriteResolver = new VanillaSpriteResolver();
-                            CapturedCluster.Builder captured = new CapturedCluster.Builder(
-                                    clusterX, clusterY, clusterZ);
-                            for (VanillaSectionSnapshot snapshot : snapshots) {
-                                workerStage = WorkerStage.SECTION_COMPILATION;
-                                sectionX = snapshot.sectionX();
-                                sectionY = snapshot.sectionY();
-                                sectionZ = snapshot.sectionZ();
-                                CapturedSectionGeometry section =
-                                        TerrainStreamer.this.sceneInterpreter.compileSection(
-                                                new VanillaSectionCompileInput(
-                                                        snapshot,
-                                                        assetSnapshot,
-                                                        clusterX,
-                                                        clusterY,
-                                                        clusterZ),
-                                                spriteResolver);
-                                captured.add(
-                                        snapshot.sectionX(),
-                                        snapshot.sectionY(),
-                                        snapshot.sectionZ(),
-                                        section);
-                            }
-                            workerStage = WorkerStage.CLUSTER_TRANSLATION;
-                            CpuClusterMesh mesh = ClusterSceneTranslator.translate(
-                                    captured.build(),
-                                    materialSnapshot,
-                                    translationSettings);
+                            CpuClusterMesh mesh = TerrainStreamer.this.clusterCompiler.compile(
+                                    capture, materialSnapshot, translationSettings);
                             workerResult = new WorkerSuccess(mesh);
+                        } catch (VanillaClusterCompiler.CompilationException exception) {
+                            workerResult = new WorkerFailure(
+                                    exception.getCause(),
+                                    switch (exception.stage()) {
+                                        case SETUP -> WorkerStage.SETUP;
+                                        case SECTION_COMPILATION ->
+                                                WorkerStage.SECTION_COMPILATION;
+                                        case CLUSTER_TRANSLATION ->
+                                                WorkerStage.CLUSTER_TRANSLATION;
+                                    },
+                                    exception.sectionX(),
+                                    exception.sectionY(),
+                                    exception.sectionZ());
                         } catch (Throwable throwable) {
                             workerResult = new WorkerFailure(
                                     throwable, workerStage, sectionX, sectionY, sectionZ);
@@ -620,24 +550,6 @@ public final class TerrainStreamer implements AutoCloseable {
         }
         this.blockedRequests.clear();
         this.unloadedRequests.clear();
-    }
-
-    private static boolean hasCompleteClusterNeighborhood(
-            ClientLevel level,
-            int clusterX,
-            int clusterZ) {
-        int minimumChunkX = clusterX - SectionCluster.SNAPSHOT_HALO;
-        int minimumChunkZ = clusterZ - SectionCluster.SNAPSHOT_HALO;
-        int maximumChunkX = clusterX + SectionCluster.SECTION_SIZE;
-        int maximumChunkZ = clusterZ + SectionCluster.SECTION_SIZE;
-        for (int chunkZ = minimumChunkZ; chunkZ <= maximumChunkZ; chunkZ++) {
-            for (int chunkX = minimumChunkX; chunkX <= maximumChunkX; chunkX++) {
-                if (level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) == null) {
-                    return false;
-                }
-            }
-        }
-        return true;
     }
 
     private void drainCompleted() {

@@ -1,8 +1,9 @@
 package dev.prime.render.runtime.terrain;
 
 import dev.prime.infrastructure.PrimeInfo;
-import dev.prime.render.terrain.*;
 import dev.prime.infrastructure.ResourceCleanup;
+import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.terrain.*;
 import dev.prime.render.scene.vanilla.VanillaClusterCompiler;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.scene.vanilla.DynamicSceneMotion;
@@ -88,7 +89,8 @@ public final class TerrainStreamer implements AutoCloseable {
     private int minimumSectionY;
     private int maximumSectionY;
     private LabPbrMaterialSet labPbrMaterials = LabPbrMaterialSet.EMPTY;
-    private boolean voxelTextureSurfaces;
+    private LabPbrMaterialSet translatedLabPbrMaterials = LabPbrMaterialSet.EMPTY;
+    private SurfaceDetailMode surfaceDetailMode = SurfaceDetailMode.DEFAULT;
     private int voxelSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
     private int workerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private int workerJobs;
@@ -150,7 +152,7 @@ public final class TerrainStreamer implements AutoCloseable {
                     viewDistance,
                     minSectionY,
                     maxSectionY);
-            if (this.voxelTextureSurfaces
+            if (this.surfaceDetailMode.usesGeometryDisplacement()
                     && previousCenterX != Integer.MIN_VALUE
                     && (SectionCluster.origin(previousCenterX)
                                     != SectionCluster.origin(playerSectionX)
@@ -207,16 +209,24 @@ public final class TerrainStreamer implements AutoCloseable {
     public void setLabPbrMaterials(LabPbrMaterialSet materials) {
         if (!this.labPbrMaterials.equals(materials)) {
             this.labPbrMaterials = materials;
+            this.translatedLabPbrMaterials = this.surfaceDetailMode.usesResourceNormals()
+                    ? materials
+                    : materials.withoutNormalTextures();
             this.invalidateAll();
         }
     }
 
-    public void setVoxelTextureSurfaces(boolean enabled, int strengthSteps) {
+    public void setSurfaceDetailMode(SurfaceDetailMode mode, int strengthSteps) {
+        java.util.Objects.requireNonNull(mode, "mode");
         VoxelSurfaceSettings.maximumHeight(strengthSteps);
-        boolean rebuild = this.voxelTextureSurfaces != enabled
-                || enabled && this.voxelSurfaceStrengthSteps != strengthSteps;
-        this.voxelTextureSurfaces = enabled;
+        boolean rebuild = this.surfaceDetailMode != mode
+                || mode.usesGeometryDisplacement()
+                        && this.voxelSurfaceStrengthSteps != strengthSteps;
+        this.surfaceDetailMode = mode;
         this.voxelSurfaceStrengthSteps = strengthSteps;
+        this.translatedLabPbrMaterials = mode.usesResourceNormals()
+                ? this.labPbrMaterials
+                : this.labPbrMaterials.withoutNormalTextures();
         if (rebuild) {
             this.invalidateAll();
         }
@@ -408,7 +418,7 @@ public final class TerrainStreamer implements AutoCloseable {
         }
         VanillaClusterCompiler.CaptureSession captureSession =
                 this.clusterCompiler.beginCapture(minecraft, level);
-        LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
+        LabPbrMaterialSet materialSnapshot = this.translatedLabPbrMaterials;
         this.unloadedRequests.clear();
         this.blockedRequests.clear();
         int examined = 0;
@@ -434,7 +444,7 @@ public final class TerrainStreamer implements AutoCloseable {
             int clusterX = SectionPos.x(request.key());
             int clusterY = SectionPos.y(request.key());
             int clusterZ = SectionPos.z(request.key());
-            boolean voxelSurfaces = this.voxelTextureSurfaces
+            boolean voxelSurfaces = this.surfaceDetailMode.usesGeometryDisplacement()
                     && VoxelSurfaceCoverage.includes(
                             clusterX,
                             clusterY,

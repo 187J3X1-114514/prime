@@ -126,8 +126,8 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         this.reloadPipelineIfRequested();
         this.synchronizeLabPbr(minecraft);
-        this.terrain.setVoxelTextureSurfaces(
-                settings.voxelTextureSurfaces(),
+        this.terrain.setSurfaceDetailMode(
+                settings.surfaceDetailMode(),
                 settings.voxelTextureSurfaceStrengthSteps());
         this.terrain.setWorkerPercentage(settings.terrainWorkerPercentage());
         screenshotRequested = this.updateOfflineSession(

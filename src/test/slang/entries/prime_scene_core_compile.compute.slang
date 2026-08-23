@@ -1,5 +1,6 @@
 import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
+import "service/material/access.slang";
 import "service/material/surface.slang";
 
 [[vk::binding(0, 3)]] RWStructuredBuffer<uint4> primeSceneCoreProbe;

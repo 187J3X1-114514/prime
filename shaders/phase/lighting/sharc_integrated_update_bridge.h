@@ -1,7 +1,6 @@
 #define SHARC_UPDATE 1
 #define SHARC_QUERY 0
 
-import "service/material/surface.slang";
 #include "service/sharc/vendor_bridge.h"
 #include "service/sharc/training_records.h"
 

@@ -1,7 +1,6 @@
 #define SHARC_UPDATE 0
 #define SHARC_QUERY 0
 
-import "service/material/surface.slang";
 #include "service/sharc/vendor_bridge.h"
 
 [shader("compute")]

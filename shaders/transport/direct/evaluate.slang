@@ -16,6 +16,7 @@ import "service/bsdf/dielectric/evaluate.slang";
 import "service/bsdf/foliage/evaluate.slang";
 import "service/trace/context.slang";
 import "contract/light.slang";
+import "contract/material/normal.slang";
 import "transport/direct/shadow.slang";
 import "transport/surface/access.slang";
 import "bsdf/compact/contract/volume.slang";
@@ -37,6 +38,12 @@ public PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     result.direction = light.direction;
     bool transmissive = primeMaterialIsTransmissive(surface.materialControl);
     bool foliage = primeMaterialIsFoliage(surface.materialControl);
+    bool normalMapped = primeMaterialUsesNormalMap(surface.opticalControl);
+    float geometricSide = dot(surface.geometricNormal, viewDirection)
+            * dot(surface.geometricNormal, light.direction);
+    if (normalMapped && !transmissive && !foliage && geometricSide < 0.0) {
+        return result;
+    }
     float cosine = transmissive || foliage
             ? abs(dot(shadingNormal, light.direction))
             : max(dot(shadingNormal, light.direction), 0.0);
@@ -46,8 +53,10 @@ public PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     }
     if (transmissive) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        bool reflection = dot(outwardNormal, viewDirection)
-                * dot(outwardNormal, light.direction) >= 0.0;
+        bool reflection = normalMapped
+                ? geometricSide >= 0.0
+                : dot(outwardNormal, viewDirection)
+                        * dot(outwardNormal, light.direction) >= 0.0;
         BsdfEvaluation evaluation;
         if (conditionalTransparentBranch) {
             // The first visible interface exposes fixed-split conditional proposals. Smooth

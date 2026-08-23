@@ -2,9 +2,10 @@
 import "model/material/labpbr.slang";
 import "model/material/defaults.slang";
 import "model/material/translation.slang";
+import "service/material/normal_mapping.slang";
 
 static const uint PRIME_MATERIAL_INPUT_WORDS = 3;
-static const uint PRIME_MATERIAL_WITNESS_WORDS = 8;
+static const uint PRIME_MATERIAL_WITNESS_WORDS = 10;
 
 void primeMaterialClassify(inout uint mask, float value) { mask |= primeTestClassify(value); }
 void primeMaterialClassify(inout uint mask, float3 value) { mask |= primeTestClassify(value); }
@@ -32,6 +33,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     PrimeLabPbrSample decoded = primeDecodeLabPbr(packedNormal, packedSpecular, flags);
     PrimeCanonicalOptics canonical = primeAdaptLabPbrSpecular(
             unpackUnorm4x8ToFloat(packedSpecular));
+    PrimeLabPbrNormalAtlasSample filteredNormal = primeAdaptLabPbrNormalAtlas(
+            unpackUnorm4x8ToFloat(packedNormal));
     uint4 specularBytes = uint4(round(unpackUnorm4x8ToFloat(packedSpecular) * 255.0));
     uint expectedFresnelCode = specularBytes.y < 230
             ? specularBytes.y + 1
@@ -51,6 +54,23 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float roughness = hasOpticalTexture
             ? canonical.roughness
             : PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
+    float combinedRoughness = primeCombineLabPbrNormalRoughness(
+            roughness,
+            filteredNormal.distributionRoughness);
+    float viewAzimuth = (float(specularBytes.w) + 0.5) * (6.28318530718 / 256.0);
+    float viewCosine = 1.0e-5 + 0.09999 * (float(specularBytes.z) / 255.0);
+    float viewSine = sqrt(max(1.0 - viewCosine * viewCosine, 0.0));
+    float3 viewDirection = float3(
+            cos(viewAzimuth) * viewSine,
+            sin(viewAzimuth) * viewSine,
+            viewCosine);
+    float3 validNormal = primeEnsureValidNormalMappedReflection(
+            float3(0.0, 0.0, 1.0),
+            viewDirection,
+            filteredNormal.tangentNormal);
+    float3 validReflection = 2.0 * dot(validNormal, viewDirection) * validNormal
+            - viewDirection;
+    float minimumReflectionCosine = min(0.9 * viewCosine, 0.01);
     uint opticalControl = hasOpticalTexture ? canonical.opticalControl : 0;
     PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
             roughness, opticalControl, PRIME_MATERIAL_FAMILY_OPAQUE);
@@ -62,6 +82,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     primeMaterialClassify(mask, float3(
             decoded.dielectricF0, decoded.porosity, decoded.subsurface));
     primeMaterialClassify(mask, decoded.emission);
+    primeMaterialClassify(mask, filteredNormal.tangentNormal);
+    primeMaterialClassify(mask, combinedRoughness);
+    primeMaterialClassify(mask, validNormal);
+    primeMaterialClassify(mask, validReflection);
     if (!primeTestClose(normalLengthSquared, 1.0, 2.0e-6, 2.0e-6)) {
         mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
     }
@@ -73,6 +97,28 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             || !primeMaterialUnit(decoded.subsurface)
             || !primeMaterialUnit(decoded.emission)) {
         mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeTestClose(
+                    dot(filteredNormal.tangentNormal, filteredNormal.tangentNormal),
+                    1.0,
+                    2.0e-6,
+                    2.0e-6)
+            || !primeMaterialUnit(combinedRoughness)
+            || combinedRoughness + 1.0e-6 < roughness
+            || ((packedNormal >> 24u) == 0u
+                    && !primeTestClose(
+                            combinedRoughness, roughness, 2.0e-6, 2.0e-6))) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    if (!primeTestClose(dot(validNormal, validNormal), 1.0, 2.0e-5, 2.0e-5)) {
+        mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
+    }
+    if (dot(validNormal, float3(0.0, 0.0, 1.0)) < 0.0) {
+        mask |= PRIME_TEST_FAILURE_HEMISPHERE;
+    }
+    if (dot(validReflection, float3(0.0, 0.0, 1.0))
+            < minimumReflectionCosine - 2.0e-5) {
+        mask |= PRIME_TEST_FAILURE_VALUE;
     }
     if (!primeHasLabPbrNormal(flags)
             && (!all(decoded.tangentNormal == float3(0.0, 0.0, 1.0))
@@ -183,5 +229,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                 translated.subsurfaceWeight,
                 float(translated.fresnelCode)));
         primeTestOutput[outputOffset + 7] = asuint(float4(fresnel.f0, fresnel.f82Tint.x));
+        primeTestOutput[outputOffset + 8] = asuint(float4(validNormal, minimumReflectionCosine));
+        primeTestOutput[outputOffset + 9] = asuint(float4(validReflection, viewCosine));
     }
 }

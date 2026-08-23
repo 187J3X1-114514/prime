@@ -7,7 +7,7 @@ import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "model/material/defaults.slang";
 import "model/material/medium_boundary.slang";
-import "service/material/surface.slang";
+import "service/material/access.slang";
 
 import "contract/path.slang";
 

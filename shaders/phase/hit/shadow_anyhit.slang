@@ -7,7 +7,7 @@ import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "policy/runtime/config.slang";
 import "model/material/defaults.slang";
-import "service/material/surface.slang";
+import "service/material/access.slang";
 import "model/material/transparent.slang";
 
 import "service/trace/hit.slang";
@@ -167,5 +167,4 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
     }
     IgnoreHit();
 }
-
 

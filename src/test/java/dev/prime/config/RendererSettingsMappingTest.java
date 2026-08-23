@@ -10,6 +10,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeRenderSettings;
 import dev.prime.render.RendererSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -21,7 +22,7 @@ final class RendererSettingsMappingTest {
     void mapsEveryRendererFieldAndDerivedValueFromOnePrimeSnapshot() {
         PrimeSettings source = PrimeSettings.defaults()
                 .withPathTracingEnabled(false)
-                .withVoxelTextureSurfaces(true)
+                .withSurfaceDetailMode(SurfaceDetailMode.GEOMETRIC_DISPLACEMENT)
                 .withVoxelTextureSurfaceStrengthSteps(173)
                 .withPostProcessingMode(PostProcessingMode.NRD_FSR)
                 .withReconstructionQuality(ReconstructionQualityMode.BALANCED)
@@ -42,7 +43,9 @@ final class RendererSettingsMappingTest {
         assertEquals(
                 PostProcessingMode.NRD_FSR,
                 RealtimeRenderSettings.capture(mapped).postProcessing());
-        assertTrue(mapped.voxelTextureSurfaces());
+        assertEquals(SurfaceDetailMode.GEOMETRIC_DISPLACEMENT, mapped.surfaceDetailMode());
+        assertFalse(mapped.usesResourceNormals());
+        assertTrue(mapped.usesGeometryDisplacement());
         assertEquals(173, mapped.voxelTextureSurfaceStrengthSteps());
         assertEquals(PostProcessingMode.NRD_FSR, mapped.postProcessingMode());
         assertEquals(ReconstructionQualityMode.BALANCED, mapped.reconstructionQuality());
@@ -85,7 +88,9 @@ final class RendererSettingsMappingTest {
         PrimeSettings defaults = PrimeSettings.defaults();
         RendererSettings mappedDefaults = PrimeConfig.rendererSettings(defaults, 0L);
         assertTrue(mappedDefaults.pathTracingEnabled());
-        assertFalse(mappedDefaults.voxelTextureSurfaces());
+        assertEquals(SurfaceDetailMode.RESOURCE_NORMAL, mappedDefaults.surfaceDetailMode());
+        assertTrue(mappedDefaults.usesResourceNormals());
+        assertFalse(mappedDefaults.usesGeometryDisplacement());
         assertEquals(PostProcessingMode.DEFAULT, mappedDefaults.postProcessingMode());
         assertEquals(ReconstructionQualityMode.DEFAULT, mappedDefaults.reconstructionQuality());
         assertEquals(AstronomySettings.defaults(), mappedDefaults.astronomy());
@@ -96,7 +101,7 @@ final class RendererSettingsMappingTest {
 
         PrimeSettings changed = defaults
                 .withPathTracingEnabled(false)
-                .withVoxelTextureSurfaces(true)
+                .withSurfaceDetailMode(SurfaceDetailMode.GEOMETRIC_DISPLACEMENT)
                 .withVoxelTextureSurfaceStrengthSteps(150)
                 .withLatitudeDegrees(-45)
                 .withSunQuarterSteps(4)
@@ -108,7 +113,7 @@ final class RendererSettingsMappingTest {
 
         RendererSettings mapped = PrimeConfig.rendererSettings(restored, 9L);
         assertTrue(mapped.pathTracingEnabled());
-        assertFalse(mapped.voxelTextureSurfaces());
+        assertEquals(SurfaceDetailMode.RESOURCE_NORMAL, mapped.surfaceDetailMode());
         assertEquals(VoxelSurfaceSettings.DEFAULT_STEPS, mapped.voxelTextureSurfaceStrengthSteps());
         assertEquals(AstronomySettings.defaults(), mapped.astronomy());
         assertEquals(

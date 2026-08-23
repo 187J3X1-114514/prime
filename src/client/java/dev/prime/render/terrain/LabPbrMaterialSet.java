@@ -56,4 +56,15 @@ public record LabPbrMaterialSet(
     public LabPbrMaterialMap materialMap(SpriteId sprite) {
         return this.materialMaps.get(sprite);
     }
+
+    public LabPbrMaterialSet withoutNormalTextures() {
+        return this.normalSprites.isEmpty()
+                ? this
+                : new LabPbrMaterialSet(
+                        Set.of(),
+                        this.specularSprites,
+                        this.emissionMaps,
+                        this.heightMaps,
+                        this.materialMaps);
+    }
 }

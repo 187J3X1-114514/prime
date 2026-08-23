@@ -19,13 +19,15 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 /**
  * Owns LabPBR 1.3 material atlases that exactly mirror Minecraft's stitched block-atlas layout.
  *
- * <p>The two source maps remain separate because all eight channels are part of the public
- * material contract. A missing map is represented by immutable availability bits in terrain
- * primitives, not by an ambiguous texel sentinel. Animated maps follow the base sprite's real
- * source-frame sequence; a single-frame auxiliary map is intentionally reused for every frame.
+ * <p>The normal atlas stores a normalized tangent-space direction in RG, LabPBR AO in B, and the
+ * equivalent GGX perceptual roughness of the filtered normal distribution in A. Source height
+ * remains CPU-owned by geometric displacement. The specular atlas preserves its source semantics.
+ * A missing map is represented by immutable availability bits in terrain primitives, not by an
+ * ambiguous texel sentinel. Animated maps follow the base sprite's real source-frame sequence; a
+ * single-frame auxiliary map is intentionally reused for every frame.
  */
 public final class LabPbrTextureAtlas implements AutoCloseable {
-    private static final int NORMAL_DEFAULT_ARGB = 0xff8080ff;
+    private static final int NORMAL_DEFAULT_ARGB = 0x008080ff;
     private static final int SPECULAR_DEFAULT_ARGB = 0xff000400;
 
     private final VulkanContext context;

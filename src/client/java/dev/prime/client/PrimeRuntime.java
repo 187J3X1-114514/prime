@@ -204,7 +204,7 @@ public final class PrimeRuntime {
         }
     }
 
-    public void voxelTextureSurfacesChanged(boolean enabled) {
+    public void surfaceDetailModeChanged() {
         this.invalidateAll();
     }
 

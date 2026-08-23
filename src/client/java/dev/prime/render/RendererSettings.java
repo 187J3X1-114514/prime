@@ -10,7 +10,7 @@ import java.util.Objects;
 public record RendererSettings(
         boolean pathTracingEnabled,
         boolean sharcEnabled,
-        boolean voxelTextureSurfaces,
+        SurfaceDetailMode surfaceDetailMode,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
@@ -25,7 +25,7 @@ public record RendererSettings(
     public RendererSettings(
             boolean pathTracingEnabled,
             boolean sharcEnabled,
-            boolean voxelTextureSurfaces,
+            SurfaceDetailMode surfaceDetailMode,
             int voxelTextureSurfaceStrengthSteps,
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode reconstructionQuality,
@@ -36,7 +36,7 @@ public record RendererSettings(
             long revision) {
         this(
                 pathTracingEnabled, sharcEnabled,
-                voxelTextureSurfaces,
+                surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
                 PrimaryChainSettings.DEFAULT_LIMIT,
@@ -47,7 +47,7 @@ public record RendererSettings(
     public RendererSettings(
             boolean pathTracingEnabled,
             boolean sharcEnabled,
-            boolean voxelTextureSurfaces,
+            SurfaceDetailMode surfaceDetailMode,
             int voxelTextureSurfaceStrengthSteps,
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode reconstructionQuality,
@@ -59,7 +59,7 @@ public record RendererSettings(
             long revision) {
         this(
                 pathTracingEnabled, sharcEnabled,
-                voxelTextureSurfaces,
+                surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
                 PrimaryChainSettings.DEFAULT_LIMIT,
@@ -70,7 +70,7 @@ public record RendererSettings(
     public RendererSettings(
             boolean pathTracingEnabled,
             boolean sharcEnabled,
-            boolean voxelTextureSurfaces,
+            SurfaceDetailMode surfaceDetailMode,
             int voxelTextureSurfaceStrengthSteps,
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode reconstructionQuality,
@@ -83,7 +83,7 @@ public record RendererSettings(
             long revision) {
         this(
                 pathTracingEnabled, sharcEnabled,
-                voxelTextureSurfaces,
+                surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
                 PrimaryChainSettings.DEFAULT_LIMIT,
@@ -99,6 +99,7 @@ public record RendererSettings(
         lighting = Objects.requireNonNull(lighting, "lighting");
         material = Objects.requireNonNull(material, "material");
         display = Objects.requireNonNull(display, "display");
+        surfaceDetailMode = Objects.requireNonNull(surfaceDetailMode, "surfaceDetailMode");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
         ScatterSettings.validateCount(scatterCount);
         PrimaryChainSettings.validateLimit(primaryChainLimit);
@@ -110,5 +111,13 @@ public record RendererSettings(
 
     public float voxelTextureSurfaceMaximumHeight() {
         return VoxelSurfaceSettings.maximumHeight(this.voxelTextureSurfaceStrengthSteps);
+    }
+
+    public boolean usesResourceNormals() {
+        return this.surfaceDetailMode.usesResourceNormals();
+    }
+
+    public boolean usesGeometryDisplacement() {
+        return this.surfaceDetailMode.usesGeometryDisplacement();
     }
 }

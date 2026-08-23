@@ -5,7 +5,7 @@ import glsl;
 import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "model/material/defaults.slang";
-import "service/material/surface.slang";
+import "service/material/access.slang";
 import "service/trace/hit.slang";
 
 layout(location = 0) rayPayloadInEXT TracePayload primePayload;
@@ -70,5 +70,4 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
         IgnoreHit();
     }
 }
-
 

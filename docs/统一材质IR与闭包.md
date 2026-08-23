@@ -67,17 +67,22 @@ roughness、`materialControl` 和 `opticalControl`。合成顺序固定为：
 2. 建立全局 roughness 与 dielectric F0 默认值；
 3. 若开启原版预设，应用 builtin class；
 4. 若当前 sprite 有有效 `_s`，LabPBR adapter 覆盖 roughness、Fresnel、SSS 和 porosity；
-5. 应用玻璃、水、薄壁、叶片和 alpha 语义。
+5. 若当前 sprite 有有效 `_n`，应用分布感知法线与粗糙度；
+6. 应用玻璃、水、薄壁、叶片和 alpha 语义。
 
 availability 是逐 sprite 事实；关闭时不采样 descriptor 完整性所需的 1×1 dummy image。
-normal alpha 只留在 CPU relief 路径，命中载荷不再携带未使用的 raw LabPBR normal。发光仍由
-emitter 管线独立提取。
+“无 / 资源包法线 / 几何位移”在地形翻译前解析为互斥模式；默认资源包法线，无 `_n` 时
+不会生成法线依赖或命中采样。法线 atlas 的 RG 保存归一化平均方向，B 保留 AO，A 保存从
+平均法线长度反演的等效 GGX 感知粗糙度；运行时在 squared-alpha 空间与材质粗糙度合并。
+原始 normal alpha 只留在 CPU 位移路径。几何法线仍唯一决定可见性、介质边界和射线原点；
+法线贴图的 BSDF 方向另受几何半球约束。发光仍由 emitter 管线独立提取。
 
 `materialControl` 的低 8 位依次表达 family、medium、thin-walled、animated、visible
 emission 和 decorative interface。decorative interface 表示玻璃 alpha 规则选中的磨砂或
 切割界面，与数值 roughness 分开保存，以便相邻空气微缝做语义兼容判断。
 
-`opticalControl` 的三个 byte 分别为 Fresnel、subsurface 和 porosity code：
+`opticalControl` 的低三个 byte 分别为 Fresnel、subsurface 和 porosity code，bit 24 表示当前
+表面实际使用了法线贴图，以便积分器只对这些路径执行几何半球约束：
 
 - Fresnel 0 精确表示 dielectric F0 0.04；1..230 表示规范化后的 LabPBR dielectric；
   231..238 是固定命名金属；239 是 base-color conductor；240..255 保留；

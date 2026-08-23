@@ -6,6 +6,8 @@ import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "policy/runtime/config.slang";
 import "model/material/defaults.slang";
+import "service/material/access.slang";
+import "service/material/normal_mapping.slang";
 import "service/material/surface.slang";
 
 import "service/trace/hit.slang";
@@ -44,6 +46,11 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
                     section, primitive, barycentrics, hit.localPosition, normal);
     PrimeMaterialSample material = primeEvaluateMaterial(
             primitive, materialUv, textureLodValue, section.instanceTint);
+    material.shadingNormal = primeNormalMappedShadingNormalForView(
+            material.opticalControl,
+            normal,
+            -WorldRayDirection(),
+            material.shadingNormal);
     primePayload.t = RayTCurrent();
     // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
     // while transparent reflection and the water stack require its authored outward sign.
@@ -87,5 +94,3 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
                         : 0u);
     }
 }
-
-

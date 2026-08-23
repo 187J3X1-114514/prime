@@ -11,6 +11,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
@@ -32,6 +33,8 @@ public final class PrimeVideoOptions {
             List.of(PostProcessingMode.NRD_FSR, PostProcessingMode.DLSS_RR);
     private static final List<ReconstructionQualityMode> QUALITY_MODES =
             List.of(ReconstructionQualityMode.values());
+    private static final List<SurfaceDetailMode> SURFACE_DETAIL_MODES =
+            List.of(SurfaceDetailMode.values());
     private static final List<RendererImageView> RENDERER_IMAGE_VIEWS =
             List.of(RendererImageView.values());
     private static final List<RrInputView> RR_INPUT_VIEWS = List.of(RrInputView.values());
@@ -48,7 +51,7 @@ public final class PrimeVideoOptions {
                         scatterCount(),
                         primaryChainLimit(),
                         terrainWorkerPercentage(),
-                        voxelTextureSurfaces(),
+                        surfaceDetailMode(),
                         voxelTextureSurfaceStrength(),
                         screenshotMode(),
                         postProcessingMode(),
@@ -140,20 +143,30 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setTerrainWorkerPercentage);
     }
 
-    private static OptionInstance<Boolean> voxelTextureSurfaces() {
-        return OptionInstance.createBoolean(
-                "prime.options.experimental.voxel_texture_surfaces",
+    private static OptionInstance<SurfaceDetailMode> surfaceDetailMode() {
+        return new OptionInstance<>(
+                "prime.options.material.surface_detail",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.experimental.voxel_texture_surfaces.tooltip")),
-                PrimeConfig.settings().voxelTextureSurfaces(),
-                PrimeVideoOptions::setVoxelTextureSurfaces);
+                        "prime.options.material.surface_detail.tooltip")),
+                (caption, mode) -> Options.genericValueLabel(
+                        caption,
+                        Component.translatable(
+                                "prime.options.material.surface_detail." + mode.id())),
+                new OptionInstance.Enum<>(
+                        SURFACE_DETAIL_MODES,
+                        Codec.STRING.xmap(
+                                id -> SurfaceDetailMode.findById(id)
+                                        .orElse(SurfaceDetailMode.DEFAULT),
+                                SurfaceDetailMode::id)),
+                PrimeConfig.settings().surfaceDetailMode(),
+                PrimeVideoOptions::setSurfaceDetailMode);
     }
 
     private static OptionInstance<Integer> voxelTextureSurfaceStrength() {
         return new OptionInstance<>(
-                "prime.options.experimental.voxel_texture_surface_strength",
+                "prime.options.material.displacement_height",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.experimental.voxel_texture_surface_strength.tooltip")),
+                        "prime.options.material.displacement_height.tooltip")),
                 (caption, steps) -> Options.genericValueLabel(
                         caption,
                         Component.literal(steps + "%")),
@@ -460,13 +473,12 @@ public final class PrimeVideoOptions {
         }
     }
 
-    private static void setVoxelTextureSurfaces(boolean enabled) {
+    private static void setSurfaceDetailMode(SurfaceDetailMode mode) {
         RendererSettings previous = PrimeConfig.rendererSettings();
-        PrimeConfig.setVoxelTextureSurfaces(enabled);
+        PrimeConfig.setSurfaceDetailMode(mode);
         RendererSettings current = PrimeConfig.rendererSettings();
-        if (previous.voxelTextureSurfaces() != current.voxelTextureSurfaces()) {
-            PrimeRuntime.instance().voxelTextureSurfacesChanged(
-                    current.voxelTextureSurfaces());
+        if (previous.surfaceDetailMode() != current.surfaceDetailMode()) {
+            PrimeRuntime.instance().surfaceDetailModeChanged();
         }
     }
 
@@ -477,7 +489,7 @@ public final class PrimeVideoOptions {
         if (previous.voxelTextureSurfaceStrengthSteps()
                 != current.voxelTextureSurfaceStrengthSteps()) {
             PrimeRuntime.instance().voxelTextureSurfaceStrengthChanged(
-                    current.voxelTextureSurfaces(),
+                    current.usesGeometryDisplacement(),
                     current.voxelTextureSurfaceStrengthSteps());
         }
     }
@@ -561,7 +573,7 @@ public final class PrimeVideoOptions {
             OptionInstance<Integer> scatterCount,
             OptionInstance<Integer> primaryChainLimit,
             OptionInstance<Integer> terrainWorkerPercentage,
-            OptionInstance<Boolean> voxelTextureSurfaces,
+            OptionInstance<SurfaceDetailMode> surfaceDetailMode,
             OptionInstance<Integer> voxelTextureSurfaceStrength,
             OptionInstance<Boolean> screenshotMode,
             OptionInstance<PostProcessingMode> postProcessingMode,

@@ -37,7 +37,7 @@ final class RendererFrameSettingsTest {
         return new RendererSettings(
                 true,
                 true,
-                false,
+                SurfaceDetailMode.DEFAULT,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 mode,
                 ReconstructionQualityMode.DEFAULT,

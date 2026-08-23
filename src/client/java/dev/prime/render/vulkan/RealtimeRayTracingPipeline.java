@@ -48,7 +48,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         // an earlier fallback write win after the ownership transition.
         return new int[] {
             0, 1, 2, 4, 5, 6, 7, 8, 9, 10,
-            11, 12, 13, 14, 15, 16, 17, 18, 21, 22
+            11, 12, 13, 14, 15, 16, 17, 18, 21
         };
     }
 
@@ -223,8 +223,8 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
 /** Shared Vulkan resources for independently scheduled realtime renderers. */
 @SuppressWarnings("auxiliaryclass")
 abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPipeline {
-    static final int DESCRIPTOR_BINDING_COUNT = 26;
-    private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 22;
+    private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = imageBindings().length;
+    static final int DESCRIPTOR_BINDING_COUNT = STORAGE_IMAGE_DESCRIPTOR_COUNT + 3;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL,
             ShaderAbi.WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
@@ -920,11 +920,12 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                                 .offset(0L)
                                 .range(ShaderAbi.SHARC_FRAME_CONSTANT_SIZE);
                     }
-                    int writeCount = DESCRIPTOR_BINDING_COUNT
-                            - (sharcFrame == null ? 1 : 0);
+                    int[] imageBindings = imageBindings();
+                    int writeCount = imageBindings.length
+                            + 2
+                            + (sharcFrame == null ? 0 : 1);
                     VkWriteDescriptorSet.Buffer writes =
                             VkWriteDescriptorSet.calloc(writeCount, stack);
-                    int[] imageBindings = imageBindings();
                     for (int index = 0; index < imageBindings.length; index++) {
                         writes.get(index)
                                 .sType$Default()

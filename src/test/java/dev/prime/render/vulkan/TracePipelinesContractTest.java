@@ -66,7 +66,7 @@ final class TracePipelinesContractTest {
         assertEquals(58, RealtimeRayTracingPipeline.dispatchCount(12));
         assertEquals(14, RealtimeRayTracingPipeline.dispatchCount(1));
         assertEquals(266, RealtimeRayTracingPipeline.dispatchCount(64));
-        assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
+        assertEquals(25, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(4, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
@@ -110,7 +110,7 @@ final class TracePipelinesContractTest {
         assertArrayEquals(
                 new int[] {
                     0, 1, 2, 4, 5, 6, 7, 8, 9, 10,
-                    11, 12, 13, 14, 15, 16, 17, 18, 21, 22
+                    11, 12, 13, 14, 15, 16, 17, 18, 21
                 },
                 RealtimeRayTracingPipeline.nextStepInputImageIndices());
         assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(

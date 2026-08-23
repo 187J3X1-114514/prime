@@ -5,6 +5,7 @@ import dev.prime.mixin.accessor.SpriteContentsAccessor;
 import dev.prime.render.scene.CapturedSprite;
 import dev.prime.render.scene.SpriteId;
 import dev.prime.render.scene.SpritePixelView;
+import dev.prime.render.terrain.LabPbrMaterialSet;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.util.IdentityHashMap;
 import java.util.Objects;
@@ -14,19 +15,24 @@ import net.minecraft.resources.Identifier;
 
 /** Worker-confined adapter that resolves each raw vanilla sprite once per captured cluster. */
 public final class VanillaSpriteResolver {
+    private final LabPbrMaterialSet materials;
     private final IdentityHashMap<TextureAtlasSprite, CapturedSprite> resolved =
             new IdentityHashMap<>();
 
+    public VanillaSpriteResolver(LabPbrMaterialSet materials) {
+        this.materials = Objects.requireNonNull(materials, "materials");
+    }
+
     public CapturedSprite resolve(TextureAtlasSprite sprite) {
         Objects.requireNonNull(sprite, "sprite");
-        return this.resolved.computeIfAbsent(sprite, VanillaSpriteResolver::capture);
+        return this.resolved.computeIfAbsent(sprite, this::capture);
     }
 
     int resolvedCount() {
         return this.resolved.size();
     }
 
-    private static CapturedSprite capture(TextureAtlasSprite sprite) {
+    private CapturedSprite capture(TextureAtlasSprite sprite) {
         SpriteContents contents = sprite.contents();
         Identifier name = contents.name();
         boolean animated = contents.isAnimated();
@@ -41,12 +47,10 @@ public final class VanillaSpriteResolver {
         SpritePixelView pixels = image == null || image.isClosed()
                 ? null
                 : new NativeImageView(image);
+        SpriteId id = new SpriteId(name.getNamespace(), name.getPath());
         return new CapturedSprite(
-                new SpriteId(name.getNamespace(), name.getPath()),
-                sprite.getU0(),
-                sprite.getV0(),
-                sprite.getU1(),
-                sprite.getV1(),
+                id,
+                this.materials.textureId(id),
                 contents.width(),
                 contents.height(),
                 animated,

@@ -11,7 +11,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.vulkan.AtmospherePipeline;
-import dev.prime.render.vulkan.LabPbrTextureAtlas;
+import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.OfflineRayTracingPipeline;
 import dev.prime.render.vulkan.OfflineFrameExecutor;
 import dev.prime.render.vulkan.SunShadowPipeline;
@@ -174,8 +174,9 @@ final class OfflineRenderer implements Destroyable {
                 input.atlasView(),
                 input.atlasSampler(),
                 current.sceneTextures(),
-                input.labPbrAtlas().normalAtlas(),
-                input.labPbrAtlas().specularAtlas(),
+                input.materialTextures().normalPages(),
+                input.materialTextures().opticalPages(),
+                input.materialTextures().textureRecords(),
                 input.atmosphere());
         OfflineFramePlan framePlan = new OfflineFrameInput(
                 current.camera(),
@@ -194,7 +195,7 @@ final class OfflineRenderer implements Destroyable {
                 activePipeline,
                 input.sunShadow(),
                 input.atmosphere(),
-                input.labPbrAtlas(),
+                input.materialTextures(),
                 current.scene(),
                 framePlan,
                 images.displayOutput,
@@ -229,7 +230,7 @@ final class OfflineRenderer implements Destroyable {
             DisplaySettings.Snapshot display,
             AtmospherePipeline atmosphere,
             SunShadowPipeline sunShadow,
-            LabPbrTextureAtlas labPbrAtlas,
+            MaterialTexturePages materialTextures,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             long textureRevision) {
@@ -238,7 +239,7 @@ final class OfflineRenderer implements Destroyable {
             Objects.requireNonNull(display, "display");
             Objects.requireNonNull(atmosphere, "atmosphere");
             Objects.requireNonNull(sunShadow, "sunShadow");
-            Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
+            Objects.requireNonNull(materialTextures, "materialTextures");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(atlasSampler, "atlasSampler");
             if (textureRevision < 0L) {

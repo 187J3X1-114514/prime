@@ -674,6 +674,7 @@ public float3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
     }
     LightEmitter* emitters = (LightEmitter*)sectionBuffer[0].emitterAddress;
     return primeEvaluateEmitterRadiance(
+            emitters[areaSample.emitterIndex].metadata.w,
             emitters[areaSample.emitterIndex].uvsTint.w,
             emitters[areaSample.emitterIndex].metadata.z,
             emitters[areaSample.emitterIndex].edgeOneScale.w,
@@ -728,6 +729,7 @@ public LightEvaluation primeEvaluateAreaLight(
             dot(cross(relative, secondEdge), edgeCross) / denominator,
             dot(cross(firstEdge, relative), edgeCross) / denominator);
     result.radiance = primeEvaluateEmitterRadiance(
+            emitters[emitterIndex].metadata.w,
             emitters[emitterIndex].uvsTint.w,
             emitters[emitterIndex].metadata.z,
             emitters[emitterIndex].edgeOneScale.w,

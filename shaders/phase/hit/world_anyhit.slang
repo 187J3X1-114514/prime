@@ -64,10 +64,10 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
     }
     float opacity = primeEvaluateOpacity(
             primitive,
+            primePrimitiveTextureId(section, primitive),
             primeInterpolateUv(
                     section, primitive, barycentrics, hit.localPosition, normal));
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         IgnoreHit();
     }
 }
-

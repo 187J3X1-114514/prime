@@ -366,6 +366,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 requestedTint,
                 quad.normalY);
         CapturedSprite capturedSprite = this.spriteResolver.resolve(sprite);
+        localizeUv(quad, sprite);
         this.geometry.add(quad, CapturedSectionGeometry.Surface.uniform(
                 tint,
                 captureLayer(layer),
@@ -488,6 +489,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 source.tintIndex(),
                 quad.normalY);
         CapturedSprite capturedSprite = this.spriteResolver.resolve(sprite);
+        localizeUv(quad, sprite);
         this.geometry.add(quad, new CapturedSectionGeometry.Surface(
                 colors[0],
                 colors[1],
@@ -598,6 +600,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 bakedQuad.materialInfo().tintIndex(),
                 quad.normalY);
         CapturedSprite capturedSprite = this.spriteResolver.resolve(sprite);
+        localizeUv(quad, sprite);
         this.geometry.addPeer(quad, CapturedSectionGeometry.Surface.uniform(
                 tint,
                 captureLayer(layer),
@@ -684,6 +687,35 @@ public final class VanillaSectionCapture implements AutoCloseable {
         return state.getBlock() == Blocks.REDSTONE_WIRE
                 || state.getBlock() == Blocks.REDSTONE_TORCH
                 || state.getBlock() == Blocks.REDSTONE_WALL_TORCH;
+    }
+
+    private static void localizeUv(
+            CapturedSectionGeometry.MutableQuad quad,
+            TextureAtlasSprite sprite) {
+        float u0 = sprite.getU0();
+        float v0 = sprite.getV0();
+        float u1 = sprite.getU1();
+        float v1 = sprite.getV1();
+        for (int vertex = 0; vertex < 4; vertex++) {
+            quad.u[vertex] = localCoordinate(quad.u[vertex], u0, u1);
+            quad.v[vertex] = localCoordinate(quad.v[vertex], v0, v1);
+        }
+    }
+
+    static float localCoordinate(float atlasCoordinate, float lower, float upper) {
+        float local = (atlasCoordinate - lower) / (upper - lower);
+        if (local >= 0.0F && local <= 1.0F) {
+            return local;
+        }
+        // Atlas endpoints pass through several f32 interpolation and packing steps. Lower only
+        // their rounding excursions; a materially out-of-range mapping still fails the Prime UV
+        // contract instead of silently changing repeat or sub-region semantics.
+        float endpointTolerance = 4.0F * Math.max(Math.ulp(lower), Math.ulp(upper));
+        if (atlasCoordinate >= lower - endpointTolerance
+                && atlasCoordinate <= upper + endpointTolerance) {
+            return Math.max(0.0F, Math.min(1.0F, local));
+        }
+        return local;
     }
 
     private int[] resolveFabricColors(int tintIndex) {
@@ -858,6 +890,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             }
 
             TextureAtlasSprite sprite = this.selectSprite();
+            localizeUv(this.quad, sprite);
             boolean animated = this.stillSprite.contents().isAnimated()
                     || this.flowingSprite.contents().isAnimated()
                     || this.overlaySprite != null && this.overlaySprite.contents().isAnimated();

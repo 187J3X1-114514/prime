@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
@@ -78,15 +79,28 @@ public final class VanillaLabPbrAtlas {
         Map<SpriteId, LabPbrEmissionMap> emissionMaps = new HashMap<>();
         Map<SpriteId, LabPbrHeightMap> heightMaps = new HashMap<>();
         Map<SpriteId, LabPbrMaterialMap> materialMaps = new HashMap<>();
+        Map<SpriteId, Integer> textureIds = new HashMap<>();
         ArrayList<MaterialDraft> drafts = new ArrayList<>();
-        if (supported) {
-            for (TextureAtlasSprite sprite : atlasAccess.prime$texturesByName().values()) {
-                Identifier name = sprite.contents().name();
-                SpriteId spriteId = spriteId(name);
-                LabPbrAtlasFrame.MaterialSource normal = readMaterial(
-                        resourceManager, materialResource(name, "_n"), sprite);
-                LabPbrAtlasFrame.MaterialSource specular = readMaterial(
-                        resourceManager, materialResource(name, "_s"), sprite);
+        ArrayList<TextureAtlasSprite> atlasSprites =
+                new ArrayList<>(atlasAccess.prime$texturesByName().values());
+        atlasSprites.sort(Comparator.comparing(
+                sprite -> sprite.contents().name().toString()));
+        if (atlasSprites.size() > dev.prime.render.scene.CapturedSprite.MAX_TEXTURE_ID) {
+            throw new IllegalStateException("Block atlas exceeds Prime's 24-bit texture ID space");
+        }
+        for (int index = 0; index < atlasSprites.size(); index++) {
+            TextureAtlasSprite sprite = atlasSprites.get(index);
+            Identifier name = sprite.contents().name();
+            SpriteId spriteId = spriteId(name);
+            int textureId = index + 1;
+            textureIds.put(spriteId, textureId);
+            LabPbrAtlasFrame.MaterialSource normal = supported
+                    ? readMaterial(resourceManager, materialResource(name, "_n"), sprite)
+                    : null;
+            LabPbrAtlasFrame.MaterialSource specular = supported
+                    ? readMaterial(resourceManager, materialResource(name, "_s"), sprite)
+                    : null;
+            if (supported) {
                 if (normal != null) {
                     normalSprites.add(spriteId);
                     heightMaps.put(spriteId, LabPbrHeightMap.fromNormal(
@@ -112,17 +126,14 @@ public final class VanillaLabPbrAtlas {
                         emissionMaps.put(spriteId, emission);
                     }
                 }
-                if (normal == null && specular == null) {
-                    continue;
-                }
                 SpriteContents contents = sprite.contents();
-                if (!contents.isAnimated()) {
+                if ((normal != null || specular != null) && !contents.isAnimated()) {
                     materialMaps.put(spriteId, new LabPbrMaterialMap(
                             materialPixels(normal, contents.width(), contents.height(), false),
                             materialPixels(specular, contents.width(), contents.height(), true)));
                 }
-                drafts.add(new MaterialDraft(sprite, normal, specular));
             }
+            drafts.add(new MaterialDraft(textureId, sprite, normal, specular));
         }
 
         List<SpriteContents.AnimationState> animations = bindAnimations(atlasAccess, drafts);
@@ -138,6 +149,7 @@ public final class VanillaLabPbrAtlas {
             SpriteContents contents = sprite.contents();
             SpriteContents.AnimationState state = stateByName.get(contents.name());
             sprites.add(new LabPbrAtlasFrame.Sprite(
+                    draft.textureId,
                     sprite.getX(),
                     sprite.getY(),
                     contents.width(),
@@ -152,7 +164,12 @@ public final class VanillaLabPbrAtlas {
         int height = drafts.isEmpty() ? 1 : atlasAccess.prime$height();
         int mipLevels = drafts.isEmpty() ? 1 : Math.max(1, atlasAccess.prime$maxMipLevel() + 1);
         LabPbrMaterialSet materials = new LabPbrMaterialSet(
-                normalSprites, specularSprites, emissionMaps, heightMaps, materialMaps);
+                textureIds,
+                normalSprites,
+                specularSprites,
+                emissionMaps,
+                heightMaps,
+                materialMaps);
         PrimeInfo.LOGGER.info(
                 "Loaded LabPBR 1.3 material sources: {} normal maps, {} specular maps, {} emissive maps, {} animated sprites",
                 normalSprites.size(), specularSprites.size(), emissionMaps.size(), animations.size());
@@ -183,7 +200,9 @@ public final class VanillaLabPbrAtlas {
             List<MaterialDraft> materials) {
         Set<Identifier> materialNames = new HashSet<>();
         for (MaterialDraft material : materials) {
-            materialNames.add(material.sprite.contents().name());
+            if (material.normal != null || material.specular != null) {
+                materialNames.add(material.sprite.contents().name());
+            }
         }
         ArrayList<SpriteContents.AnimationState> result = new ArrayList<>();
         for (Map.Entry<Identifier, SpriteContents.AnimationState> entry
@@ -315,6 +334,7 @@ public final class VanillaLabPbrAtlas {
     }
 
     private record MaterialDraft(
+            int textureId,
             TextureAtlasSprite sprite,
             LabPbrAtlasFrame.MaterialSource normal,
             LabPbrAtlasFrame.MaterialSource specular) {

@@ -223,10 +223,7 @@ final class SectionMeshAccumulatorTest {
                 int y) {
             this.sprite = new CapturedSprite(
                     new SpriteId("prime", path),
-                    x / (float) atlasWidth,
-                    y / (float) atlasHeight,
-                    (x + FRAME_SIZE) / (float) atlasWidth,
-                    (y + FRAME_SIZE) / (float) atlasHeight,
+                    1,
                     FRAME_SIZE,
                     FRAME_SIZE,
                     false,

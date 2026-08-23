@@ -316,8 +316,9 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures,
-            VulkanImage labPbrNormalAtlas,
-            VulkanImage labPbrSpecularAtlas,
+            List<VulkanImage> materialNormalPages,
+            List<VulkanImage> materialOpticalPages,
+            VulkanBuffer textureRecords,
             AtmospherePipeline atmosphere,
             RawWavefrontFrame signals,
             boolean sharcRequested) {
@@ -326,8 +327,9 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 atlasView,
                 atlasSampler,
                 sceneTextures,
-                labPbrNormalAtlas,
-                labPbrSpecularAtlas,
+                materialNormalPages,
+                materialOpticalPages,
+                textureRecords,
                 atmosphere);
         int width = signals.noisyDiffuse().width();
         int height = signals.noisyDiffuse().height();

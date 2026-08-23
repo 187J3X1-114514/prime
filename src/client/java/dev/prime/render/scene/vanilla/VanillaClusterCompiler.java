@@ -104,7 +104,7 @@ public final class VanillaClusterCompiler implements AutoCloseable {
         int sectionY = 0;
         int sectionZ = 0;
         try {
-            VanillaSpriteResolver spriteResolver = new VanillaSpriteResolver();
+            VanillaSpriteResolver spriteResolver = new VanillaSpriteResolver(materials);
             CapturedCluster.Builder captured = new CapturedCluster.Builder(
                     capture.clusterX, capture.clusterY, capture.clusterZ);
             for (VanillaSectionSnapshot snapshot : capture.snapshots) {

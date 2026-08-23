@@ -32,7 +32,7 @@ public final class RealtimeFrameExecutor {
             RealtimeIntegratorPipeline pipeline,
             SunShadowPipeline sunShadow,
             AtmospherePipeline atmosphere,
-            LabPbrTextureAtlas labPbrAtlas,
+            MaterialTexturePages materialTextures,
             TerrainScene.ResidentSceneView scene,
             RealtimeFramePlan plan,
             VulkanReconstructionProcessor processor,
@@ -49,7 +49,7 @@ public final class RealtimeFrameExecutor {
         Objects.requireNonNull(processorFrame, "processorFrame");
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
-        LabPbrTextureAtlas.FrameToken labPbrFrame = null;
+        MaterialTexturePages.FrameToken materialFrame = null;
         DisplayExposureDiagnostics.Capture exposureCapture = null;
         VulkanFrameSubmission submission =
                 new VulkanFrameSubmission(this.imageInitialization);
@@ -58,7 +58,7 @@ public final class RealtimeFrameExecutor {
             Objects.requireNonNull(pipeline, "pipeline");
             Objects.requireNonNull(sunShadow, "sunShadow");
             Objects.requireNonNull(atmosphere, "atmosphere");
-            Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
+            Objects.requireNonNull(materialTextures, "materialTextures");
             Objects.requireNonNull(scene, "scene");
             Objects.requireNonNull(plan, "plan");
             Objects.requireNonNull(output, "output");
@@ -94,7 +94,7 @@ public final class RealtimeFrameExecutor {
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.prepareSceneTexturesForTrace(
                     commandBuffer, sceneTextures);
-            labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            materialFrame = materialTextures.prepare(commandBuffer);
             // Atmosphere preparation traces the sun cache through the shared RT descriptor set.
             // Every image named by that set must have its declared layout before this call.
             atmosphereFrame = atmosphere.prepare(
@@ -143,10 +143,10 @@ public final class RealtimeFrameExecutor {
                     commitFailure);
             commitFailure = ResourceCleanup.run(
                     () -> processor.submitted(processorFrame), commitFailure);
-            LabPbrTextureAtlas.FrameToken submittedLabPbrFrame =
-                    labPbrFrame;
+            MaterialTexturePages.FrameToken submittedMaterialFrame =
+                    materialFrame;
             commitFailure = ResourceCleanup.run(
-                    () -> labPbrAtlas.submitted(submittedLabPbrFrame),
+                    () -> materialTextures.submitted(submittedMaterialFrame),
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
@@ -164,11 +164,11 @@ public final class RealtimeFrameExecutor {
                             () -> atmosphere.abandon(abandonedAtmosphereFrame),
                             failure);
                 }
-                if (labPbrFrame != null) {
-                    LabPbrTextureAtlas.FrameToken abandonedLabPbrFrame =
-                            labPbrFrame;
+                if (materialFrame != null) {
+                    MaterialTexturePages.FrameToken abandonedMaterialFrame =
+                            materialFrame;
                     failure = ResourceCleanup.run(
-                            () -> labPbrAtlas.abandon(abandonedLabPbrFrame),
+                            () -> materialTextures.abandon(abandonedMaterialFrame),
                             failure);
                 }
                 failure = ResourceCleanup.run(

@@ -17,7 +17,7 @@ import dev.prime.render.scene.vanilla.VanillaLabPbrAtlas;
 import dev.prime.render.terrain.LabPbrAtlasFrame;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.FrozenExposureState;
-import dev.prime.render.vulkan.LabPbrTextureAtlas;
+import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
@@ -44,7 +44,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
     private final VanillaLabPbrAtlas labPbrSource = new VanillaLabPbrAtlas();
-    private final LabPbrTextureAtlas labPbrAtlas;
+    private final MaterialTexturePages materialTextures;
     private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private final TraceBackend traceBackend;
     private AtmospherePipeline atmosphere;
@@ -75,14 +75,14 @@ public final class VulkanRenderer implements AutoCloseable {
         RealtimeRenderer newRealtimeRenderer = null;
         OfflineRenderer newOfflineRenderer = null;
         TerrainStreamer newTerrain = null;
-        LabPbrTextureAtlas newLabPbrAtlas = null;
+        MaterialTexturePages newMaterialTextures = null;
         DlssRrNative.Context newNgxContext = null;
         try {
             newStagingArena = new StagingArena(newContext);
             newAtmosphere = new AtmospherePipeline(newContext);
             newTraceBackend = new TraceBackend(newContext);
             newTerrain = new TerrainStreamer(newContext, newStagingArena);
-            newLabPbrAtlas = new LabPbrTextureAtlas(newContext, newStagingArena);
+            newMaterialTextures = new MaterialTexturePages(newContext, newStagingArena);
             newNgxContext = DlssRrBootstrap.initialize(newContext).orElse(null);
             newRealtimeRenderer = new RealtimeRenderer(
                     newContext, newTraceBackend, newNgxContext);
@@ -94,7 +94,7 @@ public final class VulkanRenderer implements AutoCloseable {
             this.traceBackend = newTraceBackend;
             this.atmosphere = newAtmosphere;
             this.terrain = newTerrain;
-            this.labPbrAtlas = newLabPbrAtlas;
+            this.materialTextures = newMaterialTextures;
             this.shaderFingerprint = VulkanShaderModules.fingerprint();
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(newOfflineRenderer, exception);
@@ -104,7 +104,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 ResourceCleanup.run(
                         () -> DlssRrBootstrap.release(failedNgxContext), exception);
             }
-            ResourceCleanup.close(newLabPbrAtlas, exception);
+            ResourceCleanup.close(newMaterialTextures, exception);
             ResourceCleanup.close(newTerrain, exception);
             ResourceCleanup.destroy(newTraceBackend, exception);
             ResourceCleanup.destroy(newAtmosphere, exception);
@@ -168,7 +168,7 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         LabPbrAtlasFrame labPbrFrame = this.labPbrSource.ensure(minecraft, atlas);
         this.terrain.setLabPbrMaterials(
-                this.labPbrAtlas.ensure(labPbrFrame, atlasView.vkImageView()));
+                this.materialTextures.ensure(labPbrFrame, atlasView.vkImageView()));
         long sourceGeneration = labPbrFrame.sourceGeneration();
         BlockAtlasFrame previous = this.blockAtlasFrame;
         boolean changed = previous == null
@@ -279,7 +279,7 @@ public final class VulkanRenderer implements AutoCloseable {
                             settings.display(),
                             this.atmosphere,
                             this.traceBackend.sunShadowPipeline(),
-                            this.labPbrAtlas,
+                            this.materialTextures,
                             atlas.view(),
                             atlas.sampler(),
                             atlas.textureRevision()));
@@ -317,7 +317,7 @@ public final class VulkanRenderer implements AutoCloseable {
                         this.isCameraInWater(Minecraft.getInstance(), frameCamera),
                         this.atmosphere,
                         this.traceBackend.sunShadowPipeline(),
-                        this.labPbrAtlas,
+                        this.materialTextures,
                         atlas.view(),
                         atlas.sampler(),
                         atlas.textureRevision(),
@@ -678,7 +678,7 @@ public final class VulkanRenderer implements AutoCloseable {
         failure = ResourceCleanup.destroy(this.offlineRenderer, failure);
         failure = ResourceCleanup.destroy(this.realtimeRenderer, failure);
         failure = ResourceCleanup.close(this.terrain, failure);
-        failure = ResourceCleanup.close(this.labPbrAtlas, failure);
+        failure = ResourceCleanup.close(this.materialTextures, failure);
         failure = ResourceCleanup.destroy(this.traceBackend, failure);
         failure = ResourceCleanup.destroy(this.atmosphere, failure);
         failure = ResourceCleanup.close(this.stagingArena, failure);

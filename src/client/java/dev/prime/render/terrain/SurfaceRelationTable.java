@@ -93,6 +93,11 @@ final class SurfaceRelationTable {
             if (kind == CpuSectionMesh.SURFACE_RELATION_OVERLAY
                     || kind == CpuSectionMesh.SURFACE_RELATION_BILATERAL) {
                 validateMaterial(table, offset + 1, kind);
+            } else if (kind == CpuSectionMesh.SURFACE_RELATION_BOUNDARY
+                    && (table[offset + 3] <= 0
+                            || table[offset + 3] > PrimitivePacking.MAX_TEXTURE_ID)) {
+                throw new IllegalArgumentException(
+                        "Boundary relation references an invalid texture ID");
             }
             recordStart[offset] = true;
         }
@@ -114,9 +119,8 @@ final class SurfaceRelationTable {
         if ((table[offset + 5] & PrimitivePacking.DYNAMIC_TEXTURE_FLAG) != 0
                 || PrimitivePacking.unpackEmitterIndex(table[offset + 5])
                         != PrimitivePacking.NO_EMITTER_INDEX
-                || (flags & (PrimitivePacking.CONTROL_FRONT_FACE_ONLY
-                                | PrimitivePacking.CONTROL_RASTER_COMPOSITE))
-                        != 0) {
+                || PrimitivePacking.unpackTextureId(table[offset + 5]) == 0
+                || (flags & PrimitivePacking.CONTROL_FRONT_FACE_ONLY) != 0) {
             throw new IllegalArgumentException(
                     "Surface relation embeds an unsupported material primitive");
         }
@@ -146,7 +150,7 @@ final class SurfaceRelationTable {
                             "Boundary relation contains invalid control flags");
                 }
                 PrimitivePacking.requireValidControl(recipe);
-                yield 3;
+                yield 4;
             }
             case CpuSectionMesh.SURFACE_RELATION_OVERLAY -> {
                 int lowAllowed = CpuSectionMesh.SURFACE_RELATION_KIND_MASK

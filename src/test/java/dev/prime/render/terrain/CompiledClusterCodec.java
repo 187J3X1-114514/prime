@@ -451,11 +451,8 @@ final class CompiledClusterCodec {
             int flags = PrimitivePacking.unpackControl(
                     records[record + 3], records[record + 5]);
             PrimitivePacking.requireValidControl(flags);
-            boolean rasterComposite =
-                    (flags & PrimitivePacking.CONTROL_RASTER_COMPOSITE) != 0;
-            boolean constantUv = !rasterComposite
-                    && records[record + 6]
-                            == PrimitivePacking.CONSTANT_UV_DENSITY;
+            boolean constantUv = records[record + 6]
+                    == PrimitivePacking.CONSTANT_UV_DENSITY;
             int constantMode = 0;
             if (constantUv) {
                 constantMode = records[record + 2];
@@ -494,13 +491,10 @@ final class CompiledClusterCodec {
                 throw new IllegalArgumentException(
                         "Compiled-cluster primitive references an invalid emitter");
             }
-            if (!rasterComposite) {
-                float uvDensity =
-                        Float.intBitsToFloat(records[record + 6]);
-                if (!Float.isFinite(uvDensity)) {
-                    throw new IllegalArgumentException(
-                            "Compiled-cluster UV density must be finite");
-                }
+            float uvDensity = Float.intBitsToFloat(records[record + 6]);
+            if (!Float.isFinite(uvDensity)) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster UV density must be finite");
             }
         }
     }

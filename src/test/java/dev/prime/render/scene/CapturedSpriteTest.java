@@ -81,10 +81,7 @@ final class CapturedSpriteTest {
                 };
         return new CapturedSprite(
                 id,
-                0.25F,
-                0.5F,
-                0.5F,
-                0.75F,
+                1,
                 16,
                 16,
                 true,

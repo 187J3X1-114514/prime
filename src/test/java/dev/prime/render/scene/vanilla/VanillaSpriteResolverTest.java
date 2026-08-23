@@ -8,6 +8,8 @@ import com.mojang.blaze3d.platform.NativeImage;
 import dev.prime.mixin.accessor.SpriteContentsAccessor;
 import dev.prime.render.scene.CapturedSprite;
 import dev.prime.render.scene.SpriteId;
+import dev.prime.render.terrain.LabPbrMaterialSet;
+import java.util.Map;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.metadata.animation.FrameSize;
@@ -19,7 +21,15 @@ final class VanillaSpriteResolverTest {
     void cachesByRawIdentityAndCapturesOnlyPrimeOwnedFacts() {
         try (TestSprite first = new TestSprite(0xff12_3456);
                 TestSprite second = new TestSprite(0xffab_cdef)) {
-            VanillaSpriteResolver resolver = new VanillaSpriteResolver();
+            SpriteId id = new SpriteId("example", "block/custom");
+            VanillaSpriteResolver resolver = new VanillaSpriteResolver(
+                    new LabPbrMaterialSet(
+                            Map.of(id, 7),
+                            java.util.Set.of(),
+                            java.util.Set.of(),
+                            Map.of(),
+                            Map.of(),
+                            Map.of()));
 
             CapturedSprite captured = resolver.resolve(first);
 
@@ -28,11 +38,8 @@ final class VanillaSpriteResolverTest {
             assertNotSame(captured, equivalent);
             assertEquals(captured, equivalent);
             assertEquals(2, resolver.resolvedCount());
-            assertEquals(new SpriteId("example", "block/custom"), captured.id());
-            assertEquals(0.5F, captured.u0());
-            assertEquals(1.0F, captured.u1());
-            assertEquals(0.0F, captured.v0());
-            assertEquals(1.0F, captured.v1());
+            assertEquals(id, captured.id());
+            assertEquals(7, captured.textureId());
             assertEquals(16, captured.frameWidth());
             assertEquals(16, captured.frameHeight());
             assertEquals(0xff12_3456, captured.pixelView().argb(0, 0));

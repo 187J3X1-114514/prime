@@ -12,9 +12,10 @@ import "model/material/labpbr.slang";
 import "model/material/translation.slang";
 import "model/material/transparent.slang";
 import "service/material/access.slang";
+import "service/material/auxiliary_access.slang";
 
-// Minimal Minecraft adapter. The integrator consumes only this result, so future material
-// models can replace atlas/tint decoding without changing path scheduling or traversal.
+// Minimal translated-texture adapter. The integrator consumes only this result, so backing-page
+// changes cannot affect path scheduling or traversal.
 public struct PrimeMaterialSample {
     public float3 baseColor;
     public float opacity;
@@ -27,10 +28,14 @@ public struct PrimeMaterialSample {
 static const uint PRIME_EMITTER_FLAG_TWO_SIDED = 1u;
 static const uint PRIME_EMITTER_FLAG_LABPBR_EMISSION = 2u;
 public PrimeMaterialSample primeEvaluateMaterial(
-        PrimitiveRecord primitive, float2 uv, float textureLodValue, uint instanceTint) {
+        PrimitiveRecord primitive,
+        uint textureId,
+        float2 uv,
+        float textureLodValue,
+        uint instanceTint) {
     PrimeMaterialSample result;
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
-    // Minecraft stores both atlas texels and tint RGB as display-encoded sRGB in UNORM values.
+    // Minecraft stores both albedo texels and tint RGB as display-encoded sRGB in UNORM values.
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
     if (bakedMaterial) {
@@ -41,26 +46,9 @@ public PrimeMaterialSample primeEvaluateMaterial(
         }
         result.baseColor = primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
         result.opacity = 1.0;
-    } else if (primeUsesRasterComposite(primitive)) {
-        float4 baseSample =
-                primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
-        float2 overlayUv = uv + primeRasterCompositeUvOffset(primitive);
-        float4 overlaySample = primeSamplePrimitiveTexture(
-                primitive, overlayUv, textureLodValue);
-        bool overlayCovered =
-                overlaySample.a >= PRIME_CUTOUT_ALPHA_THRESHOLD;
-        float4 textureSample = overlayCovered ? overlaySample : baseSample;
-        uint packedTint = overlayCovered
-                ? primeRasterCompositeTint(primitive)
-                : primitive.tint;
-        result.opacity = 1.0;
-        result.baseColor = primeLinearSrgbToLinearRec2020(
-                primeDecodeSrgb(textureSample.rgb)
-                        * primeDecodeSrgb(primeUnpackTint(packedTint).rgb));
-        uv = overlayCovered ? overlayUv : uv;
     } else {
         float4 textureSample =
-                primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
+                primeSamplePrimitiveTexture(primitive, textureId, uv, textureLodValue);
         float4 tint = primeUnpackTint(primitive.tint);
         if (primeUsesDynamicRedAlpha(primitive)) {
             result.opacity = textureSample.r;
@@ -105,7 +93,7 @@ public PrimeMaterialSample primeEvaluateMaterial(
     } else if (!bakedMaterial
             && (recipeControl & PRIME_RECIPE_OPTICAL_TEXTURE) != 0u) {
         PrimeCanonicalOptics optics = primeAdaptLabPbrSpecular(
-                primeLabPbrSpecularAtlas.SampleLevel(uv, textureLodValue));
+                primeSampleMaterialOptical(textureId, uv, textureLodValue));
         result.roughness = optics.roughness;
         result.opticalControl = optics.opticalControl;
     }
@@ -116,7 +104,7 @@ public PrimeMaterialSample primeEvaluateMaterial(
     normalSample.distributionRoughness = 0.0;
     if (usesNormalMap) {
         normalSample = primeAdaptLabPbrNormalAtlas(
-                primeLabPbrNormalAtlas.SampleLevel(uv, textureLodValue));
+                primeSampleMaterialNormal(textureId, uv, textureLodValue));
         result.roughness = primeCombineLabPbrNormalRoughness(
                 result.roughness,
                 normalSample.distributionRoughness);
@@ -124,10 +112,10 @@ public PrimeMaterialSample primeEvaluateMaterial(
     }
     if (recipeTransmissive
             && (recipeControl & PRIME_RECIPE_WATER) == 0u
-            && !bakedMaterial
-            && !primeUsesRasterComposite(primitive)) {
+            && !bakedMaterial) {
         float referenceOpacity;
-        float3 referenceBaseColor = primeAtlasBaseColor(
+        float3 referenceBaseColor = primeStaticBaseColor(
+                textureId,
                 primitive.tint,
                 primePrimitiveMaterialReferenceUv(primitive),
                 0.0,
@@ -189,7 +177,7 @@ public PrimeMaterialSample primeEvaluateMaterial(
 }
 
 public PrimeMaterialSample primeEvaluateMaterialReference(
-        uint recipeControl, uint packedTint, float2 uv) {
+        uint recipeControl, uint packedTint, uint textureId, float2 uv) {
     PrimitiveRecord primitive;
     primitive.uv0 = asuint(uv.x);
     primitive.uv1 = asuint(uv.y);
@@ -202,17 +190,19 @@ public PrimeMaterialSample primeEvaluateMaterialReference(
             | ((referenceControl & PRIME_RECIPE_BUILTIN_MASK) << 16u);
     primitive.uvDensity = PRIME_CONSTANT_UV_DENSITY;
     primitive.tangent = 0u;
-    return primeEvaluateMaterial(primitive, uv, 0.0, 0u);
+    return primeEvaluateMaterial(primitive, textureId, uv, 0.0, 0u);
 }
 
 public float3 primeEvaluateEmitterRadiance(
+        uint textureId,
         uint atlasTint,
         uint emitterFlags,
         float fallbackRadiance,
         float2 uv,
         float textureLodValue) {
     float opacity;
-    float3 color = primeAtlasBaseColor(atlasTint, uv, textureLodValue, opacity);
+    float3 color = primeStaticBaseColor(
+            textureId, atlasTint, uv, textureLodValue, opacity);
     bool cutout = (emitterFlags & PRIME_EMITTER_FLAG_TWO_SIDED) != 0u;
     if (cutout && opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         return float3(0.0);
@@ -226,7 +216,7 @@ public float3 primeEvaluateEmitterRadiance(
     float authoredEmission = 0.0;
     if ((emitterFlags & PRIME_EMITTER_FLAG_LABPBR_EMISSION) != 0u) {
         authoredEmission = primeDecodeLabPbrEmission(
-                primeLabPbrSpecularAtlas.SampleLevel(uv, textureLodValue).a);
+                primeSampleMaterialOptical(textureId, uv, textureLodValue).a);
     }
     // LabPBR defines only a normalized emissiveness, not absolute radiometry. Prime maps 100%
     // to the same calibrated radiance as a white vanilla level-15 source. Once authored, this
@@ -238,6 +228,7 @@ public float3 primeEvaluateEmitterRadiance(
 }
 
 public float3 primeEvaluateEmitterRadiance(
+        uint textureId,
         uint atlasTint,
         uint emitterFlags,
         float fallbackRadiance,
@@ -245,5 +236,5 @@ public float3 primeEvaluateEmitterRadiance(
     // A sampled light point has no screen-space ray footprint. The distribution was constructed
     // from mip 0, so evaluating that same radiometric function preserves its PDF contract.
     return primeEvaluateEmitterRadiance(
-            atlasTint, emitterFlags, fallbackRadiance, uv, 0.0);
+            textureId, atlasTint, emitterFlags, fallbackRadiance, uv, 0.0);
 }

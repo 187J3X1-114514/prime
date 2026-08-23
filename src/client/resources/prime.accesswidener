@@ -1,7 +1,7 @@
 accessWidener v2 official
 
-# Prime's auxiliary LabPBR atlases follow Minecraft's animation state. These fields are opened
-# read-only in Prime code so Minecraft remains the sole owner of the timeline and live cursor.
+# Prime's translated material pages follow Minecraft's source animation state. Prime reads these
+# fields while Minecraft remains the sole owner of the timeline and live cursor.
 accessible class net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture
 accessible class net/minecraft/client/renderer/texture/SpriteContents$FrameInfo
 accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimationState frame I

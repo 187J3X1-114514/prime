@@ -98,16 +98,18 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures,
-            VulkanImage labPbrNormalAtlas,
-            VulkanImage labPbrSpecularAtlas,
+            List<VulkanImage> materialNormalPages,
+            List<VulkanImage> materialOpticalPages,
+            VulkanBuffer textureRecords,
             AtmospherePipeline atmosphere) {
         this.backend.ensureSceneDescriptors(
                 tlas,
                 atlasView,
                 atlasSampler,
                 sceneTextures,
-                labPbrNormalAtlas,
-                labPbrSpecularAtlas,
+                materialNormalPages,
+                materialOpticalPages,
+                textureRecords,
                 atmosphere);
         int width = runningMean.width();
         int height = runningMean.height();

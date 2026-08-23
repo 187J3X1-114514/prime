@@ -6,19 +6,20 @@ import java.util.Set;
 
 /** Immutable resource-pack material availability captured by terrain build jobs. */
 public record LabPbrMaterialSet(
+        Map<SpriteId, Integer> textureIds,
         Set<SpriteId> normalSprites,
         Set<SpriteId> specularSprites,
         Map<SpriteId, LabPbrEmissionMap> emissionMaps,
         Map<SpriteId, LabPbrHeightMap> heightMaps,
         Map<SpriteId, LabPbrMaterialMap> materialMaps) {
     public static final LabPbrMaterialSet EMPTY = new LabPbrMaterialSet(
-            Set.of(), Set.of(), Map.of(), Map.of(), Map.of());
+            Map.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of());
 
     public LabPbrMaterialSet(
             Set<SpriteId> normalSprites,
             Set<SpriteId> specularSprites,
             Map<SpriteId, LabPbrEmissionMap> emissionMaps) {
-        this(normalSprites, specularSprites, emissionMaps, Map.of(), Map.of());
+        this(Map.of(), normalSprites, specularSprites, emissionMaps, Map.of(), Map.of());
     }
 
     public LabPbrMaterialSet(
@@ -26,10 +27,20 @@ public record LabPbrMaterialSet(
             Set<SpriteId> specularSprites,
             Map<SpriteId, LabPbrEmissionMap> emissionMaps,
             Map<SpriteId, LabPbrHeightMap> heightMaps) {
-        this(normalSprites, specularSprites, emissionMaps, heightMaps, Map.of());
+        this(Map.of(), normalSprites, specularSprites, emissionMaps, heightMaps, Map.of());
+    }
+
+    public LabPbrMaterialSet(
+            Set<SpriteId> normalSprites,
+            Set<SpriteId> specularSprites,
+            Map<SpriteId, LabPbrEmissionMap> emissionMaps,
+            Map<SpriteId, LabPbrHeightMap> heightMaps,
+            Map<SpriteId, LabPbrMaterialMap> materialMaps) {
+        this(Map.of(), normalSprites, specularSprites, emissionMaps, heightMaps, materialMaps);
     }
 
     public LabPbrMaterialSet {
+        textureIds = Map.copyOf(textureIds);
         normalSprites = Set.copyOf(normalSprites);
         specularSprites = Set.copyOf(specularSprites);
         emissionMaps = Map.copyOf(emissionMaps);
@@ -57,10 +68,19 @@ public record LabPbrMaterialSet(
         return this.materialMaps.get(sprite);
     }
 
+    public int textureId(SpriteId sprite) {
+        Integer result = this.textureIds.get(sprite);
+        if (result == null) {
+            throw new IllegalArgumentException("Sprite is absent from the texture catalog: " + sprite);
+        }
+        return result;
+    }
+
     public LabPbrMaterialSet withoutNormalTextures() {
         return this.normalSprites.isEmpty()
                 ? this
                 : new LabPbrMaterialSet(
+                        this.textureIds,
                         Set.of(),
                         this.specularSprites,
                         this.emissionMaps,

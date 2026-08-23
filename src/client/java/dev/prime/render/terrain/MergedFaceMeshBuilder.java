@@ -79,7 +79,6 @@ final class MergedFaceMeshBuilder {
                         this.voxelSurfaceMaximumHeight)
                 : null;
         Set<MergeFace> composited = Collections.newSetFromMap(new IdentityHashMap<>());
-        ArrayList<MergeFace> macroComposites = new ArrayList<>();
         Map<FaceLocation, MergeFace> opaqueFaces = new HashMap<>();
         Map<FaceLocation, MergeFace> cutoutFaces = new HashMap<>();
         Set<FaceLocation> ambiguous = new HashSet<>();
@@ -105,21 +104,12 @@ final class MergedFaceMeshBuilder {
             MergeFace base = entry.getValue();
             boolean resolved = detailBuilder != null
                     && detailBuilder.addComposite(base, overlay);
-            if (!resolved) {
-                MergeFace composite = MergeFace.tryComposite(base, overlay);
-                if (composite != null) {
-                    macroComposites.add(composite);
-                    resolved = true;
-                }
-            }
             if (resolved) {
                 composited.add(base);
                 composited.add(overlay);
             }
         }
-        ArrayList<MergeFace> ordinaryFaces =
-                new ArrayList<>(faces.size() + macroComposites.size());
-        ordinaryFaces.addAll(macroComposites);
+        ArrayList<MergeFace> ordinaryFaces = new ArrayList<>(faces.size());
         ArrayList<MergeFace> unmergedFallbacks = new ArrayList<>();
         for (MergeFace face : faces) {
             if (composited.contains(face)) {

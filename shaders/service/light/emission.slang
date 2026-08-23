@@ -69,6 +69,7 @@ public float3 primeEvaluateHitEmitterRadiance(
             dot(cross(relative, secondEdge), edgeCross) / denominator,
             dot(cross(firstEdge, relative), edgeCross) / denominator);
     return primeEvaluateEmitterRadiance(
+            emitters[emitterIndex].metadata.w,
             emitters[emitterIndex].uvsTint.w,
             emitters[emitterIndex].metadata.z,
             emitters[emitterIndex].edgeOneScale.w,

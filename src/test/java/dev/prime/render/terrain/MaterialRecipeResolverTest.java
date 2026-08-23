@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 final class MaterialRecipeResolverTest {
     private static final SpriteId ID = new SpriteId("minecraft", "block/oak_planks");
     private static final CapturedSprite SPRITE = new CapturedSprite(
-            ID, 0.0F, 0.0F, 1.0F, 1.0F, 16, 16, true, new int[] {0}, null);
+            ID, 1, 16, 16, true, new int[] {0}, null);
 
     @Test
     void resolvesPerSpriteAvailabilityWithoutInferringItFromDummyTextures() {
@@ -37,8 +37,7 @@ final class MaterialRecipeResolverTest {
                 false,
                 false,
                 true,
-                true,
-                false);
+                true);
 
         assertEquals(CoverageMode.ALPHA_CUTOUT, control.material().coverage());
         assertEquals(ScatteringFamily.OPAQUE, control.material().scattering());
@@ -64,7 +63,6 @@ final class MaterialRecipeResolverTest {
                 true,
                 false,
                 true,
-                false,
                 false);
 
         assertEquals(ScatteringFamily.DIELECTRIC_SOLID, control.material().scattering());

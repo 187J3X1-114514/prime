@@ -277,11 +277,11 @@ public final class OpacityMicromapData {
         }
 
         public void addConstantTriangle(
-                CapturedSprite sprite, float atlasU, float atlasV) {
+                CapturedSprite sprite, float localU, float localV) {
             ConstantBakeKey key = new ConstantBakeKey(
                     sprite,
-                    Float.floatToRawIntBits(atlasU),
-                    Float.floatToRawIntBits(atlasV));
+                    Float.floatToRawIntBits(localU),
+                    Float.floatToRawIntBits(localV));
             Integer cached = this.bakedConstantTriangles.get(key);
             if (cached != null) {
                 this.addIndex(cached);
@@ -291,7 +291,7 @@ public final class OpacityMicromapData {
                     this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
             int index = frames == null
                     ? SPECIAL_FULLY_UNKNOWN_OPAQUE
-                    : this.intern(bakeConstant(frames, atlasU, atlasV));
+                    : this.intern(bakeConstant(frames, localU, localV));
             this.bakedConstantTriangles.put(key, index);
             this.addIndex(index);
         }
@@ -506,9 +506,9 @@ public final class OpacityMicromapData {
     }
 
     private static BakedBlock bakeConstant(
-            SpriteAlphaFrames frames, float atlasU, float atlasV) {
-        float u = frames.localU(atlasU);
-        float v = frames.localV(atlasV);
+            SpriteAlphaFrames frames, float localU, float localV) {
+        float u = frames.localU(localU);
+        float v = frames.localV(localV);
         return bakeCoverage(
                 u, v, u, v, u, v, frames.frameCount(), frames);
     }
@@ -927,11 +927,7 @@ public final class OpacityMicromapData {
             int width,
             int height,
             int[] frameXs,
-            int[] frameYs,
-            float atlasU0,
-            float atlasV0,
-            float atlasUSpan,
-            float atlasVSpan) implements AlphaSampler {
+            int[] frameYs) implements AlphaSampler {
         static SpriteAlphaFrames create(CapturedSprite sprite) {
             SpritePixelView pixels = sprite.pixelView();
             if (pixels == null) {
@@ -939,11 +935,6 @@ public final class OpacityMicromapData {
             }
             int width = sprite.frameWidth();
             int height = sprite.frameHeight();
-            float uSpan = sprite.u1() - sprite.u0();
-            float vSpan = sprite.v1() - sprite.v0();
-            if (!(Math.abs(uSpan) > 1.0E-12F) || !(Math.abs(vSpan) > 1.0E-12F)) {
-                throw new IllegalArgumentException("Sprite atlas span is degenerate");
-            }
             int frameCount = sprite.uniqueFrameCount();
             int columns = Math.max(pixels.imageWidth() / width, 1);
             int[] frameXs = new int[frameCount];
@@ -958,11 +949,7 @@ public final class OpacityMicromapData {
                     width,
                     height,
                     frameXs,
-                    frameYs,
-                    sprite.u0(),
-                    sprite.v0(),
-                    uSpan,
-                    vSpan);
+                    frameYs);
         }
 
         @Override
@@ -1174,13 +1161,13 @@ public final class OpacityMicromapData {
                             textureLevel + refinement + repeatedLevel));
         }
 
-        float localU(float atlasU) {
+        float localU(float localU) {
             // Keep the inclusive endpoint for exact-grid proofs; texel lookup clamps it below one.
-            return Math.max(0.0F, Math.min(1.0F, (atlasU - this.atlasU0) / this.atlasUSpan));
+            return Math.max(0.0F, Math.min(1.0F, localU));
         }
 
-        float localV(float atlasV) {
-            return Math.max(0.0F, Math.min(1.0F, (atlasV - this.atlasV0) / this.atlasVSpan));
+        float localV(float localV) {
+            return Math.max(0.0F, Math.min(1.0F, localV));
         }
     }
 

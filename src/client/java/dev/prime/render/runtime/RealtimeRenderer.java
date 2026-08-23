@@ -17,7 +17,7 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.DisplayExposureDiagnostics;
-import dev.prime.render.vulkan.LabPbrTextureAtlas;
+import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
@@ -134,7 +134,7 @@ final class RealtimeRenderer implements Destroyable {
 
     boolean ensureResources(
             AtmospherePipeline atmosphere,
-            LabPbrTextureAtlas labPbrAtlas,
+            MaterialTexturePages materialTextures,
             ResolvedReconstruction selection,
             long tlas,
             VulkanGpuTextureView atlasView,
@@ -151,8 +151,9 @@ final class RealtimeRenderer implements Destroyable {
                     atlasView,
                     atlasSampler,
                     sceneTextures,
-                    labPbrAtlas.normalAtlas(),
-                    labPbrAtlas.specularAtlas(),
+                    materialTextures.normalPages(),
+                    materialTextures.opticalPages(),
+                    materialTextures.textureRecords(),
                     atmosphere,
                     current.processor().rawFrame(),
                     sharcRequested);
@@ -183,8 +184,9 @@ final class RealtimeRenderer implements Destroyable {
                     atlasView,
                     atlasSampler,
                     sceneTextures,
-                    labPbrAtlas.normalAtlas(),
-                    labPbrAtlas.specularAtlas(),
+                    materialTextures.normalPages(),
+                    materialTextures.opticalPages(),
+                    materialTextures.textureRecords(),
                     atmosphere,
                     targetResources.processor().rawFrame(),
                     sharcRequested);
@@ -248,7 +250,7 @@ final class RealtimeRenderer implements Destroyable {
                 requestedSelection.extent().width(), requestedSelection.extent().height());
         boolean resized = this.ensureResources(
                 input.atmosphere(),
-                input.labPbrAtlas(),
+                input.materialTextures(),
                 requestedSelection,
                 input.scene().tlas(),
                 input.atlasView(),
@@ -338,7 +340,7 @@ final class RealtimeRenderer implements Destroyable {
                 this.pipeline(),
                 input.sunShadow(),
                 input.atmosphere(),
-                input.labPbrAtlas(),
+                input.materialTextures(),
                 input.scene(),
                 framePlan,
                 processor,
@@ -393,7 +395,7 @@ final class RealtimeRenderer implements Destroyable {
             boolean cameraInWater,
             AtmospherePipeline atmosphere,
             SunShadowPipeline sunShadow,
-            LabPbrTextureAtlas labPbrAtlas,
+            MaterialTexturePages materialTextures,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             long textureRevision,
@@ -407,7 +409,7 @@ final class RealtimeRenderer implements Destroyable {
             Objects.requireNonNull(controls, "controls");
             Objects.requireNonNull(atmosphere, "atmosphere");
             Objects.requireNonNull(sunShadow, "sunShadow");
-            Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
+            Objects.requireNonNull(materialTextures, "materialTextures");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(atlasSampler, "atlasSampler");
             sceneTextures = List.copyOf(sceneTextures);

@@ -3,14 +3,15 @@
 Prime 的材质数据只能沿以下方向流动：
 
 ```text
-Minecraft 表面语义 / LabPBR / 默认值
+Minecraft 表面语义 / 规范 TextureRecord / 默认值
   → MaterialRecipe
   → PrimeMaterialSample
   → opaque / dielectric / foliage 紧凑状态
   → traits / evaluate / sample / albedo operation dispatcher
 ```
 
-源格式只在输入适配层出现。命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
+源格式和 atlas 坐标只在输入适配层出现，完整纹理契约见[纹理翻译架构](纹理翻译架构.md)。
+命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
 的规范语义；它们不得根据 LabPBR 字节、纹理来源或 roughness 猜测材质类别和离散事件。
 Prime 的 OpenPBR ABI、公式和专用状态位于 `shaders/bsdf/compact`，材质翻译与窄适配位于
 `shaders/model/material` 和 `shaders/service/bsdf`；
@@ -72,7 +73,7 @@ roughness、`materialControl` 和 `opticalControl`。合成顺序固定为：
 
 availability 是逐 sprite 事实；关闭时不采样 descriptor 完整性所需的 1×1 dummy image。
 “无 / 资源包法线 / 几何位移”在地形翻译前解析为互斥模式；默认资源包法线，无 `_n` 时
-不会生成法线依赖或命中采样。法线 atlas 的 RG 保存归一化平均方向，B 保留 AO，A 保存从
+不会生成法线依赖或命中采样。法线 page 的 RG 保存归一化平均方向，B 保留 AO，A 保存从
 平均法线长度反演的等效 GGX 感知粗糙度；运行时在 squared-alpha 空间与材质粗糙度合并。
 原始 normal alpha 只留在 CPU 位移路径。几何法线仍唯一决定可见性、介质边界和射线原点；
 法线贴图的 BSDF 方向另受几何半球约束。发光仍由 emitter 管线独立提取。

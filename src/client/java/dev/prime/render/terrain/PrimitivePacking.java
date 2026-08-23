@@ -25,9 +25,10 @@ public final class PrimitivePacking {
     public static final int CONTROL_TANGENT_NEGATIVE = 1 << 7;
     /** Accept only the authored winding's front side during any-hit traversal. */
     public static final int CONTROL_FRONT_FACE_ONLY = 1 << 8;
-    /** Resolve a static base/overlay atlas pair as one material evaluation. */
-    public static final int CONTROL_RASTER_COMPOSITE = 1 << 9;
-    private static final int CONTROL_RESERVED = 1 << 10;
+    /** Retired static-control bit. Dynamic payloads use the corresponding physical bit. */
+    private static final int CONTROL_STATIC_RESERVED = 1 << 9;
+    /** The 24-bit payload names a section-local light emitter instead of a logical texture. */
+    public static final int CONTROL_EMITTER_PAYLOAD = 1 << 10;
     public static final int CONTROL_BUILTIN_SHIFT = 11;
     public static final int CONTROL_BUILTIN_MASK = 15 << CONTROL_BUILTIN_SHIFT;
     public static final int CONTROL_MASK = (1 << 15) - 1;
@@ -38,6 +39,7 @@ public final class PrimitivePacking {
     public static final int DYNAMIC_TEXTURE_INDEX_MASK = 63;
     public static final int NO_EMITTER_INDEX = -1;
     public static final int MAX_EMITTER_INDEX = (1 << 24) - 2;
+    public static final int MAX_TEXTURE_ID = (1 << 24) - 1;
     /**
      * Negative zero tags a constant UV stored as two full-precision floats in uv0 and uv1.
      * Ordinary negative densities remain the periodic macro-face encoding.
@@ -45,7 +47,7 @@ public final class PrimitivePacking {
     public static final int CONSTANT_UV_DENSITY = Float.floatToRawIntBits(-0.0F);
     /** Baked primitives keep their own color instead of inheriting the voxel instance tint. */
     public static final int CONSTANT_UV_OWN_TINT = 1;
-    /** uv0/uv1 contain baked LabPBR texels instead of atlas coordinates. */
+    /** uv0/uv1 contain baked material texels instead of local texture coordinates. */
     public static final int CONSTANT_UV_BAKED_MATERIAL = 1 << 1;
     public static final int CONSTANT_UV_MODE_MASK =
             CONSTANT_UV_OWN_TINT | CONSTANT_UV_BAKED_MATERIAL;
@@ -53,18 +55,26 @@ public final class PrimitivePacking {
     private PrimitivePacking() {
     }
 
-    /** Packs geometry controls, the preset class, and a local light-emitter index. */
-    public static int packControlEmitter(int control, int emitterIndex) {
+    /** Packs geometry controls and a logical texture identity for an ordinary static primitive. */
+    public static int packControlTexture(int control, int textureId) {
         requireValidControl(control);
-        if ((control & CONTROL_RASTER_COMPOSITE) != 0) {
-            throw new IllegalArgumentException(
-                    "Raster composite payload cannot carry an emitter");
+        if ((control & (CONTROL_EMITTER_PAYLOAD | CONTROL_STATIC_RESERVED)) != 0) {
+            throw new IllegalArgumentException("Texture payload conflicts with primitive control");
         }
-        if (emitterIndex < NO_EMITTER_INDEX || emitterIndex > MAX_EMITTER_INDEX) {
+        if (textureId <= 0 || textureId > MAX_TEXTURE_ID) {
+            throw new IllegalArgumentException("Texture ID exceeds its nonzero 24-bit ABI field");
+        }
+        return physicalControl(control) | textureId << 3;
+    }
+
+    /** Packs geometry controls, the emitter tag, and a local light-emitter index. */
+    public static int packControlEmitter(int control, int emitterIndex) {
+        if (emitterIndex < 0 || emitterIndex > MAX_EMITTER_INDEX) {
             throw new IllegalArgumentException("Primitive emitter index exceeds its 24-bit ABI field");
         }
-        int encodedEmitter = emitterIndex == NO_EMITTER_INDEX ? 0 : emitterIndex + 1;
-        return physicalControl(control) | encodedEmitter << 3;
+        requireValidControl(control);
+        return physicalControl(control | CONTROL_EMITTER_PAYLOAD)
+                | (emitterIndex + 1) << 3;
     }
 
     public static int packTintControl(int packedTint, int control) {
@@ -74,7 +84,7 @@ public final class PrimitivePacking {
 
     public static int unpackControl(int packedTint, int packedFlagsEmitter) {
         return packedTint >>> 24
-                | (packedFlagsEmitter & 7) << 8
+                | (packedFlagsEmitter & 3) << 8
                 | (packedFlagsEmitter >>> 16 & CONTROL_BUILTIN_MASK);
     }
 
@@ -82,7 +92,7 @@ public final class PrimitivePacking {
         if ((packed & DYNAMIC_TEXTURE_FLAG) != 0) {
             return NO_EMITTER_INDEX;
         }
-        if ((packed & (CONTROL_RASTER_COMPOSITE >>> 8)) != 0) {
+        if ((packed & (CONTROL_EMITTER_PAYLOAD >>> 8)) == 0) {
             return NO_EMITTER_INDEX;
         }
         int encoded = packed >>> 3 & 0x00ff_ffff;
@@ -90,13 +100,21 @@ public final class PrimitivePacking {
     }
 
     public static int withEmitterIndex(int packed, int emitterIndex) {
-        if ((packed & (CONTROL_RASTER_COMPOSITE >>> 8)) != 0) {
+        if ((packed & (CONTROL_EMITTER_PAYLOAD >>> 8)) == 0) {
             throw new IllegalArgumentException(
-                    "Raster composite payload cannot carry an emitter");
+                    "Primitive payload does not carry an emitter");
         }
-        int control = (packed & 7) << 8
+        int control = (packed & 3) << 8
                 | (packed >>> 16 & CONTROL_BUILTIN_MASK);
         return packControlEmitter(control, emitterIndex);
+    }
+
+    public static int unpackTextureId(int packed) {
+        if ((packed & DYNAMIC_TEXTURE_FLAG) != 0
+                || (packed & (CONTROL_EMITTER_PAYLOAD >>> 8)) != 0) {
+            return 0;
+        }
+        return packed >>> 3 & MAX_TEXTURE_ID;
     }
 
     /**
@@ -118,10 +136,6 @@ public final class PrimitivePacking {
         requireValidControl(control);
         if (textureIndex < 0 || textureIndex > DYNAMIC_TEXTURE_INDEX_MASK) {
             throw new IllegalArgumentException("Dynamic texture index exceeds its ABI field");
-        }
-        if ((control & CONTROL_RASTER_COMPOSITE) != 0) {
-            throw new IllegalArgumentException(
-                    "Dynamic textures cannot use a static raster composite");
         }
         if (redAlpha && textureIndex == 0) {
             throw new IllegalArgumentException(
@@ -157,8 +171,8 @@ public final class PrimitivePacking {
     }
 
     /**
-     * Packs normalized atlas coordinates as UQ0.16, reserving {@code 0xffff} for the inclusive
-     * endpoint. Power-of-two atlas texel boundaries remain exact up to 32,768 pixels.
+     * Packs normalized local texture coordinates as UQ0.16, reserving {@code 0xffff} for the
+     * inclusive endpoint. Power-of-two texel boundaries remain exact up to 32,768 pixels.
      */
     public static int packUv(float u, float v) {
         return packUv(u) | packUv(v) << 16;
@@ -179,7 +193,7 @@ public final class PrimitivePacking {
         if (!(coordinate >= 0.0F && coordinate <= 1.0F)
                 || !Float.isFinite(coordinate)) {
             throw new IllegalArgumentException(
-                    "Atlas UV must be finite and normalized");
+                    "Local texture UV must be finite and normalized");
         }
         if (coordinate == 1.0F) {
             return UV_FIXED_ONE;
@@ -191,7 +205,7 @@ public final class PrimitivePacking {
         if (!(coordinate >= 0.0F && coordinate <= 1.0F)
                 || !Float.isFinite(coordinate)) {
             throw new IllegalArgumentException(
-                    "Constant atlas UV must be finite and normalized");
+                    "Constant local texture UV must be finite and normalized");
         }
         return Float.floatToRawIntBits(coordinate);
     }
@@ -220,7 +234,6 @@ public final class PrimitivePacking {
                         : 0)
                 | (value.tangentNegative() ? CONTROL_TANGENT_NEGATIVE : 0)
                 | (value.frontFaceOnly() ? CONTROL_FRONT_FACE_ONLY : 0)
-                | (value.rasterComposite() ? CONTROL_RASTER_COMPOSITE : 0)
                 | material.builtinClass().id() << CONTROL_BUILTIN_SHIFT;
         requireValidControl(control);
         return control;
@@ -255,8 +268,7 @@ public final class PrimitivePacking {
                 recipe,
                 (control & CONTROL_ANIMATED) != 0,
                 (control & CONTROL_TANGENT_NEGATIVE) != 0,
-                (control & CONTROL_FRONT_FACE_ONLY) != 0,
-                (control & CONTROL_RASTER_COMPOSITE) != 0);
+                (control & CONTROL_FRONT_FACE_ONLY) != 0);
     }
 
     public static int materialRecipeControl(int control) {
@@ -313,12 +325,12 @@ public final class PrimitivePacking {
                         BuiltinMaterialClass.DEFAULT),
                 animatedTexture,
                 false,
-                false,
                 false));
     }
 
     static void requireValidControl(int control) {
-        if ((control & ~CONTROL_MASK) != 0 || (control & CONTROL_RESERVED) != 0) {
+        if ((control & ~CONTROL_MASK) != 0
+                || (control & (CONTROL_EMITTER_PAYLOAD | CONTROL_STATIC_RESERVED)) != 0) {
             throw new IllegalArgumentException("Primitive control contains reserved ABI bits");
         }
         decodeUnchecked(control);
@@ -337,16 +349,6 @@ public final class PrimitivePacking {
         return result;
     }
 
-    public static int packRasterCompositeControl(
-            int control, int packedOverlayTint) {
-        if ((control & CONTROL_RASTER_COMPOSITE) == 0) {
-            throw new IllegalArgumentException(
-                    "Raster composite payload requires its primitive flag");
-        }
-        requireValidControl(control);
-        return physicalControl(control) | (packedOverlayTint & 0x00ff_ffff) << 3;
-    }
-
     private static int physicalControl(int control) {
         return (control >>> 8 & 7) | (control & CONTROL_BUILTIN_MASK) << 16;
     }
@@ -357,7 +359,6 @@ public final class PrimitivePacking {
         boolean water = (control & CONTROL_WATER_MEDIUM) != 0;
         boolean foliage = scattering == ScatteringFamily.FOLIAGE_THIN.encoded();
         boolean dielectricSolid = scattering == ScatteringFamily.DIELECTRIC_SOLID.encoded();
-        boolean rasterComposite = (control & CONTROL_RASTER_COMPOSITE) != 0;
         if (water && !dielectricSolid) {
             throw new IllegalArgumentException("Water must be a solid dielectric");
         }
@@ -368,13 +369,6 @@ public final class PrimitivePacking {
                 && (control & CONTROL_NORMAL_TEXTURE) == 0) {
             throw new IllegalArgumentException(
                     "Negative tangent handedness requires a normal texture");
-        }
-        if (rasterComposite
-                && (cutout
-                        || scattering != ScatteringFamily.OPAQUE.encoded()
-                        || (control & (CONTROL_ANIMATED | CONTROL_FRONT_FACE_ONLY)) != 0)) {
-            throw new IllegalArgumentException(
-                    "Raster composites must be static, opaque, and two-sided");
         }
         BuiltinMaterialClass.fromId(control >>> CONTROL_BUILTIN_SHIFT & 15);
     }
@@ -525,10 +519,10 @@ public final class PrimitivePacking {
     }
 
     /**
-     * Packs the largest normalized-atlas UV change per world-space unit as one float.
+     * Packs the largest normalized local-UV change per world-space unit as one float.
      *
      * <p>This is the largest singular value of the triangle's world-to-UV differential. The hit
-     * shader combines it with the actual atlas extent and the ray-cone footprint, so arbitrary
+     * shader combines it with the logical texture extent and the ray-cone footprint, so arbitrary
      * baked-model scaling is handled without storing triangle positions in the shader record.
      */
     public static int packUvDensity(

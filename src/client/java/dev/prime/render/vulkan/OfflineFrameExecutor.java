@@ -23,7 +23,7 @@ public final class OfflineFrameExecutor {
             OfflineRayTracingPipeline pipeline,
             SunShadowPipeline sunShadow,
             AtmospherePipeline atmosphere,
-            LabPbrTextureAtlas labPbrAtlas,
+            MaterialTexturePages materialTextures,
             TerrainScene.ResidentSceneView scene,
             OfflineFramePlan plan,
             VulkanImage displayOutput,
@@ -36,7 +36,7 @@ public final class OfflineFrameExecutor {
         Objects.requireNonNull(pipeline, "pipeline");
         Objects.requireNonNull(sunShadow, "sunShadow");
         Objects.requireNonNull(atmosphere, "atmosphere");
-        Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
+        Objects.requireNonNull(materialTextures, "materialTextures");
         Objects.requireNonNull(scene, "scene");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(displayOutput, "displayOutput");
@@ -58,7 +58,7 @@ public final class OfflineFrameExecutor {
                 encoder.allocateAndBeginTransientCommandBuffer();
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
-        LabPbrTextureAtlas.FrameToken labPbrFrame = null;
+        MaterialTexturePages.FrameToken materialFrame = null;
         VulkanFrameSubmission submission =
                 new VulkanFrameSubmission(this.imageInitialization);
         try {
@@ -76,7 +76,7 @@ public final class OfflineFrameExecutor {
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.prepareSceneTexturesForTrace(
                     commandBuffer, sceneTextures);
-            labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            materialFrame = materialTextures.prepare(commandBuffer);
             // The sun-cache raygen borrows the shared scene descriptor set prepared above.
             atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
@@ -116,10 +116,10 @@ public final class OfflineFrameExecutor {
             commitFailure = ResourceCleanup.run(
                     () -> atmosphere.submitted(submittedAtmosphereFrame),
                     commitFailure);
-            LabPbrTextureAtlas.FrameToken submittedLabPbrFrame =
-                    labPbrFrame;
+            MaterialTexturePages.FrameToken submittedMaterialFrame =
+                    materialFrame;
             commitFailure = ResourceCleanup.run(
-                    () -> labPbrAtlas.submitted(submittedLabPbrFrame),
+                    () -> materialTextures.submitted(submittedMaterialFrame),
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
@@ -135,10 +135,10 @@ public final class OfflineFrameExecutor {
                 failure = ResourceCleanup.run(
                         () -> atmosphere.abandon(abandonedAtmosphereFrame),
                         failure);
-                LabPbrTextureAtlas.FrameToken abandonedLabPbrFrame =
-                        labPbrFrame;
+                MaterialTexturePages.FrameToken abandonedMaterialFrame =
+                        materialFrame;
                 throw ResourceCleanup.run(
-                        () -> labPbrAtlas.abandon(abandonedLabPbrFrame),
+                        () -> materialTextures.abandon(abandonedMaterialFrame),
                         failure);
             }
             throw exception;

@@ -17,8 +17,9 @@ public interface RealtimeIntegratorPipeline extends Destroyable {
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures,
-            VulkanImage labPbrNormalAtlas,
-            VulkanImage labPbrSpecularAtlas,
+            List<VulkanImage> materialNormalPages,
+            List<VulkanImage> materialOpticalPages,
+            VulkanBuffer textureRecords,
             AtmospherePipeline atmosphere,
             RawWavefrontFrame signals,
             boolean sharcRequested);

@@ -16,6 +16,7 @@ public struct PrimeSurfaceRelation {
     public uint control;
     public uint referenceUv;
     public uint tint;
+    public uint textureId;
     public PrimitiveRecord material;
 };
 
@@ -141,12 +142,33 @@ public PrimeHitTriangle primeHitTriangle(
 }
 
 public uint primePrimitiveEmitterIndex(PrimitiveRecord primitive) {
-    uint encodedEmitter = primeUsesRasterComposite(primitive)
-            ? 0u
-            : primitive.flagsEmitter >> 3u & 0x00ffffffu;
+    uint encodedEmitter = (primitive.flagsEmitter & 4u) != 0u
+            ? primitive.flagsEmitter >> 3u & 0x00ffffffu
+            : 0u;
     return encodedEmitter == 0u
             ? PRIME_NO_PRIMITIVE_INDEX
             : encodedEmitter - 1u;
+}
+
+public uint primePrimitiveTextureId(
+        SectionRecord section, PrimitiveRecord primitive) {
+    if ((primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u) {
+        return 0u;
+    }
+    if ((primitive.flagsEmitter & 4u) == 0u) {
+        return primePrimitiveStaticTextureId(primitive);
+    }
+    uint emitterIndex = primePrimitiveEmitterIndex(primitive);
+    if (section.lightAddress == uint64_t(0)
+            || emitterIndex == PRIME_NO_PRIMITIVE_INDEX) {
+        return 0u;
+    }
+    SectionLightHeader* header = (SectionLightHeader*)section.lightAddress;
+    if (emitterIndex >= header[0].emitterCount) {
+        return 0u;
+    }
+    LightEmitter* emitters = (LightEmitter*)header[0].emitterAddress;
+    return emitters[emitterIndex].metadata.w;
 }
 
 public PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
@@ -154,6 +176,7 @@ public PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
     result.control = 0u;
     result.referenceUv = 0u;
     result.tint = 0u;
+    result.textureId = 0u;
     result.material.uv0 = 0u;
     result.material.uv1 = 0u;
     result.material.uv2 = 0u;
@@ -175,6 +198,7 @@ public PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
     if (kind == PRIME_SURFACE_RELATION_BOUNDARY) {
         result.referenceUv = relations[offset + 1u];
         result.tint = relations[offset + 2u];
+        result.textureId = relations[offset + 3u];
     } else {
         result.material.uv0 = relations[offset + 1u];
         result.material.uv1 = relations[offset + 2u];
@@ -193,8 +217,8 @@ PrimitiveRecord primePrimitiveWithMaterialRecipe(
     uint control = (primePrimitiveControl(primitive) & ~PRIME_RECIPE_MATERIAL_MASK)
             | (recipe & PRIME_RECIPE_MATERIAL_MASK);
     primitive.tint = (primitive.tint & 0x00ffffffu) | ((control & 0xffu) << 24u);
-    primitive.flagsEmitter = (primitive.flagsEmitter & ~0x78000007u)
-            | ((control >> 8u) & 7u)
+    primitive.flagsEmitter = (primitive.flagsEmitter & ~0x78000003u)
+            | ((control >> 8u) & 3u)
             | ((control & PRIME_RECIPE_BUILTIN_MASK) << 16u);
     return primitive;
 }
@@ -226,6 +250,7 @@ public PrimitiveRecord primeResolveSurfacePrimitive(
     bool overlayCovered = !(positiveOnly && backFacing)
             && primeEvaluateOpacity(
                     primary,
+                    primePrimitiveTextureId(section, primary),
                     primeInterpolateUv(
                             section,
                             primary,
@@ -242,13 +267,12 @@ public PrimitiveRecord primePrimitive() {
 }
 
 bool primeUsesRepeatedUv(PrimitiveRecord primitive) {
-    return primeUsesRasterComposite(primitive)
-            || asfloat(primitive.uvDensity) < 0.0;
+    return asfloat(primitive.uvDensity) < 0.0;
 }
 
 bool primeUsesConstantFloatUv(PrimitiveRecord primitive) {
     // Negative zero is distinct at the ABI level while remaining outside the negative-density
-    // macro-face encoding. Voxel texel centers need float32 precision on large stitched atlases.
+    // macro-face encoding. Voxel texel centers need float32 precision on large logical textures.
     return primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY;
 }
 
@@ -284,32 +308,24 @@ public float2 primeInterpolateUv(
 }
 
 public float primeRayConeTextureLod(
+        SectionRecord section,
         PrimitiveRecord primitive,
         float3 geometricNormal,
         float3 hitPosition) {
     float2 rayCone = unpackHalf2x16ToFloat(primePush.rayCone);
     float normalizedUvDensity;
-    if (primeUsesRasterComposite(primitive)) {
-        float2 first = primeUnpackUv(primitive.uv1)
-                - primeUnpackUv(primitive.uv0);
-        float2 second = primeUnpackUv(primitive.uv2)
-                - primeUnpackUv(primitive.uv0);
-        float trace = dot(first, first) + dot(second, second);
-        float determinant =
-                first.x * second.y - first.y * second.x;
-        normalizedUvDensity = sqrt(max(
-                0.5 * (trace + sqrt(max(
-                        trace * trace
-                                - 4.0 * determinant * determinant,
-                        0.0))),
-                0.0));
-    } else {
-        normalizedUvDensity = abs(asfloat(primitive.uvDensity));
-    }
+    normalizedUvDensity = abs(asfloat(primitive.uvDensity));
+    bool dynamic = (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u;
     uint textureIndex = min(
             primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
-    PrimeSceneTextureDimensions dimensions =
-            primeSceneTextureDimensions(textureIndex);
+    PrimeSceneTextureDimensions dimensions;
+    if (dynamic) {
+        dimensions = primeSceneTextureDimensions(textureIndex);
+    } else {
+        uint textureId = primePrimitiveTextureId(section, primitive);
+        dimensions.extent = primeTextureFrameExtent(textureId);
+        dimensions.mipLevels = primeTextureMaximumMip(textureId) + 1;
+    }
     if (!(rayCone.x > 0.0)
             || !(normalizedUvDensity > 0.0)
             || dimensions.mipLevels <= 1) {
@@ -317,9 +333,8 @@ public float primeRayConeTextureLod(
     }
 
     // The CPU stores the largest world-to-normalized-UV singular value. Multiplying by the
-    // actual atlas extent turns it into texels per world unit without baking resource-pack size
-    // into section meshes. Minecraft block atlases are square; max() remains conservative if a
-    // backend exposes a non-square view.
+    // logical frame extent turns it into texels per world unit without baking resource-pack size
+    // into section meshes. max() is conservative for non-square logical textures.
     float texelsPerWorldUnit = normalizedUvDensity
             * float(max(dimensions.extent.x, dimensions.extent.y));
     float distanceFromCamera = length(hitPosition - primePush.cameraPosition);

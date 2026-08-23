@@ -11,7 +11,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-final class LabPbrTextureAtlasTest {
+final class MaterialTexturePagesTest {
     @Test
     void capturedMaterialPixelsAreImmutable() {
         int[] pixels = {0xff102030};
@@ -30,7 +30,7 @@ final class LabPbrTextureAtlasTest {
         LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
                 new int[] {0xff102030}, 1, 1, 1, 1, 1, 1);
         LabPbrAtlasFrame.Sprite sprite = new LabPbrAtlasFrame.Sprite(
-                0, 0, 1, 1, 0, source, null, 0);
+                1, 0, 0, 1, 1, 0, source, null, 0);
         LabPbrAtlasFrame.Snapshot snapshot = new LabPbrAtlasFrame.Snapshot(
                 1, 1, 1, LabPbrMaterialSet.EMPTY, List.of(sprite));
 
@@ -41,11 +41,11 @@ final class LabPbrTextureAtlasTest {
 
     @Test
     void atlasAndAnimationBudgetsKeepOffsetsAboveTwoGibibytes() {
-        long atlasBytes = LabPbrTextureAtlas.totalMipBytes(32_768, 32_768, 16);
-        long animationBytes = LabPbrTextureAtlas.animationEndOffset(
+        long pageBytes = MaterialTexturePages.totalMipBytes(32_768, 32_768, 16);
+        long animationBytes = MaterialTexturePages.animationEndOffset(
                 0L, 32_768, 32_768, true, true);
 
-        assertTrue(atlasBytes > Integer.MAX_VALUE);
+        assertTrue(pageBytes > Integer.MAX_VALUE);
         assertEquals(8L * 32_768L * 32_768L, animationBytes);
     }
 
@@ -53,7 +53,7 @@ final class LabPbrTextureAtlasTest {
     void argbSourcesAreWrittenAsVulkanRgbaBytes() {
         ByteBuffer bytes = ByteBuffer.allocate(4);
 
-        LabPbrTextureAtlas.writeArgb(bytes, 0, 0xff123456);
+        MaterialTexturePages.writeArgb(bytes, 0, 0xff123456);
 
         assertArrayEquals(
                 new byte[] {0x12, 0x34, 0x56, (byte) 0xff},

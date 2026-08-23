@@ -29,7 +29,7 @@ final class CompiledClusterCodecTest {
             PrimitivePacking.packUv(0.0F, 1.0F),
             PrimitivePacking.packTintControl(PrimitivePacking.packTint(-1), 0),
             PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
-            PrimitivePacking.packControlEmitter(0, PrimitivePacking.NO_EMITTER_INDEX),
+            PrimitivePacking.packControlTexture(0, 1),
             Float.floatToRawIntBits(-1.0F),
             PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
         };
@@ -78,8 +78,7 @@ final class CompiledClusterCodecTest {
                     PrimitivePacking.packTintControl(
                             PrimitivePacking.packTint(-1), flags),
                     PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
-                    PrimitivePacking.packControlEmitter(
-                            flags, PrimitivePacking.NO_EMITTER_INDEX),
+                    PrimitivePacking.packControlTexture(flags, 1),
                     Float.floatToRawIntBits(1.0F),
                     PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
                 },
@@ -144,8 +143,7 @@ final class CompiledClusterCodecTest {
                     PrimitivePacking.packTintControl(
                             PrimitivePacking.packTint(-1), 0),
                     PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
-                    PrimitivePacking.packControlEmitter(
-                            0, PrimitivePacking.NO_EMITTER_INDEX),
+                    PrimitivePacking.packControlTexture(0, 1),
                     Float.floatToRawIntBits(1.0F),
                     PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
                 },
@@ -180,8 +178,7 @@ final class CompiledClusterCodecTest {
                         PrimitivePacking.packTint(-1), transmissive));
         littleEndian(wrongCategory).putInt(
                 offsets.primitives() + 5 * Integer.BYTES,
-                PrimitivePacking.packControlEmitter(
-                        transmissive, PrimitivePacking.NO_EMITTER_INDEX));
+                PrimitivePacking.packControlTexture(transmissive, 1));
         assertThrows(IllegalArgumentException.class,
                 () -> CompiledClusterCodec.decode(wrongCategory));
 

@@ -27,7 +27,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * offline, atmosphere and sun-shadow programs only borrow its descriptor set.
  */
 public final class TraceBackend implements Destroyable {
-    private static final int BINDING_COUNT = 22;
+    private static final int BINDING_COUNT = 23;
     private static final int STARMAP_UPLOAD = 1;
     private static final int BSDF_LOOKUP_UPLOAD = 1 << 1;
     private static final int ALL_RT_STAGES =
@@ -102,8 +102,9 @@ public final class TraceBackend implements Destroyable {
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<SceneTexture> sceneTextures,
-            VulkanImage labPbrNormalAtlas,
-            VulkanImage labPbrSpecularAtlas,
+            List<VulkanImage> materialNormalPages,
+            List<VulkanImage> materialOpticalPages,
+            VulkanBuffer textureRecords,
             AtmospherePipeline atmosphere) {
         if (this.sceneBindings != null
                 && this.sceneBindings.matches(
@@ -111,8 +112,9 @@ public final class TraceBackend implements Destroyable {
                         atlasView.vkImageView(),
                         atlasSampler.vkSampler(),
                         sceneTextures,
-                        labPbrNormalAtlas.view(),
-                        labPbrSpecularAtlas.view(),
+                        materialNormalPages,
+                        materialOpticalPages,
+                        textureRecords.handle(),
                         atmosphere)) {
             return;
         }
@@ -123,8 +125,9 @@ public final class TraceBackend implements Destroyable {
                 atlasView,
                 atlasSampler,
                 sceneTextures,
-                labPbrNormalAtlas,
-                labPbrSpecularAtlas,
+                materialNormalPages,
+                materialOpticalPages,
+                textureRecords,
                 atmosphere,
                 this.bsdfLookup,
                 this.starmap);
@@ -249,8 +252,6 @@ public final class TraceBackend implements Destroyable {
         }
         int[] sampledBindings = new int[] {
             ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY,
-            ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS,
-            ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS,
             ShaderAbi.DESCRIPTOR_STARMAP
         };
         for (int binding : sampledBindings) {
@@ -260,6 +261,21 @@ public final class TraceBackend implements Destroyable {
                     .descriptorCount(1)
                     .stageFlags(ALL_RT_STAGES);
         }
+        bindings.get(cursor++)
+                .binding(ShaderAbi.DESCRIPTOR_MATERIAL_NORMAL_PAGES)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(ShaderAbi.MATERIAL_PAGE_COUNT)
+                .stageFlags(ALL_RT_STAGES);
+        bindings.get(cursor++)
+                .binding(ShaderAbi.DESCRIPTOR_MATERIAL_OPTICAL_PAGES)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(ShaderAbi.MATERIAL_PAGE_COUNT)
+                .stageFlags(ALL_RT_STAGES);
+        bindings.get(cursor++)
+                .binding(ShaderAbi.DESCRIPTOR_TEXTURE_RECORDS)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(ALL_RT_STAGES);
         for (int binding : sunShadowBindings()) {
             bindings.get(cursor++)
                     .binding(binding)
@@ -332,8 +348,9 @@ public final class TraceBackend implements Destroyable {
         private final long atlasView;
         private final long atlasSampler;
         private final List<SceneTexture> sceneTextures;
-        private final long normalAtlas;
-        private final long specularAtlas;
+        private final List<Long> normalPages;
+        private final List<Long> opticalPages;
+        private final long textureRecords;
         private final long skyView;
         private final long transmittanceLow;
         private final long transmittanceHigh;
@@ -351,8 +368,9 @@ public final class TraceBackend implements Destroyable {
                 long atlasView,
                 long atlasSampler,
                 List<SceneTexture> sceneTextures,
-                long normalAtlas,
-                long specularAtlas,
+                List<VulkanImage> normalPages,
+                List<VulkanImage> opticalPages,
+                long textureRecords,
                 AtmospherePipeline atmosphere,
                 long[] sunShadowDepths) {
             this.context = context;
@@ -362,8 +380,9 @@ public final class TraceBackend implements Destroyable {
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
             this.sceneTextures = List.copyOf(sceneTextures);
-            this.normalAtlas = normalAtlas;
-            this.specularAtlas = specularAtlas;
+            this.normalPages = pageViews(normalPages);
+            this.opticalPages = pageViews(opticalPages);
+            this.textureRecords = textureRecords;
             this.skyView = atmosphere.skyView().view();
             this.transmittanceLow = atmosphere.transmittanceLow().view();
             this.transmittanceHigh = atmosphere.transmittanceHigh().view();
@@ -380,13 +399,14 @@ public final class TraceBackend implements Destroyable {
                 VulkanGpuTextureView atlasView,
                 VulkanGpuSampler atlasSampler,
                 List<SceneTexture> sceneTextures,
-                VulkanImage normalAtlas,
-                VulkanImage specularAtlas,
+                List<VulkanImage> normalPages,
+                List<VulkanImage> opticalPages,
+                VulkanBuffer textureRecords,
                 AtmospherePipeline atmosphere,
                 BsdfLookupTable bsdfLookup,
                 StarmapTexture starmap) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
+                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(5, stack);
                 sizes.get(0)
                         .type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
                         .descriptorCount(1);
@@ -396,9 +416,13 @@ public final class TraceBackend implements Destroyable {
                                 * SunShadowClipmap.CASCADE_COUNT);
                 sizes.get(2)
                         .type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                        .descriptorCount(ShaderAbi.SCENE_TEXTURE_COUNT + 4);
+                        .descriptorCount(ShaderAbi.SCENE_TEXTURE_COUNT
+                                + 2 * ShaderAbi.MATERIAL_PAGE_COUNT + 2);
                 sizes.get(3)
                         .type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                        .descriptorCount(1);
+                sizes.get(4)
+                        .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                         .descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -426,9 +450,19 @@ public final class TraceBackend implements Destroyable {
                         throw new IllegalArgumentException(
                                 "Dynamic scene texture count exceeds the descriptor ABI");
                     }
+                    if (normalPages.isEmpty()
+                            || normalPages.size() > ShaderAbi.MATERIAL_PAGE_COUNT
+                            || opticalPages.isEmpty()
+                            || opticalPages.size() > ShaderAbi.MATERIAL_PAGE_COUNT) {
+                        throw new IllegalArgumentException(
+                                "Translated material page count exceeds the descriptor ABI");
+                    }
                     int atmosphereStart = ShaderAbi.SCENE_TEXTURE_COUNT;
                     int sampledStart = atmosphereStart + 5;
-                    int shadowStart = sampledStart + 4;
+                    int normalStart = sampledStart + 1;
+                    int opticalStart = normalStart + ShaderAbi.MATERIAL_PAGE_COUNT;
+                    int starmapIndex = opticalStart + ShaderAbi.MATERIAL_PAGE_COUNT;
+                    int shadowStart = starmapIndex + 1;
                     VkDescriptorImageInfo.Buffer infos = VkDescriptorImageInfo.calloc(
                             shadowStart + SunShadowClipmap.BANK_COUNT
                                     * SunShadowClipmap.CASCADE_COUNT,
@@ -461,15 +495,21 @@ public final class TraceBackend implements Destroyable {
                             .sampler(bsdfLookup.sampler())
                             .imageView(bsdfLookup.transmissionGgxEnergy().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    infos.get(sampledStart + 1)
-                            .sampler(atlasSampler.vkSampler())
-                            .imageView(normalAtlas.view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    infos.get(sampledStart + 2)
-                            .sampler(atlasSampler.vkSampler())
-                            .imageView(specularAtlas.view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    infos.get(sampledStart + 3)
+                    for (int index = 0; index < ShaderAbi.MATERIAL_PAGE_COUNT; index++) {
+                        VulkanImage normal = normalPages.get(
+                                Math.min(index, normalPages.size() - 1));
+                        VulkanImage optical = opticalPages.get(
+                                Math.min(index, opticalPages.size() - 1));
+                        infos.get(normalStart + index)
+                                .sampler(atlasSampler.vkSampler())
+                                .imageView(normal.view())
+                                .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                        infos.get(opticalStart + index)
+                                .sampler(atlasSampler.vkSampler())
+                                .imageView(optical.view())
+                                .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    }
+                    infos.get(starmapIndex)
                             .sampler(starmap.sampler())
                             .imageView(starmap.image().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -491,12 +531,18 @@ public final class TraceBackend implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorBufferInfo.Buffer queryInfo =
-                            VkDescriptorBufferInfo.calloc(1, stack);
-                    queryInfo.get(0)
+                    VkDescriptorBufferInfo.Buffer bufferInfos =
+                            VkDescriptorBufferInfo.calloc(2, stack);
+                    VkDescriptorBufferInfo queryInfo = bufferInfos.get(0);
+                    queryInfo
                                     .buffer(atmosphere.sunShadowQuery().handle())
                                     .offset(0L)
                                     .range(ShaderAbi.SUN_SHADOW_QUERY_CONSTANT_SIZE);
+                    VkDescriptorBufferInfo textureRecordInfo = bufferInfos.get(1);
+                    textureRecordInfo
+                            .buffer(textureRecords.handle())
+                            .offset(0L)
+                            .range(textureRecords.size());
                     VkWriteDescriptorSet.Buffer writes =
                             VkWriteDescriptorSet.calloc(BINDING_COUNT, stack);
                     int write = 0;
@@ -532,22 +578,48 @@ public final class TraceBackend implements Destroyable {
                                 .pImageInfo(VkDescriptorImageInfo.create(
                                         infos.get(atmosphereStart + index).address(), 1));
                     }
-                    int[] sampledBindings = new int[] {
-                        ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY,
-                        ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS,
-                        ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS,
-                        ShaderAbi.DESCRIPTOR_STARMAP
-                    };
-                    for (int index = 0; index < sampledBindings.length; index++) {
-                        writes.get(write++)
-                                .sType$Default()
-                                .dstSet(set)
-                                .dstBinding(sampledBindings[index])
-                                .descriptorCount(1)
-                                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                                .pImageInfo(VkDescriptorImageInfo.create(
-                                        infos.get(sampledStart + index).address(), 1));
-                    }
+                    writes.get(write++)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    infos.get(sampledStart).address(), 1));
+                    writes.get(write++)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_MATERIAL_NORMAL_PAGES)
+                            .descriptorCount(ShaderAbi.MATERIAL_PAGE_COUNT)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    infos.get(normalStart).address(),
+                                    ShaderAbi.MATERIAL_PAGE_COUNT));
+                    writes.get(write++)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_MATERIAL_OPTICAL_PAGES)
+                            .descriptorCount(ShaderAbi.MATERIAL_PAGE_COUNT)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    infos.get(opticalStart).address(),
+                                    ShaderAbi.MATERIAL_PAGE_COUNT));
+                    writes.get(write++)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_STARMAP)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    infos.get(starmapIndex).address(), 1));
+                    writes.get(write++)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_TEXTURE_RECORDS)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                            .pBufferInfo(VkDescriptorBufferInfo.create(
+                                    textureRecordInfo.address(), 1));
                     int[] shadowBindings = sunShadowBindings();
                     for (int index = 0; index < shadowBindings.length; index++) {
                         writes.get(write++)
@@ -566,7 +638,7 @@ public final class TraceBackend implements Destroyable {
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
-                                    queryInfo.get(0).address(), 1));
+                                    queryInfo.address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new SceneBindings(
                             context,
@@ -576,8 +648,9 @@ public final class TraceBackend implements Destroyable {
                             atlasView.vkImageView(),
                             atlasSampler.vkSampler(),
                             sceneTextures,
-                            normalAtlas.view(),
-                            specularAtlas.view(),
+                            normalPages,
+                            opticalPages,
+                            textureRecords.handle(),
                             atmosphere,
                             shadowViews);
                 } catch (RuntimeException exception) {
@@ -592,15 +665,17 @@ public final class TraceBackend implements Destroyable {
                 long candidateAtlasView,
                 long candidateAtlasSampler,
                 List<SceneTexture> candidateSceneTextures,
-                long candidateNormalAtlas,
-                long candidateSpecularAtlas,
+                List<VulkanImage> candidateNormalPages,
+                List<VulkanImage> candidateOpticalPages,
+                long candidateTextureRecords,
                 AtmospherePipeline atmosphere) {
             if (this.tlas != candidateTlas
                     || this.atlasView != candidateAtlasView
                     || this.atlasSampler != candidateAtlasSampler
                     || !this.sceneTextures.equals(candidateSceneTextures)
-                    || this.normalAtlas != candidateNormalAtlas
-                    || this.specularAtlas != candidateSpecularAtlas
+                    || !matchesPageViews(this.normalPages, candidateNormalPages)
+                    || !matchesPageViews(this.opticalPages, candidateOpticalPages)
+                    || this.textureRecords != candidateTextureRecords
                     || this.skyView != atmosphere.skyView().view()
                     || this.transmittanceLow != atmosphere.transmittanceLow().view()
                     || this.transmittanceHigh != atmosphere.transmittanceHigh().view()
@@ -618,6 +693,23 @@ public final class TraceBackend implements Destroyable {
                             != atmosphere.sunShadowDepth(bank, cascade).view()) {
                         return false;
                     }
+                }
+            }
+            return true;
+        }
+
+        private static List<Long> pageViews(List<VulkanImage> pages) {
+            return pages.stream().map(VulkanImage::view).toList();
+        }
+
+        private static boolean matchesPageViews(
+                List<Long> expected, List<VulkanImage> candidate) {
+            if (expected.size() != candidate.size()) {
+                return false;
+            }
+            for (int index = 0; index < expected.size(); index++) {
+                if (expected.get(index).longValue() != candidate.get(index).view()) {
+                    return false;
                 }
             }
             return true;

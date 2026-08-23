@@ -94,6 +94,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private int voxelSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
     private int workerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private int workerJobs;
+    private boolean discardResidentMaterialGeneration;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
@@ -212,6 +213,9 @@ public final class TerrainStreamer implements AutoCloseable {
             this.translatedLabPbrMaterials = this.surfaceDetailMode.usesResourceNormals()
                     ? materials
                     : materials.withoutNormalTextures();
+            // TextureId is generation-local. Existing mesh records cannot be rendered against a
+            // replacement catalog, even while their normal rebuild is still pending.
+            this.discardResidentMaterialGeneration = true;
             this.invalidateAll();
         }
     }
@@ -627,6 +631,11 @@ public final class TerrainStreamer implements AutoCloseable {
             uploads.add(new CompiledCluster(
                     next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), mesh));
         }
+        if (this.discardResidentMaterialGeneration) {
+            for (long key : this.scene.residentStaticKeys()) {
+                this.pendingEvictions.add(key);
+            }
+        }
         long[] evictions = this.pendingEvictions.isEmpty()
                 ? EMPTY_EVICTIONS
                 : this.pendingEvictions.toLongArray();
@@ -652,6 +661,7 @@ public final class TerrainStreamer implements AutoCloseable {
             return;
         }
         this.pendingEvictions.clear();
+        this.discardResidentMaterialGeneration = false;
         for (long key : evictions) {
             this.empty.remove(key);
         }
@@ -671,6 +681,7 @@ public final class TerrainStreamer implements AutoCloseable {
         this.desired.clear();
         this.empty.clear();
         this.pendingEvictions.clear();
+        this.discardResidentMaterialGeneration = false;
         this.dirtyClusters.clear();
         this.generations.resetWorld();
         this.pipelineState.clear();

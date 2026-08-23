@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** Immutable light surfaces, local-tree streams and texture distributions for one geometry unit. */
 public final class CpuSectionLights {
@@ -14,7 +15,7 @@ public final class CpuSectionLights {
     static final int EMITTER_FLAG_TWO_SIDED = 1;
     static final int EMITTER_FLAG_LABPBR_EMISSION = 2;
     private static final int EMITTER_FLOATS = 15;
-    private static final int EMITTER_INTS = 6;
+    private static final int EMITTER_INTS = 7;
     private static final int CORNER_X = 0;
     private static final int CORNER_Y = 1;
     private static final int CORNER_Z = 2;
@@ -36,6 +37,7 @@ public final class CpuSectionLights {
     private static final int TINT = 3;
     private static final int DISTRIBUTION = 4;
     private static final int FLAGS = 5;
+    private static final int TEXTURE_ID = 6;
 
     private final Emitters emitters;
     private final List<EmissionDistribution> distributions;
@@ -140,7 +142,7 @@ public final class CpuSectionLights {
                     * EmissionDistribution.CELL_COUNT;
             result[cursor + 21] = this.tree.leafPath(index);
             result[cursor + 22] = this.emitters.metadata[intBase + FLAGS];
-            result[cursor + 23] = 0;
+            result[cursor + 23] = this.emitters.metadata[intBase + TEXTURE_ID];
         }
 
         for (int distributionIndex = 0; distributionIndex < this.distributions.size(); distributionIndex++) {
@@ -309,6 +311,7 @@ public final class CpuSectionLights {
             if (lightEmission <= 0 && labPbrEmission == null) {
                 return 0;
             }
+            Objects.requireNonNull(sprite, "Emissive triangle texture");
             float edgeOneX = secondX - cornerX;
             float edgeOneY = secondY - cornerY;
             float edgeOneZ = secondZ - cornerZ;
@@ -397,7 +400,8 @@ public final class CpuSectionLights {
                     packedUv2,
                     packedTint,
                     distributionIndex,
-                    flags);
+                    flags,
+                    sprite.textureId());
             return index + 1;
         }
 
@@ -524,7 +528,8 @@ public final class CpuSectionLights {
                 int packedUv2,
                 int packedTint,
                 int distributionIndex,
-                int flags) {
+                int flags,
+                int textureId) {
             ensureCapacity();
             int floatBase = this.size * EMITTER_FLOATS;
             int intBase = this.size * EMITTER_INTS;
@@ -549,6 +554,7 @@ public final class CpuSectionLights {
             this.metadata[intBase + TINT] = packedTint;
             this.metadata[intBase + DISTRIBUTION] = distributionIndex;
             this.metadata[intBase + FLAGS] = flags;
+            this.metadata[intBase + TEXTURE_ID] = textureId;
             this.size++;
         }
 
@@ -582,7 +588,8 @@ public final class CpuSectionLights {
                     this.metadata[intBase + UV_2],
                     this.metadata[intBase + TINT],
                     distributionRemap[this.metadata[intBase + DISTRIBUTION]],
-                    this.metadata[intBase + FLAGS]);
+                    this.metadata[intBase + FLAGS],
+                    this.metadata[intBase + TEXTURE_ID]);
         }
 
         private void ensureCapacity() {

@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.terrain.LabPbrAtlasFrame;
 import dev.prime.render.terrain.LabPbrMaterialSet;
@@ -17,18 +18,18 @@ import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /**
- * Owns LabPBR 1.3 material atlases that exactly mirror Minecraft's stitched block-atlas layout.
+ * Owns translated material pages and the logical-texture indirection table.
  *
- * <p>The normal atlas stores a normalized tangent-space direction in RG, LabPBR AO in B, and the
+ * <p>Normal pages store a normalized tangent-space direction in RG, LabPBR AO in B, and the
  * equivalent GGX perceptual roughness of the filtered normal distribution in A. Source height
- * remains CPU-owned by geometric displacement. The specular atlas preserves its source semantics.
+ * remains CPU-owned by geometric displacement. Optical pages preserve their source semantics.
  * A missing map is represented by immutable availability bits in terrain primitives, not by an
  * ambiguous texel sentinel. Animated maps follow the base sprite's real source-frame sequence; a
  * single-frame auxiliary map is intentionally reused for every frame.
  */
-public final class LabPbrTextureAtlas implements AutoCloseable {
+public final class MaterialTexturePages implements AutoCloseable {
     private static final int NORMAL_DEFAULT_ARGB = 0x008080ff;
-    private static final int SPECULAR_DEFAULT_ARGB = 0xff000400;
+    private static final int OPTICAL_DEFAULT_ARGB = 0xff000400;
 
     private final VulkanContext context;
     private final StagingArena stagingArena;
@@ -39,7 +40,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     private FrameToken pending;
     private boolean closed;
 
-    public LabPbrTextureAtlas(VulkanContext context, StagingArena stagingArena) {
+    public MaterialTexturePages(VulkanContext context, StagingArena stagingArena) {
         this.context = context;
         this.stagingArena = stagingArena;
     }
@@ -47,7 +48,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     public LabPbrMaterialSet ensure(
             LabPbrAtlasFrame frame, long vanillaAtlasView) {
         if (this.closed) {
-            throw new IllegalStateException("LabPBR atlas is closed");
+            throw new IllegalStateException("Material texture pages are closed");
         }
         long generation = frame.sourceGeneration();
         this.animationSamples = frame.animations();
@@ -58,7 +59,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
         if (this.pending != null) {
             throw new IllegalStateException(
-                    "Cannot replace the LabPBR atlas with an outstanding upload");
+                    "Cannot replace material texture pages with an outstanding upload");
         }
         Resources replacement = build(frame.snapshot(), vanillaAtlasView, generation);
         Resources previous = this.resources;
@@ -75,17 +76,21 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         return replacement.materials;
     }
 
-    /** Source-pack generation currently represented by the resident auxiliary atlases. */
+    /** Source-pack generation represented by the current translated page set. */
     public long sourceGeneration() {
         return requireResources().sourceGeneration;
     }
 
-    public VulkanImage normalAtlas() {
-        return requireResources().normalAtlas;
+    public List<VulkanImage> normalPages() {
+        return requireResources().normalImages();
     }
 
-    public VulkanImage specularAtlas() {
-        return requireResources().specularAtlas;
+    public List<VulkanImage> opticalPages() {
+        return requireResources().opticalImages();
+    }
+
+    public VulkanBuffer textureRecords() {
+        return requireResources().textureRecords;
     }
 
     /** Records the initial upload and any base-animation frame changes. */
@@ -108,7 +113,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         for (AnimationUpdate update : this.animationUpdates) {
             requiredCapacity = Math.max(
                     requiredCapacity,
-                    animationEndOffset(0L, update.sprite, current.mipLevels));
+                    animationEndOffset(0L, update.owner, current));
         }
         StagingArena.Batch batch = this.stagingArena.tryBeginBatch(requiredCapacity);
         if (batch == null) {
@@ -120,28 +125,34 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             for (int index = 0; index < this.animationUpdates.size(); index++) {
                 AnimationUpdate change = this.animationUpdates.get(index);
                 LabPbrAtlasFrame.Sprite sprite = change.sprite;
-                long spriteBudget = animationEndOffset(budget, sprite, current.mipLevels);
+                long spriteBudget = animationEndOffset(budget, change.owner, current);
                 if (spriteBudget > batch.capacity()) {
                     continue;
                 }
-                for (int mip = 0; mip < current.mipLevels; mip++) {
-                    if (sprite.normal() != null) {
+                if (change.owner.normal != null) {
+                    PageResource page = current.normalPages.get(change.owner.normal.page());
+                    int mipLevels = textureMipLevels(sprite, page.image.mipLevels());
+                    for (int mip = 0; mip < mipLevels; mip++) {
                         addAnimatedCopy(
                                 this.animationCopies,
                                 batch,
-                                current.normalAtlas,
-                                sprite,
+                                page.image,
+                                change.owner.normal,
                                 sprite.normal(),
                                 change.sample,
                                 mip,
                                 false);
                     }
-                    if (sprite.specular() != null) {
+                }
+                if (change.owner.specular != null) {
+                    PageResource page = current.opticalPages.get(change.owner.specular.page());
+                    int mipLevels = textureMipLevels(sprite, page.image.mipLevels());
+                    for (int mip = 0; mip < mipLevels; mip++) {
                         addAnimatedCopy(
                                 this.animationCopies,
                                 batch,
-                                current.specularAtlas,
-                                sprite,
+                                page.image,
+                                change.owner.specular,
                                 sprite.specular(),
                                 change.sample,
                                 mip,
@@ -155,27 +166,23 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 batch.close();
                 return this.publish(null, current, initialUpload, 0);
             }
-            boolean normalChanged = false;
-            boolean specularChanged = false;
+            ArrayList<VulkanImage> changedImages = new ArrayList<>();
             for (Copy copy : this.animationCopies) {
-                normalChanged |= copy.image == current.normalAtlas;
-                specularChanged |= copy.image == current.specularAtlas;
+                if (!changedImages.contains(copy.image)) {
+                    changedImages.add(copy.image);
+                }
             }
-            transitionForCopies(
+            transitionImages(
                     commandBuffer,
-                    current,
-                    normalChanged,
-                    specularChanged,
+                    changedImages,
                     current.prepared || initialUpload,
                     true);
             for (Copy copy : this.animationCopies) {
                 recordCopy(commandBuffer, copy);
             }
-            transitionForCopies(
+            transitionImages(
                     commandBuffer,
-                    current,
-                    normalChanged,
-                    specularChanged,
+                    changedImages,
                     true,
                     false);
             return this.publish(
@@ -190,7 +197,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (token == null) {
             return;
         }
-        if (token.atlas != this
+        if (token.pages != this
                 || token != this.pending
                 || token.finished) {
             throw new IllegalArgumentException("LabPBR frame token does not belong to this submission");
@@ -199,8 +206,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         this.pending = null;
         if (token.initialUpload) {
             token.owner.prepared = true;
-            token.owner.normalAtlas.markInitialized();
-            token.owner.specularAtlas.markInitialized();
+            token.owner.markImagesInitialized();
         }
         for (int index = 0; index < token.animationUpdateCount; index++) {
             AnimationUpdate update = this.animationUpdates.get(index);
@@ -223,11 +229,11 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (token == null) {
             return;
         }
-        if (token.atlas != this
+        if (token.pages != this
                 || token != this.pending
                 || token.finished) {
             throw new IllegalArgumentException(
-                    "LabPBR frame token does not belong to this atlas");
+                    "Material frame token does not belong to these texture pages");
         }
         token.finished = true;
         this.pending = null;
@@ -276,7 +282,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
 
     private Resources requireResources() {
         if (this.resources == null) {
-            throw new IllegalStateException("LabPBR atlas was not synchronized with Minecraft");
+            throw new IllegalStateException(
+                    "Material texture pages were not synchronized with Minecraft");
         }
         return this.resources;
     }
@@ -285,96 +292,238 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             LabPbrAtlasFrame.Snapshot source,
             long vanillaAtlasView,
             long sourceGeneration) {
-        int width = source.width();
-        int height = source.height();
-        int mipLevels = source.mipLevels();
-        VulkanImage normalAtlas = null;
-        VulkanImage specularAtlas = null;
-        VulkanBuffer normalUpload = null;
-        VulkanBuffer specularUpload = null;
+        TexturePageLayout.Layout normalLayout = TexturePageLayout.pack(
+                source.sprites(), LabPbrAtlasFrame.Sprite::normal, source.mipLevels());
+        TexturePageLayout.Layout opticalLayout = TexturePageLayout.pack(
+                source.sprites(), LabPbrAtlasFrame.Sprite::specular, source.mipLevels());
+        List<PageResource> normalPages = List.of();
+        List<PageResource> opticalPages = List.of();
+        VulkanBuffer textureRecords = null;
         try {
-            int usage = VK12.VK_IMAGE_USAGE_SAMPLED_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-            normalAtlas = this.context.createMipmappedImage2D(
-                    width, height, mipLevels, VK12.VK_FORMAT_R8G8B8A8_UNORM, usage,
-                    "Prime LabPBR normal atlas");
-            specularAtlas = this.context.createMipmappedImage2D(
-                    width, height, mipLevels, VK12.VK_FORMAT_R8G8B8A8_UNORM, usage,
-                    "Prime LabPBR specular atlas");
-            long byteSize = totalMipBytes(width, height, mipLevels);
-            normalUpload = this.context.createBuffer(
-                    byteSize, VK12.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true,
-                    "Prime LabPBR normal atlas upload");
-            specularUpload = this.context.createBuffer(
-                    byteSize, VK12.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true,
-                    "Prime LabPBR specular atlas upload");
-            fillAtlas(
-                    normalUpload,
-                    width,
-                    height,
-                    mipLevels,
-                    source.sprites(),
-                    true,
-                    NORMAL_DEFAULT_ARGB);
-            fillAtlas(
-                    specularUpload,
-                    width,
-                    height,
-                    mipLevels,
-                    source.sprites(),
-                    false,
-                    SPECULAR_DEFAULT_ARGB);
+            normalPages = this.buildPages(
+                    source, normalLayout, true, NORMAL_DEFAULT_ARGB);
+            opticalPages = this.buildPages(
+                    source, opticalLayout, false, OPTICAL_DEFAULT_ARGB);
+            textureRecords = this.buildTextureRecords(
+                    source, normalLayout, opticalLayout, normalPages, opticalPages);
+            PrimeInfo.LOGGER.info(
+                    "Translated material storage: {} textures, normal={} pages/{} bytes, optical={} pages/{} bytes, records={} bytes",
+                    source.sprites().size(),
+                    normalPages.size(),
+                    pageBytes(normalPages),
+                    opticalPages.size(),
+                    pageBytes(opticalPages),
+                    textureRecords.size());
             return new Resources(
                     sourceGeneration,
                     vanillaAtlasView,
-                    width,
-                    height,
-                    mipLevels,
-                    normalAtlas,
-                    specularAtlas,
-                    normalUpload,
-                    specularUpload,
+                    normalPages,
+                    opticalPages,
+                    textureRecords,
                     source.materials(),
-                    source.sprites());
+                    source.sprites(),
+                    normalLayout,
+                    opticalLayout);
         } catch (RuntimeException exception) {
-            RuntimeException failure = ResourceCleanup.destroy(specularUpload, exception);
-            failure = ResourceCleanup.destroy(normalUpload, failure);
-            failure = ResourceCleanup.destroy(specularAtlas, failure);
-            failure = ResourceCleanup.destroy(normalAtlas, failure);
+            RuntimeException failure = ResourceCleanup.destroy(textureRecords, exception);
+            failure = destroyPages(opticalPages, failure);
+            failure = destroyPages(normalPages, failure);
             throw failure;
         }
     }
 
-    private static void fillAtlas(
-            VulkanBuffer upload,
-            int atlasWidth,
-            int atlasHeight,
-            int mipLevels,
-            List<LabPbrAtlasFrame.Sprite> sprites,
+    private List<PageResource> buildPages(
+            LabPbrAtlasFrame.Snapshot source,
+            TexturePageLayout.Layout layout,
             boolean normal,
             int defaultArgb) {
-        long byteSize = totalMipBytes(atlasWidth, atlasHeight, mipLevels);
+        ArrayList<PageResource> pages = new ArrayList<>(layout.pages().size());
+        try {
+            int usage = VK12.VK_IMAGE_USAGE_SAMPLED_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+            for (int pageIndex = 0; pageIndex < layout.pages().size(); pageIndex++) {
+                int width = layout.pages().get(pageIndex).width();
+                int height = layout.pages().get(pageIndex).height();
+                int mipLevels = Math.min(
+                        source.mipLevels(),
+                        32 - Integer.numberOfLeadingZeros(Math.max(width, height)));
+                String channel = normal ? "normal" : "optical";
+                VulkanImage image = this.context.createMipmappedImage2D(
+                        width,
+                        height,
+                        mipLevels,
+                        VK12.VK_FORMAT_R8G8B8A8_UNORM,
+                        usage,
+                        "Prime material " + channel + " page " + pageIndex);
+                VulkanBuffer upload = null;
+                try {
+                    long byteSize = totalMipBytes(width, height, mipLevels);
+                    upload = this.context.createBuffer(
+                            byteSize,
+                            VK12.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                            true,
+                            "Prime material " + channel + " page upload " + pageIndex);
+                    fillPage(
+                            upload,
+                            width,
+                            height,
+                            mipLevels,
+                            pageIndex,
+                            source.sprites(),
+                            layout,
+                            normal,
+                            defaultArgb);
+                    pages.add(new PageResource(image, upload));
+                } catch (RuntimeException exception) {
+                    RuntimeException failure = ResourceCleanup.destroy(upload, exception);
+                    throw ResourceCleanup.destroy(image, failure);
+                }
+            }
+            return List.copyOf(pages);
+        } catch (RuntimeException exception) {
+            throw destroyPages(pages, exception);
+        }
+    }
+
+    private VulkanBuffer buildTextureRecords(
+            LabPbrAtlasFrame.Snapshot source,
+            TexturePageLayout.Layout normalLayout,
+            TexturePageLayout.Layout opticalLayout,
+            List<PageResource> normalPages,
+            List<PageResource> opticalPages) {
+        int maximumTextureId = 0;
+        for (LabPbrAtlasFrame.Sprite sprite : source.sprites()) {
+            maximumTextureId = Math.max(maximumTextureId, sprite.textureId());
+        }
+        long byteSize = Math.multiplyExact((long) maximumTextureId + 1L, 32L);
+        VulkanBuffer result = this.context.createBuffer(
+                byteSize,
+                VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                true,
+                "Prime texture records");
+        long target = result.mappedAddress();
+        MemoryUtil.memSet(target, 0, byteSize);
+        for (LabPbrAtlasFrame.Sprite sprite : source.sprites()) {
+            long record = target + (long) sprite.textureId() * 32L;
+            putPackedExtent(
+                    record,
+                    0,
+                    sprite.x() + sprite.padding(),
+                    sprite.y() + sprite.padding());
+            putPackedExtent(record, 4, sprite.contentWidth(), sprite.contentHeight());
+            TexturePageLayout.Placement normal = normalLayout.placement(sprite.textureId());
+            TexturePageLayout.Placement specular = opticalLayout.placement(sprite.textureId());
+            putPackedExtent(
+                    record,
+                    8,
+                    normal == null ? 0 : normal.contentX(),
+                    normal == null ? 0 : normal.contentY());
+            putPackedExtent(
+                    record,
+                    12,
+                    specular == null ? 0 : specular.contentX(),
+                    specular == null ? 0 : specular.contentY());
+            int normalPage = normal == null ? 0xff : normal.page();
+            int specularPage = specular == null ? 0xff : specular.page();
+            int normalMip = normal == null
+                    ? 0
+                    : textureMipLimit(sprite, normalPages.get(normal.page()).image);
+            int specularMip = specular == null
+                    ? 0
+                    : textureMipLimit(sprite, opticalPages.get(specular.page()).image);
+            MemoryUtil.memPutInt(
+                    record + 16L,
+                    normalPage | specularPage << 8 | normalMip << 16 | specularMip << 24);
+            MemoryUtil.memPutInt(
+                    record + 20L,
+                    textureMipLevels(sprite, source.mipLevels()) - 1);
+            MemoryUtil.memPutInt(record + 24L, 0);
+            MemoryUtil.memPutInt(record + 28L, 0);
+        }
+        result.flush(0L, byteSize);
+        return result;
+    }
+
+    private static int textureMipLimit(
+            LabPbrAtlasFrame.Sprite sprite,
+            VulkanImage page) {
+        return textureMipLevels(sprite, page.mipLevels()) - 1;
+    }
+
+    private static int textureMipLevels(
+            LabPbrAtlasFrame.Sprite sprite,
+            int availableLevels) {
+        int logicalLevels = 32 - Integer.numberOfLeadingZeros(
+                Math.max(sprite.contentWidth(), sprite.contentHeight()));
+        return Math.min(availableLevels, logicalLevels);
+    }
+
+    private static void putPackedExtent(long address, int offset, int x, int y) {
+        if ((x | y) < 0 || x > 0xffff || y > 0xffff) {
+            throw new IllegalStateException("Texture record coordinate exceeds its 16-bit ABI field");
+        }
+        MemoryUtil.memPutInt(address + offset, x | y << 16);
+    }
+
+    private static RuntimeException destroyPages(
+            List<PageResource> pages,
+            RuntimeException failure) {
+        for (int index = pages.size() - 1; index >= 0; index--) {
+            failure = ResourceCleanup.destroy(pages.get(index), failure);
+        }
+        return failure;
+    }
+
+    private static long pageBytes(List<PageResource> pages) {
+        long result = 0L;
+        for (PageResource page : pages) {
+            result = Math.addExact(
+                    result,
+                    totalMipBytes(
+                            page.image.width(),
+                            page.image.height(),
+                            page.image.mipLevels()));
+        }
+        return result;
+    }
+
+    private static void fillPage(
+            VulkanBuffer upload,
+            int width,
+            int height,
+            int mipLevels,
+            int pageIndex,
+            List<LabPbrAtlasFrame.Sprite> sprites,
+            TexturePageLayout.Layout layout,
+            boolean normal,
+            int defaultArgb) {
+        long byteSize = totalMipBytes(width, height, mipLevels);
         long target = upload.mappedAddress();
         fillArgb(target, byteSize, defaultArgb);
         long mipOffset = 0L;
         for (int mip = 0; mip < mipLevels; mip++) {
-            int mipWidth = Math.max(1, atlasWidth >> mip);
+            int mipWidth = Math.max(1, width >> mip);
+            int mipHeight = Math.max(1, height >> mip);
             for (LabPbrAtlasFrame.Sprite sprite : sprites) {
-                LabPbrAtlasFrame.MaterialSource source =
+                TexturePageLayout.Placement placement = layout.placement(sprite.textureId());
+                LabPbrAtlasFrame.MaterialSource material =
                         normal ? sprite.normal() : sprite.specular();
-                if (source != null) {
+                if (placement != null
+                        && placement.page() == pageIndex
+                        && material != null
+                        && mip < textureMipLevels(sprite, mipLevels)) {
                     writeSprite(
                             target,
                             mipOffset,
                             mipWidth,
-                            sprite,
-                            source,
+                            placement,
+                            material,
                             LabPbrAtlasFrame.AnimationSample.ZERO,
                             mip,
                             false,
                             !normal);
                 }
             }
-            mipOffset += (long) mipWidth * Math.max(1, atlasHeight >> mip) * 4L;
+            mipOffset += (long) mipWidth * mipHeight * 4L;
         }
         upload.flush(0L, byteSize);
     }
@@ -383,16 +532,17 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             long target,
             long baseOffset,
             int rowWidth,
-            LabPbrAtlasFrame.Sprite sprite,
+            TexturePageLayout.Placement placement,
             LabPbrAtlasFrame.MaterialSource source,
             LabPbrAtlasFrame.AnimationSample sample,
             int mip,
             boolean tightlyPacked,
             boolean specular) {
+        LabPbrAtlasFrame.Sprite sprite = placement.sprite();
         int outputWidth = sprite.mipWidth(mip);
         int outputHeight = sprite.mipHeight(mip);
-        int destinationX = tightlyPacked ? 0 : sprite.mipX(mip);
-        int destinationY = tightlyPacked ? 0 : sprite.mipY(mip);
+        int destinationX = tightlyPacked ? 0 : placement.mipX(mip);
+        int destinationY = tightlyPacked ? 0 : placement.mipY(mip);
         int baseWidth = sprite.contentWidth() + 2 * sprite.padding();
         int baseHeight = sprite.contentHeight() + 2 * sprite.padding();
         for (int y = 0; y < outputHeight; y++) {
@@ -423,46 +573,50 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private static void recordInitialUpload(VkCommandBuffer commandBuffer, Resources resources) {
-        transitionForCopies(
-                commandBuffer, resources, true, true, false, true);
-        long offset = 0L;
-        for (int mip = 0; mip < resources.mipLevels; mip++) {
-            int width = Math.max(1, resources.width >> mip);
-            int height = Math.max(1, resources.height >> mip);
-            recordCopy(
-                    commandBuffer,
-                    new Copy(resources.normalAtlas, resources.normalUpload.handle(), offset, mip, 0, 0, width, height));
-            recordCopy(
-                    commandBuffer,
-                    new Copy(resources.specularAtlas, resources.specularUpload.handle(), offset, mip, 0, 0, width, height));
-            offset += (long) width * height * 4L;
+        transitionImages(commandBuffer, resources.allImages(), false, true);
+        for (PageResource page : resources.allPages()) {
+            long offset = 0L;
+            for (int mip = 0; mip < page.image.mipLevels(); mip++) {
+                int width = Math.max(1, page.image.width() >> mip);
+                int height = Math.max(1, page.image.height() >> mip);
+                recordCopy(commandBuffer, new Copy(
+                        page.image,
+                        page.upload.handle(),
+                        offset,
+                        mip,
+                        0,
+                        0,
+                        width,
+                        height));
+                offset += (long) width * height * 4L;
+            }
         }
-        transitionForCopies(
-                commandBuffer, resources, true, true, true, false);
+        transitionImages(commandBuffer, resources.allImages(), true, false);
     }
 
     private static void addAnimatedCopy(
             List<Copy> copies,
             StagingArena.Batch batch,
             VulkanImage image,
-            LabPbrAtlasFrame.Sprite sprite,
+            TexturePageLayout.Placement placement,
             LabPbrAtlasFrame.MaterialSource source,
             LabPbrAtlasFrame.AnimationSample sample,
             int mip,
             boolean specular) {
+        LabPbrAtlasFrame.Sprite sprite = placement.sprite();
         int width = sprite.mipWidth(mip);
         int height = sprite.mipHeight(mip);
         long byteSize = Math.multiplyExact(Math.multiplyExact((long) width, height), 4L);
         StagingArena.Slice slice = batch.allocate(byteSize, 4L);
         writeSprite(
-                slice.mappedAddress(), 0L, width, sprite, source, sample, mip, true, specular);
+                slice.mappedAddress(), 0L, width, placement, source, sample, mip, true, specular);
         copies.add(new Copy(
                 image,
                 slice.buffer(),
                 slice.offset(),
                 mip,
-                sprite.mipX(mip),
-                sprite.mipY(mip),
+                placement.mipX(mip),
+                placement.mipY(mip),
                 width,
                 height));
     }
@@ -490,30 +644,21 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
     }
 
-    private static void transitionForCopies(
+    private static void transitionImages(
             VkCommandBuffer commandBuffer,
-            Resources resources,
-            boolean normal,
-            boolean specular,
+            List<VulkanImage> images,
             boolean initialized,
             boolean toTransfer) {
-        int count = (normal ? 1 : 0) + (specular ? 1 : 0);
+        if (images.isEmpty()) {
+            return;
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(count, stack);
-            int index = 0;
-            if (normal) {
+            VkImageMemoryBarrier2.Buffer barriers =
+                    VkImageMemoryBarrier2.calloc(images.size(), stack);
+            for (int index = 0; index < images.size(); index++) {
+                VulkanImage image = images.get(index);
                 fillBarrier(
-                        barriers.get(index++),
-                        resources.normalAtlas,
-                        resources.mipLevels,
-                        initialized,
-                        toTransfer);
-            }
-            if (specular) {
-                fillBarrier(
-                        barriers.get(index),
-                        resources.specularAtlas,
-                        resources.mipLevels,
+                        barriers.get(index), image, image.mipLevels(),
                         initialized,
                         toTransfer);
             }
@@ -583,7 +728,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
 
     private static void fillArgb(long target, long byteSize, int argb) {
         if ((byteSize & 3L) != 0L) {
-            throw new IllegalArgumentException("RGBA atlas byte size must be pixel aligned");
+            throw new IllegalArgumentException("RGBA page byte size must be pixel aligned");
         }
         int patternSize = (int) Math.min(byteSize, 1L << 20);
         ByteBuffer pattern = MemoryUtil.memAlloc(patternSize);
@@ -616,21 +761,39 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private static long animationEndOffset(
-            long cursor, LabPbrAtlasFrame.Sprite sprite, int mipLevels) {
+            long cursor,
+            AnimatedMaterialSprite animation,
+            Resources resources) {
         long result = cursor;
-        for (int mip = 0; mip < mipLevels; mip++) {
-            result = animationEndOffset(
-                    result,
-                    sprite.mipWidth(mip),
-                    sprite.mipHeight(mip),
-                    sprite.normal() != null,
-                    sprite.specular() != null);
+        if (animation.normal != null) {
+            VulkanImage image = resources.normalPages.get(animation.normal.page()).image;
+            int mipLevels = textureMipLevels(animation.sprite, image.mipLevels());
+            for (int mip = 0; mip < mipLevels; mip++) {
+                result = animationEndOffset(
+                        result,
+                        animation.sprite.mipWidth(mip),
+                        animation.sprite.mipHeight(mip),
+                        true,
+                        false);
+            }
+        }
+        if (animation.specular != null) {
+            VulkanImage image = resources.opticalPages.get(animation.specular.page()).image;
+            int mipLevels = textureMipLevels(animation.sprite, image.mipLevels());
+            for (int mip = 0; mip < mipLevels; mip++) {
+                result = animationEndOffset(
+                        result,
+                        animation.sprite.mipWidth(mip),
+                        animation.sprite.mipHeight(mip),
+                        false,
+                        true);
+            }
         }
         return result;
     }
 
     public static final class FrameToken {
-        private final LabPbrTextureAtlas atlas;
+        private final MaterialTexturePages pages;
         private final StagingArena.Batch batch;
         private final Resources owner;
         private final boolean initialUpload;
@@ -638,12 +801,12 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         private boolean finished;
 
         private FrameToken(
-                LabPbrTextureAtlas atlas,
+                MaterialTexturePages pages,
                 StagingArena.Batch batch,
                 Resources owner,
                 boolean initialUpload,
                 int animationUpdateCount) {
-            this.atlas = atlas;
+            this.pages = pages;
             this.batch = batch;
             this.owner = owner;
             this.initialUpload = initialUpload;
@@ -668,94 +831,64 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             AnimatedMaterialSprite owner) {
     }
 
-    private static class MaterialSprite {
-        final LabPbrAtlasFrame.Sprite sprite;
-
-        MaterialSprite(LabPbrAtlasFrame.Sprite sprite) {
-            this.sprite = sprite;
-        }
-
-        int mipX(int mip) {
-            return this.sprite.mipX(mip);
-        }
-
-        int mipY(int mip) {
-            return this.sprite.mipY(mip);
-        }
-
-        int mipWidth(int mip) {
-            return this.sprite.mipWidth(mip);
-        }
-
-        int mipHeight(int mip) {
-            return this.sprite.mipHeight(mip);
-        }
-
-        void write(
-                long target,
-                long baseOffset,
-                int rowWidth,
-                LabPbrAtlasFrame.MaterialSource source,
-                LabPbrAtlasFrame.AnimationSample sample,
-                int mip,
-                boolean tightlyPacked,
-                boolean specular) {
-            int outputWidth = this.mipWidth(mip);
-            int outputHeight = this.mipHeight(mip);
-            int destinationX = tightlyPacked ? 0 : this.mipX(mip);
-            int destinationY = tightlyPacked ? 0 : this.mipY(mip);
-            int baseWidth = this.sprite.contentWidth() + 2 * this.sprite.padding();
-            int baseHeight = this.sprite.contentHeight() + 2 * this.sprite.padding();
-            for (int y = 0; y < outputHeight; y++) {
-                double baseY0 = (double) y * baseHeight / outputHeight - this.sprite.padding();
-                double baseY1 = (double) (y + 1) * baseHeight / outputHeight - this.sprite.padding();
-                for (int x = 0; x < outputWidth; x++) {
-                    double baseX0 = (double) x * baseWidth / outputWidth - this.sprite.padding();
-                    double baseX1 = (double) (x + 1) * baseWidth / outputWidth - this.sprite.padding();
-                    int pixel = source.filtered(
-                            sample,
-                            baseX0,
-                            baseY0,
-                            baseX1,
-                            baseY1,
-                            this.sprite.contentWidth(),
-                            this.sprite.contentHeight(),
-                            specular);
-                    long offset = Math.addExact(
-                            baseOffset,
-                            Math.multiplyExact(
-                                    Math.addExact(
-                                            Math.multiplyExact(
-                                                    (long) destinationY + y, rowWidth),
-                                            (long) destinationX + x),
-                                    4L));
-                    writeArgb(target, offset, pixel);
-                }
-            }
-        }
-    }
-
-    private static final class AnimatedMaterialSprite extends MaterialSprite {
+    private static final class AnimatedMaterialSprite {
+        private final LabPbrAtlasFrame.Sprite sprite;
+        private final TexturePageLayout.Placement normal;
+        private final TexturePageLayout.Placement specular;
         private final int animationIndex;
         private LabPbrAtlasFrame.AnimationSample lastSample;
 
-        AnimatedMaterialSprite(LabPbrAtlasFrame.Sprite source) {
-            super(source);
+        AnimatedMaterialSprite(
+                LabPbrAtlasFrame.Sprite source,
+                TexturePageLayout.Placement normal,
+                TexturePageLayout.Placement specular) {
+            this.sprite = source;
+            this.normal = normal;
+            this.specular = specular;
             this.animationIndex = source.animationIndex();
             this.lastSample = null;
+        }
+    }
+
+    private static final class PageResource implements com.mojang.blaze3d.vulkan.Destroyable {
+        private final VulkanImage image;
+        private VulkanBuffer upload;
+        private boolean destroyed;
+
+        private PageResource(VulkanImage image, VulkanBuffer upload) {
+            this.image = image;
+            this.upload = upload;
+        }
+
+        private void retireUpload(VulkanContext context) {
+            VulkanBuffer retired = this.upload;
+            this.upload = null;
+            if (retired != null) {
+                context.defer(retired);
+            }
+        }
+
+        @Override
+        public void destroy() {
+            if (!this.destroyed) {
+                this.destroyed = true;
+                RuntimeException failure = ResourceCleanup.destroy(this.upload, null);
+                failure = ResourceCleanup.destroy(this.image, failure);
+                ResourceCleanup.throwIfFailed(failure);
+            }
         }
     }
 
     private static final class Resources implements com.mojang.blaze3d.vulkan.Destroyable {
         private final long sourceGeneration;
         private final long vanillaAtlasView;
-        private final int width;
-        private final int height;
-        private final int mipLevels;
-        private final VulkanImage normalAtlas;
-        private final VulkanImage specularAtlas;
-        private VulkanBuffer normalUpload;
-        private VulkanBuffer specularUpload;
+        private final List<PageResource> normalPages;
+        private final List<PageResource> opticalPages;
+        private final List<PageResource> allPages;
+        private final List<VulkanImage> normalImages;
+        private final List<VulkanImage> opticalImages;
+        private final List<VulkanImage> allImages;
+        private final VulkanBuffer textureRecords;
         private final LabPbrMaterialSet materials;
         private final List<AnimatedMaterialSprite> animated;
         private boolean prepared;
@@ -764,32 +897,66 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         Resources(
                 long sourceGeneration,
                 long vanillaAtlasView,
-                int width,
-                int height,
-                int mipLevels,
-                VulkanImage normalAtlas,
-                VulkanImage specularAtlas,
-                VulkanBuffer normalUpload,
-                VulkanBuffer specularUpload,
+                List<PageResource> normalPages,
+                List<PageResource> opticalPages,
+                VulkanBuffer textureRecords,
                 LabPbrMaterialSet materials,
-                List<LabPbrAtlasFrame.Sprite> sprites) {
+                List<LabPbrAtlasFrame.Sprite> sprites,
+                TexturePageLayout.Layout normalLayout,
+                TexturePageLayout.Layout opticalLayout) {
             this.sourceGeneration = sourceGeneration;
             this.vanillaAtlasView = vanillaAtlasView;
-            this.width = width;
-            this.height = height;
-            this.mipLevels = mipLevels;
-            this.normalAtlas = normalAtlas;
-            this.specularAtlas = specularAtlas;
-            this.normalUpload = normalUpload;
-            this.specularUpload = specularUpload;
+            this.normalPages = normalPages;
+            this.opticalPages = opticalPages;
+            ArrayList<PageResource> allPages = new ArrayList<>(
+                    normalPages.size() + opticalPages.size());
+            allPages.addAll(normalPages);
+            allPages.addAll(opticalPages);
+            this.allPages = List.copyOf(allPages);
+            this.normalImages = images(normalPages);
+            this.opticalImages = images(opticalPages);
+            this.allImages = images(this.allPages);
+            this.textureRecords = textureRecords;
             this.materials = materials;
             ArrayList<AnimatedMaterialSprite> animated = new ArrayList<>();
             for (LabPbrAtlasFrame.Sprite sprite : sprites) {
-                if (sprite.animated()) {
-                    animated.add(new AnimatedMaterialSprite(sprite));
+                TexturePageLayout.Placement normal = normalLayout.placement(sprite.textureId());
+                TexturePageLayout.Placement specular = opticalLayout.placement(sprite.textureId());
+                if (sprite.animated() && (normal != null || specular != null)) {
+                    animated.add(new AnimatedMaterialSprite(sprite, normal, specular));
                 }
             }
             this.animated = List.copyOf(animated);
+        }
+
+        List<VulkanImage> normalImages() {
+            return this.normalImages;
+        }
+
+        List<VulkanImage> opticalImages() {
+            return this.opticalImages;
+        }
+
+        List<PageResource> allPages() {
+            return this.allPages;
+        }
+
+        List<VulkanImage> allImages() {
+            return this.allImages;
+        }
+
+        void markImagesInitialized() {
+            for (PageResource page : this.allPages()) {
+                page.image.markInitialized();
+            }
+        }
+
+        private static List<VulkanImage> images(List<PageResource> pages) {
+            ArrayList<VulkanImage> result = new ArrayList<>(pages.size());
+            for (PageResource page : pages) {
+                result.add(page.image);
+            }
+            return List.copyOf(result);
         }
 
         void collectAnimationChanges(
@@ -808,14 +975,10 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
 
         void retireUploads(VulkanContext context) {
-            VulkanBuffer normal = this.normalUpload;
-            VulkanBuffer specular = this.specularUpload;
-            this.normalUpload = null;
-            this.specularUpload = null;
-            RuntimeException failure = ResourceCleanup.run(
-                    normal == null ? null : () -> context.defer(normal), null);
-            failure = ResourceCleanup.run(
-                    specular == null ? null : () -> context.defer(specular), failure);
+            RuntimeException failure = null;
+            for (PageResource page : this.allPages()) {
+                failure = ResourceCleanup.run(() -> page.retireUpload(context), failure);
+            }
             ResourceCleanup.throwIfFailed(failure);
         }
 
@@ -823,10 +986,9 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         public void destroy() {
             if (!this.destroyed) {
                 this.destroyed = true;
-                RuntimeException failure = ResourceCleanup.destroy(this.specularUpload, null);
-                failure = ResourceCleanup.destroy(this.normalUpload, failure);
-                failure = ResourceCleanup.destroy(this.specularAtlas, failure);
-                failure = ResourceCleanup.destroy(this.normalAtlas, failure);
+                RuntimeException failure = ResourceCleanup.destroy(this.textureRecords, null);
+                failure = destroyPages(this.opticalPages, failure);
+                failure = destroyPages(this.normalPages, failure);
                 ResourceCleanup.throwIfFailed(failure);
             }
         }

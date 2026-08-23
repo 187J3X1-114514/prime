@@ -23,8 +23,7 @@ final class MaterialRecipeResolver {
             boolean transmissive,
             boolean thinWalled,
             boolean tangentNegative,
-            boolean frontFaceOnly,
-            boolean rasterComposite) {
+            boolean frontFaceOnly) {
         Objects.requireNonNull(surface, "surface");
         Objects.requireNonNull(materials, "materials");
         return resolve(
@@ -38,8 +37,7 @@ final class MaterialRecipeResolver {
                 transmissive,
                 thinWalled,
                 tangentNegative,
-                frontFaceOnly,
-                rasterComposite);
+                frontFaceOnly);
     }
 
     static PrimitiveControl resolve(
@@ -53,8 +51,7 @@ final class MaterialRecipeResolver {
             boolean transmissive,
             boolean thinWalled,
             boolean tangentNegative,
-            boolean frontFaceOnly,
-            boolean rasterComposite) {
+            boolean frontFaceOnly) {
         Objects.requireNonNull(sprite, "sprite");
         Objects.requireNonNull(builtinMaterialClass, "builtinMaterialClass");
         Objects.requireNonNull(materials, "materials");
@@ -84,7 +81,6 @@ final class MaterialRecipeResolver {
                 recipe,
                 animated,
                 tangentNegative && (details & MaterialDetail.NORMAL_TEXTURE.bit()) != 0,
-                frontFaceOnly,
-                rasterComposite);
+                frontFaceOnly);
     }
 }

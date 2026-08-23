@@ -38,6 +38,7 @@ public record LabPbrAtlasFrame(
     }
 
     public record Sprite(
+            int textureId,
             int x,
             int y,
             int contentWidth,
@@ -47,14 +48,12 @@ public record LabPbrAtlasFrame(
             MaterialSource specular,
             int animationIndex) {
         public Sprite {
-            if (x < 0 || y < 0 || contentWidth <= 0 || contentHeight <= 0 || padding < 0) {
+            if (textureId <= 0 || textureId > (1 << 24) - 1
+                    || x < 0 || y < 0 || contentWidth <= 0 || contentHeight <= 0 || padding < 0) {
                 throw new IllegalArgumentException("Invalid LabPBR sprite placement");
             }
             if (animationIndex < -1) {
                 throw new IllegalArgumentException("Invalid LabPBR animation index");
-            }
-            if (normal == null && specular == null) {
-                throw new IllegalArgumentException("LabPBR sprite must contain an auxiliary map");
             }
         }
 

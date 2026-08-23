@@ -11,9 +11,9 @@ import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.nrd.NrdDiagnostics;
-import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrInputView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -51,13 +51,15 @@ public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$DIAGNOSTICS_HEADER =
             Component.translatable("prime.options.header.diagnostics");
     @Unique private PrimeVideoOptions.OptionSet prime$options;
+    @Unique private boolean prime$refreshingDiagnostics;
 
     @Inject(method = "addOptions", at = @At("TAIL"))
     private void prime$addOptions(CallbackInfo callbackInfo) {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$options = PrimeVideoOptions.create(
-                    ignored -> this.prime$updatePrimaryChainAvailability());
+                    ignored -> this.prime$updatePrimaryChainAvailability(),
+                    this::prime$refreshDiagnosticOptions);
             list.addHeader(PRIME$HEADER);
             list.addBig(Button.builder(
                             Component.translatable("prime.options.restore_defaults"),
@@ -98,11 +100,10 @@ public abstract class VideoSettingsScreenMixin {
             list.addSmall(this.prime$options.material().defaultRoughness(), this.prime$options.material().seamlessGlass());
             list.addSmall(this.prime$options.material().airGap(), this.prime$options.material().vanillaPbrPresets());
             list.addHeader(PRIME$DIAGNOSTICS_HEADER);
-            list.addBig(this.prime$options.diagnostics().triangleDebug());
             list.addBig(this.prime$options.diagnostics().rendererDiagnostics());
-            list.addBig(this.prime$options.diagnostics().rawOutput());
-            list.addSmall(this.prime$options.diagnostics().nrdDebugView(), this.prime$options.diagnostics().fsrDebugView());
-            list.addSmall(this.prime$options.diagnostics().rrDebugView(), this.prime$options.diagnostics().rrDebugFullscreen());
+            list.addBig(this.prime$options.diagnostics().rendererImageView());
+            list.addBig(this.prime$options.diagnostics().rrInputView());
+            list.addBig(this.prime$options.diagnostics().nrdInputView());
             list.addBig(Button.builder(
                             Component.translatable("prime.options.open_repository"),
                             ConfirmLinkScreen.confirmLink(
@@ -195,13 +196,30 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$options.material().vanillaPbrPresets(),
                 MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
-        this.prime$refresh(this.prime$options.diagnostics().triangleDebug(), false);
         this.prime$refresh(this.prime$options.diagnostics().rendererDiagnostics(), false);
-        this.prime$refresh(this.prime$options.diagnostics().rawOutput(), false);
-        this.prime$refresh(this.prime$options.diagnostics().nrdDebugView(), NrdDiagnostics.Mode.OFF);
-        this.prime$refresh(this.prime$options.diagnostics().fsrDebugView(), FsrDebugView.OFF);
-        this.prime$refresh(this.prime$options.diagnostics().rrDebugView(), DlssRrDebugView.OFF);
-        this.prime$refresh(this.prime$options.diagnostics().rrDebugFullscreen(), false);
+        this.prime$refresh(this.prime$options.diagnostics().rendererImageView(), RendererImageView.OFF);
+        this.prime$refresh(this.prime$options.diagnostics().rrInputView(), RrInputView.OFF);
+        this.prime$refresh(this.prime$options.diagnostics().nrdInputView(), NrdInputView.OFF);
+    }
+
+    @Unique
+    private void prime$refreshDiagnosticOptions() {
+        if (this.prime$options == null || this.prime$refreshingDiagnostics) return;
+        this.prime$refreshingDiagnostics = true;
+        try {
+            PrimeRuntime runtime = PrimeRuntime.instance();
+            this.prime$refresh(
+                    this.prime$options.diagnostics().rendererImageView(),
+                    runtime.rendererImageView());
+            this.prime$refresh(
+                    this.prime$options.diagnostics().rrInputView(),
+                    runtime.rrInputView());
+            this.prime$refresh(
+                    this.prime$options.diagnostics().nrdInputView(),
+                    runtime.nrdInputView());
+        } finally {
+            this.prime$refreshingDiagnostics = false;
+        }
     }
 
     @Unique

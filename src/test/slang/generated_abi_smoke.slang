@@ -40,7 +40,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     value ^= tracePayloads[index].adjacentInterfaceControl;
     value ^= surfaceInteractions[index].adjacentInterfaceControl;
     value ^= asuint(nrdMotionRecords[index].currentJitterPixels.y);
-    value ^= sharcFrameRecords[index].flags;
+    value ^= sharcFrameRecords[index].trainingHeight;
     value ^= sunShadowQueries[index].valid;
     value ^= asuint(primePush.inverseViewProjection[3][3]);
     value ^= primePush.path.w;

@@ -85,10 +85,6 @@ final class FsrSettingsTest {
         assertEquals(
                 ReconstructionQualityMode.PERFORMANCE,
                 ReconstructionQualityMode.fromId("future_mode"));
-        for (FsrDebugView mode : FsrDebugView.values()) {
-            assertEquals(mode, FsrDebugView.fromId(mode.id()));
-        }
-        assertEquals(FsrDebugView.OFF, FsrDebugView.fromId("future_view"));
     }
 
     @Test

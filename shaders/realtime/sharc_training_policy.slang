@@ -15,7 +15,7 @@ struct PrimeIntegratedSharcTraining : IPrimeWavefrontSharcTraining {
         float3 emissive = primeEvaluateLocalHitEmission(
                 context, path, surface, true);
         uint control = primeSharcTrainingControl(path.pixel);
-        bool anchorEligible = primeSharcCacheEligible(path, surface, false);
+    bool anchorEligible = primeSharcCacheEligible(path, surface);
         if (!primeSharcTrainingActive(control)) {
             if (anchorEligible) {
                 primeBeginSharcTraining(path, surface, direct);

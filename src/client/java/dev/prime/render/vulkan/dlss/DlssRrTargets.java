@@ -41,7 +41,6 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     private final VulkanImage specularHitDistance;
     private final VulkanImage reflectionPosition;
     private final VulkanImage rrOutput;
-    private final VulkanImage guideDiagnostic;
     private final VulkanImage[] owned;
     private boolean destroyed;
 
@@ -62,7 +61,6 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
         this.specularHitDistance = images.get(13);
         this.reflectionPosition = images.get(14);
         this.rrOutput = images.get(15);
-        this.guideDiagnostic = images.get(16);
         this.owned = images.toArray(VulkanImage[]::new);
     }
 
@@ -107,8 +105,6 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
                     "Prime RR reflection previous virtual position");
             add(context, images, displayWidth, displayHeight,
                     COLOR_FORMAT, "Prime RR linear HDR output");
-            add(context, images, renderWidth, renderHeight,
-                    COLOR_FORMAT, "Prime RR resolve guide diagnostic");
             return new DlssRrTargets(images);
         } catch (RuntimeException exception) {
             for (int index = images.size() - 1; index >= 0; index--) {
@@ -181,7 +177,6 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     @Override public VulkanImage reflectionPosition() { return this.reflectionPosition; }
     @Override public VulkanImage sunLighting() { return this.sunLighting; }
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
-    @Override public VulkanImage rawNumericalDiagnostic() { return this.guideDiagnostic; }
 
     public VulkanImage inputColor() { return this.inputColor; }
     public VulkanImage motion() { return this.motion; }
@@ -189,7 +184,6 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     public VulkanImage specularMotion() { return this.specularMotion; }
     public VulkanImage specularHitDistance() { return this.specularHitDistance; }
     public VulkanImage rrOutput() { return this.rrOutput; }
-    public VulkanImage guideDiagnostic() { return this.guideDiagnostic; }
 
     @Override
     public void destroy() {

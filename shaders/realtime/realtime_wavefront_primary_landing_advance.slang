@@ -8,7 +8,6 @@ void primeWavefrontPrimaryLandingAdvance(
             PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     uint storedSunProbability =

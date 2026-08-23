@@ -8,31 +8,29 @@ import "prime_nrd_motion_contract.slang";
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeMotion;
 [[vk::binding(1, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float4> primeViewZ;
 [[vk::binding(2, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primePrimaryPosition;
-[[vk::binding(3, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeReprojectionError;
-[[vk::binding(4, 0)]] [[vk::image_format("r32f")]] writeonly RWTexture2D<float4> primeFsrDepth;
-[[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeNoisyDiffuse;
-[[vk::binding(6, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeNoisySpecular;
-[[vk::binding(7, 0)]] [[vk::image_format("rgb10_a2")]] RWTexture2D<float4> primeNormalRoughness;
-[[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeMaterial;
-[[vk::binding(9, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeSpecularMaterial;
-[[vk::binding(10, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeDiffuseDirection;
-[[vk::binding(11, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeSpecularDirection;
+[[vk::binding(3, 0)]] [[vk::image_format("r32f")]] writeonly RWTexture2D<float4> primeFsrDepth;
+[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeNoisyDiffuse;
+[[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeNoisySpecular;
+[[vk::binding(6, 0)]] [[vk::image_format("rgb10_a2")]] RWTexture2D<float4> primeNormalRoughness;
+[[vk::binding(7, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeMaterial;
+[[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeSpecularMaterial;
+[[vk::binding(9, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeDiffuseDirection;
+[[vk::binding(10, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeSpecularDirection;
 
-[[vk::binding(12, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeReflectionMotion;
-[[vk::binding(13, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float4> primeReflectionViewZ;
-[[vk::binding(14, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeReflectionPosition;
-[[vk::binding(15, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionNoisyDiffuse;
-[[vk::binding(16, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionNoisySpecular;
-[[vk::binding(17, 0)]] [[vk::image_format("rgb10_a2")]] RWTexture2D<float4> primeReflectionNormalRoughness;
-[[vk::binding(18, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionMaterial;
-[[vk::binding(19, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionSpecularMaterial;
-[[vk::binding(20, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionDiffuseDirection;
-[[vk::binding(21, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionSpecularDirection;
-[[vk::binding(22, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeDisplayPosition;
-[[vk::binding(23, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeFsrMotion;
+[[vk::binding(11, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeReflectionMotion;
+[[vk::binding(12, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float4> primeReflectionViewZ;
+[[vk::binding(13, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeReflectionPosition;
+[[vk::binding(14, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionNoisyDiffuse;
+[[vk::binding(15, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionNoisySpecular;
+[[vk::binding(16, 0)]] [[vk::image_format("rgb10_a2")]] RWTexture2D<float4> primeReflectionNormalRoughness;
+[[vk::binding(17, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionMaterial;
+[[vk::binding(18, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionSpecularMaterial;
+[[vk::binding(19, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionDiffuseDirection;
+[[vk::binding(20, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionSpecularDirection;
+[[vk::binding(21, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeDisplayPosition;
+[[vk::binding(22, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeFsrMotion;
 
 static const float PRIME_MOTION_SKY_VIEW_Z = 65504.0;
-static const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
 
 float3 primeMotionRayDirection(float2 screenUv) {
     float2 clipXY = screenUv * float2(2.0, -2.0) + float2(-1.0, 1.0);
@@ -202,29 +200,6 @@ void primePrepareBranch(
     } else {
         primeStoreMotion(pixel, reflection, float4(0.0));
     }
-    if (validPreviousClip
-            && !reflection
-            && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-        float4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
-                * float4(reprojectionPosition, directional ? 0.0 : 1.0);
-        float3 error = float3(1.0);
-        if (exactPreviousClip.w > 1.0e-6
-                && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
-            float2 exactUv = exactPreviousClip.xy / exactPreviousClip.w
-                    * float2(0.5) + float2(0.5);
-            if (!any(isnan(exactUv)) && !any(isinf(exactUv))) {
-                float2 pixels = (previousUv - exactUv) * float2(extent);
-                error = float3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
-                        + float3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));
-                float depthError = directional
-                        ? 0.0
-                        : abs(previousClip.w - exactPreviousClip.w);
-                error = (error + depthError) * 0.25;
-            }
-        }
-        primeWriteImageStore(primeReprojectionError, pixel, float4(clamp(error, 0.0, 1.0), 1.0));
-    }
-
     float4 rawSpecularMaterial = primeLoadSpecularMaterial(pixel, reflection);
     float3 normal;
     float roughness;
@@ -309,11 +284,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
     int2 pixel = int2(dispatchThreadId.xy);
     int2 extent = primeImageSize(primeViewZ);
     if (any(pixel >= extent)) return;
-    if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-        // Invalid or sky reprojections have no error sample. Overwrite the shared diagnostic
-        // target so switching from raw numerical views cannot expose stale metadata.
-        primeWriteImageStore(primeReprojectionError, pixel, float4(0.0, 0.0, 0.0, 1.0));
-    }
     float2 currentSampleUv = primeMotionSampleUv(pixel, extent);
     float4 display = primeReadonlyImageLoad(primeDisplayPosition, pixel);
     bool displayHasMotion = (asuint(display.w)

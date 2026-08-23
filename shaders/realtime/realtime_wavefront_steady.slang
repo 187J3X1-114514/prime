@@ -34,7 +34,6 @@ void primeQueueSteadyEvent(
     primeStoreWavefrontSurface(recordIndex, surface);
     primeStoreWavefrontSunFamilyProbability(
             recordIndex, lightEvent.storedSunProbability);
-    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     // NONE, SUN and AREA are a per-lane partition, so the queue is not subgroup-uniform.
     primeAppendWavefrontContinuation(
             PrimeScalarWavefrontContinuationAppender(),
@@ -92,7 +91,6 @@ bool primeTryReuseSteadyIndirect<IndirectReuse, SharcTraining>(
     primeStoreWavefrontTransportRecord(recordIndex, record);
     primeStoreWavefrontSurface(recordIndex, surface);
     primeStoreWavefrontSunFamilyProbability(recordIndex, 0u);
-    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     return true;
 }
 
@@ -143,14 +141,10 @@ uint primeShadeSteadyEvent<SharcTraining>(
                     : PRIME_TRANSPARENT_LIGHT_EVENT_NONE;
     lightEvent.storedSunProbability = storedSunProbability;
     if (eventType == PRIME_STEADY_EVENT_SUN) {
-        PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
         PrimeFusedWavefrontLightResult light =
                 primeShadeTransparentSunLightEvent(
                         sharcTraining,
                         context, recordIndex, record, surface, lightEvent);
-        if (!light.diagnosticsCommitted) {
-            context.diagnostics = shadeDiagnostics;
-        }
         return light.storedSunProbability;
     }
     if (eventType != PRIME_STEADY_EVENT_AREA) {
@@ -169,7 +163,6 @@ uint primeShadeSteadyEvent<SharcTraining>(
         return 0u;
     }
 
-    PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
     PathState path = primeWavefrontPath(
             primeWavefrontPixel(recordIndex), record);
     float3 preparedThroughput = float3(0.0);
@@ -197,9 +190,6 @@ uint primeShadeSteadyEvent<SharcTraining>(
                     preparedArea,
                     preparedThroughput,
                     area);
-    if (!light.diagnosticsCommitted) {
-        context.diagnostics = shadeDiagnostics;
-    }
     return light.storedSunProbability;
 }
 
@@ -214,7 +204,6 @@ void primeWavefrontSteadyConsume<SharcTraining>(
     uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     uint storedSunProbability = primeShadeSteadyEvent(

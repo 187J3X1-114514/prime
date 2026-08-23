@@ -3,7 +3,6 @@
 
 import "realtime/wavefront_medium.slang";
 import "integrator/wavefront_queue.slang";
-import "rt/surface_trace_diagnostic.slang";
 #include "realtime/wavefront_storage.slang"
 
 // Member-wise access keeps cold PSR state out of ordinary continuations and prevents a storage
@@ -18,9 +17,8 @@ PrimeWavefrontTransportRecord primeLoadWavefrontTransportRecord(uint pathIndex) 
     record.rayDirectionAndDenoiserControl =
             primeWavefrontPaths[pathIndex]
                     .transport.rayDirectionAndDenoiserControl;
-    record.throughputAndNumericalFlags =
-            primeWavefrontPaths[pathIndex]
-                    .transport.throughputAndNumericalFlags;
+    record.throughputAndSharcState =
+            primeWavefrontPaths[pathIndex].transport.throughputAndSharcState;
     record.medium0 = primeWavefrontPaths[pathIndex].transport.medium0;
     record.medium1 = primeWavefrontPaths[pathIndex].transport.medium1;
     return record;
@@ -37,9 +35,8 @@ void primeStoreWavefrontTransportRecord(
     primeWavefrontPaths[pathIndex]
             .transport.rayDirectionAndDenoiserControl =
             record.rayDirectionAndDenoiserControl;
-    primeWavefrontPaths[pathIndex]
-            .transport.throughputAndNumericalFlags =
-            record.throughputAndNumericalFlags;
+    primeWavefrontPaths[pathIndex].transport.throughputAndSharcState =
+            record.throughputAndSharcState;
     primeWavefrontPaths[pathIndex].transport.medium0 = record.medium0;
     primeWavefrontPaths[pathIndex].transport.medium1 = record.medium1;
 }
@@ -260,15 +257,6 @@ uint primePackWavefrontPathControl(PathState path) {
                     << PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
             | ((path.flags & PRIME_WAVEFRONT_PATH_FLAGS_MASK)
                     << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
-}
-
-uint primePackWavefrontDiagnostic(PrimeNumericalDiagnostics diagnostics) {
-    // The current classifier occupies bits 0..8 and first-context metadata fits in 15 bits.
-    // Extending either domain requires a queue ABI migration.
-    return (diagnostics.flags & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK)
-            | ((diagnostics.firstContext
-                    & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK)
-                    << PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT);
 }
 
 uint primePackWavefrontSharcState(PathState path) {
@@ -508,19 +496,6 @@ void primeStoreWavefrontPrimarySun(
             float4(primeNrdSanitizeHitDistance(penumbra)));
 }
 
-void primeStoreWavefrontDiagnostic(
-        uint pathIndex, PrimeNumericalDiagnostics diagnostics) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        uint previous = asuint(primeWavefrontPaths[pathIndex]
-                .transport.throughputAndNumericalFlags.w);
-        primeWavefrontPaths[pathIndex]
-                .transport.throughputAndNumericalFlags.w =
-                asfloat(
-                        (previous & ~PRIME_WAVEFRONT_LOW_DIAGNOSTIC_MASK)
-                        | primePackWavefrontDiagnostic(diagnostics));
-    }
-}
-
 PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
         PrimeNumericalDiagnostics diagnostics,
         PathState path,
@@ -553,12 +528,8 @@ PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
                     << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
     record.rayDirectionAndDenoiserControl =
             float4(path.rayDirection, asfloat(denoiserControl));
-    record.throughputAndNumericalFlags =
-            float4(
-                    path.throughput,
-                    asfloat(
-                            primePackWavefrontDiagnostic(diagnostics)
-                            | primePackWavefrontSharcState(path)));
+    record.throughputAndSharcState =
+            float4(path.throughput, asfloat(primePackWavefrontSharcState(path)));
     return record;
 }
 
@@ -603,7 +574,7 @@ PathState primeWavefrontPath(
     path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
     path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
             & PRIME_WAVEFRONT_PATH_FLAGS_MASK;
-    path.throughput = record.throughputAndNumericalFlags.xyz;
+    path.throughput = record.throughputAndSharcState.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.etaScale = primeUnpackWavefrontEtaScale(
             (pathControl >> PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
@@ -612,7 +583,7 @@ PathState primeWavefrontPath(
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
-    uint packedSharc = asuint(record.throughputAndNumericalFlags.w)
+    uint packedSharc = asuint(record.throughputAndSharcState.w)
             >> PRIME_WAVEFRONT_SHARC_SHIFT;
     path.previousSharcRoughness = float(
             packedSharc & PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK)
@@ -650,20 +621,6 @@ PrimeDenoiserState primeWavefrontDenoiserState(
             (denoiserControl >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
             & PRIME_WAVEFRONT_BYTE_MASK;
     return state;
-}
-
-void primeRestoreWavefrontDiagnostic(
-        PrimeWavefrontTransportRecord record,
-        inout PrimeNumericalDiagnostics diagnostics) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        uint packedDiagnostic =
-                asuint(record.throughputAndNumericalFlags.w);
-        diagnostics.flags =
-                packedDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
-        diagnostics.firstContext =
-                (packedDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
-                        & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
-    }
 }
 
 PrimeWavefrontTransportRecord primeMakeUpdatedWavefrontRecord(
@@ -1042,317 +999,6 @@ void primeStoreRrReflectionGuide(
             float4(normalOctahedral.x));
 }
 
-float3 primeOwnedGuideDiagnosticNormal(PrimeDenoiserGuides guides) {
-    if (guides.primaryHitKind != PRIME_HIT_SURFACE) return float3(0.0);
-    if (!primeNrdIsFinite(guides.primaryNormal)) return float3(1.0, 0.0, 1.0);
-    return clamp(guides.primaryNormal * 0.5 + 0.5, 0.0, 1.0);
-}
-
-float3 primeOwnedGuideDiagnosticRoughness(PrimeDenoiserGuides guides) {
-    if (guides.primaryHitKind != PRIME_HIT_SURFACE) return float3(0.0);
-    if (!primeNrdIsFinite(guides.primaryLinearRoughness)) {
-        return float3(1.0, 0.0, 1.0);
-    }
-    return float3(clamp(guides.primaryLinearRoughness, 0.0, 1.0));
-}
-
-float3 primeOwnedGuideDiagnosticAlbedo(float3 albedo, uint hitKind) {
-    if (hitKind != PRIME_HIT_SURFACE) return float3(0.0);
-    if (!primeNrdIsFinite(albedo)) return float3(1.0, 0.0, 1.0);
-    return clamp(albedo, 0.0, 1.0);
-}
-
-// Column two captures the exact guide at the false -> true ownership transition. Primary writes
-// it immediately for a non-discrete interface; a queued path writes it when it first reaches a
-// solid-angle surface. No later active transport store is allowed to replace that guide.
-void primeStoreOwnedTransmissionGuideDiagnostic(
-        uint2 pixel, PrimeDenoiserGuides guides) {
-    if (primeTransparentGuideMode()
-                    != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR
-            || pixel.x % 5u != 0u
-            || pixel.y % 4u != 0u) {
-        return;
-    }
-    uint width;
-    uint height;
-    primeRawNumericalDiagnostic.GetDimensions(width, height);
-    int2 cellExtent = int2(width / 5u, height / 4u);
-    int2 local = int2(pixel.x / 5u, pixel.y / 4u);
-    if (any(cellExtent <= int2(0)) || any(local >= cellExtent)) return;
-
-    int x = local.x + 2 * cellExtent.x;
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + 3 * cellExtent.y),
-            float4(primeOwnedGuideDiagnosticNormal(guides), 1.0));
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + 2 * cellExtent.y),
-            float4(primeOwnedGuideDiagnosticRoughness(guides), 1.0));
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + cellExtent.y),
-            float4(primeOwnedGuideDiagnosticAlbedo(
-                    guides.primaryAlbedo, guides.primaryHitKind), 1.0));
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y),
-            float4(primeOwnedGuideDiagnosticAlbedo(
-                    guides.primarySpecularAlbedo, guides.primaryHitKind), 1.0));
-}
-
-static const uint PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER = 1u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_ADVANCE = 2u;
-static const uint PRIME_GUIDE_STOP_MISS = 3u;
-static const uint PRIME_GUIDE_STOP_SURFACE = 4u;
-static const uint PRIME_GUIDE_STOP_CHAIN_LIMIT = 5u;
-static const uint PRIME_GUIDE_STOP_BOUNCE_LIMIT = 6u;
-static const uint PRIME_GUIDE_STOP_DISPATCH_LIMIT = 7u;
-static const uint PRIME_GUIDE_STOP_SER_ONLY_MISS = 8u;
-static const uint PRIME_GUIDE_STOP_REFLECTION_ONLY = 9u;
-static const uint PRIME_GUIDE_STOP_INACTIVE_UNCLASSIFIED = 10u;
-static const uint PRIME_GUIDE_STOP_IN_MEDIUM_MISS = 11u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_THIN_WALLED = 12u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_AIR_GAP = 13u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_SOLID_ENTERING = 14u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING = 15u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING_EMPTY = 16u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_ENTER_DIRECTION = 17u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_ENTER_STACK = 18u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_ENTER_SOURCE = 19u;
-static const uint PRIME_GUIDE_STOP_PRIMARY_ENTER_ORIGIN = 20u;
-static const uint PRIME_GUIDE_STOP_TRACE_NO_CANDIDATE = 21u;
-static const uint PRIME_GUIDE_STOP_TRACE_EXACT_SOURCE = 22u;
-static const uint PRIME_GUIDE_STOP_TRACE_SOURCE_PRIMITIVE = 23u;
-static const uint PRIME_GUIDE_STOP_TRACE_CUTOUT = 24u;
-static const uint PRIME_GUIDE_STOP_TRACE_MIXED_REJECTION = 25u;
-
-float3 primeGuideStopDiagnosticColor(uint reason) {
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER) {
-        return float3(1.0, 0.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_ADVANCE) {
-        return float3(1.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_MISS) {
-        return float3(0.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_SURFACE) {
-        return float3(0.0, 1.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_CHAIN_LIMIT) {
-        return float3(0.0, 1.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_BOUNCE_LIMIT) {
-        return float3(1.0, 1.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_SER_ONLY_MISS) {
-        return float3(1.0, 0.5, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_REFLECTION_ONLY) {
-        return float3(1.0, 0.25, 0.75);
-    }
-    if (reason == PRIME_GUIDE_STOP_INACTIVE_UNCLASSIFIED) {
-        return float3(0.5);
-    }
-    if (reason == PRIME_GUIDE_STOP_IN_MEDIUM_MISS) {
-        return float3(0.5, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_THIN_WALLED) {
-        return float3(1.0, 0.5, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_AIR_GAP) {
-        return float3(1.0, 1.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_SOLID_ENTERING) {
-        return float3(0.0, 1.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING) {
-        return float3(1.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING_EMPTY) {
-        return float3(1.0, 0.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_ENTER_DIRECTION) {
-        return float3(0.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_ENTER_STACK) {
-        return float3(1.0, 1.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_ENTER_SOURCE) {
-        return float3(1.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_PRIMARY_ENTER_ORIGIN) {
-        return float3(1.0, 0.0, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_TRACE_NO_CANDIDATE) {
-        return float3(0.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_TRACE_EXACT_SOURCE) {
-        return float3(0.0, 1.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_TRACE_SOURCE_PRIMITIVE) {
-        return float3(1.0, 0.0, 1.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_TRACE_CUTOUT) {
-        return float3(1.0, 0.5, 0.0);
-    }
-    if (reason == PRIME_GUIDE_STOP_TRACE_MIXED_REJECTION) {
-        return float3(1.0, 1.0, 0.0);
-    }
-    return float3(1.0);
-}
-
-bool primeWritesTransmissionGuideDiagnostic(uint2 pixel) {
-    return primeTransparentGuideMode()
-                    == PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR
-            && pixel.x % 5u == 0u
-            && pixel.y % 4u == 0u;
-}
-
-// An unresolved transmission guide colors all four column-two cells with its terminal cause.
-// A later ownership transition replaces this marker with the actual guide snapshot.
-void primeStoreUnownedTransmissionGuideDiagnostic(uint2 pixel, uint reason) {
-    if (!primeWritesTransmissionGuideDiagnostic(pixel)) {
-        return;
-    }
-    uint width;
-    uint height;
-    primeRawNumericalDiagnostic.GetDimensions(width, height);
-    int2 cellExtent = int2(width / 5u, height / 4u);
-    int2 local = int2(pixel.x / 5u, pixel.y / 4u);
-    if (any(cellExtent <= int2(0)) || any(local >= cellExtent)) return;
-
-    int x = local.x + 2 * cellExtent.x;
-    float4 marker = float4(primeGuideStopDiagnosticColor(reason), 1.0);
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + 3 * cellExtent.y), marker);
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + 2 * cellExtent.y), marker);
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + cellExtent.y), marker);
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y), marker);
-}
-
-float3 primeWavefrontDiscreteChainDiagnostic(
-        uint recordIndex, PrimeWavefrontTransportRecord record) {
-    PrimeQueuedPsrState psrState = primeLoadWavefrontPsrState(recordIndex, record);
-    if (primeQueuedPsrOverflowed(psrState)) return float3(1.0, 0.0, 1.0);
-    uint count = primeQueuedPsrCount(psrState);
-    if (count == 0u) return float3(0.0);
-    if (count == 1u) return float3(1.0, 0.0, 0.0);
-    if (count == 2u) return float3(0.0, 1.0, 0.0);
-    if (count == 3u) return float3(1.0, 1.0, 0.0);
-    return float3(0.0, 0.0, 1.0);
-}
-
-float3 primeWavefrontTerminalDirectionDiagnostic(
-        uint recordIndex, PrimeWavefrontTransportRecord record) {
-    PrimeQueuedPsrState psrState = primeLoadWavefrontPsrState(recordIndex, record);
-    float3 primaryDirection = psrState.firstDirectionLength.xyz;
-    float3 terminalDirection = record.rayDirectionAndDenoiserControl.xyz;
-    float primaryLengthSquared = dot(primaryDirection, primaryDirection);
-    float terminalLengthSquared = dot(terminalDirection, terminalDirection);
-    if (!primeNrdIsFinite(primaryDirection)
-            || !primeNrdIsFinite(terminalDirection)
-            || !primeNrdIsFinite(primaryLengthSquared)
-            || !primeNrdIsFinite(terminalLengthSquared)
-            || !(primaryLengthSquared > 1.0e-12)
-            || !(terminalLengthSquared > 1.0e-12)) {
-        return float3(1.0, 0.0, 1.0);
-    }
-    float alignment = dot(primaryDirection, terminalDirection)
-            * rsqrt(primaryLengthSquared * terminalLengthSquared);
-    if (alignment >= 0.999) return float3(0.0, 1.0, 0.0);
-    if (alignment > 0.0) return float3(0.0, 1.0, 1.0);
-    if (alignment <= -0.999) return float3(1.0, 0.0, 0.0);
-    return float3(1.0, 1.0, 0.0);
-}
-
-// Preserve the top row's primary-interface classification. The other rows distinguish traversal,
-// discrete-chain length, and terminal direction without changing any transport state.
-void primeStoreTransmissionTraceMissDiagnostic(
-        uint recordIndex,
-        uint2 pixel,
-        uint reason,
-        PrimeWavefrontTransportRecord record) {
-    if (!primeWritesTransmissionGuideDiagnostic(pixel)) return;
-    uint width;
-    uint height;
-    primeRawNumericalDiagnostic.GetDimensions(width, height);
-    int2 cellExtent = int2(width / 5u, height / 4u);
-    int2 local = int2(pixel.x / 5u, pixel.y / 4u);
-    if (any(cellExtent <= int2(0)) || any(local >= cellExtent)) return;
-
-    int x = local.x + 2 * cellExtent.x;
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + 2 * cellExtent.y),
-            float4(primeGuideStopDiagnosticColor(reason), 1.0));
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y + cellExtent.y),
-            float4(primeWavefrontDiscreteChainDiagnostic(
-                    recordIndex, record), 1.0));
-    primeImageStoreWriteOnly(
-            primeRawNumericalDiagnostic,
-            int2(x, local.y),
-            float4(primeWavefrontTerminalDirectionDiagnostic(
-                    recordIndex, record), 1.0));
-}
-
-// Called in the traversal shader so a diagnostic scalar retry does not add a ray payload to a
-// later landing stage. It observes the exact saved state and never substitutes the retry result.
-void primeStoreWavefrontTransmissionMissDiagnostic(
-        uint recordIndex,
-        PrimeWavefrontTransportRecord record,
-        uint control,
-        SurfaceInteraction surface) {
-    uint2 pixel = primeWavefrontPixel(recordIndex);
-    if (surface.hitKind != PRIME_HIT_NONE
-            || !primeWavefrontTransparentBranch(control)
-            || !primeWavefrontTransmissionBranch(control)
-            || !primeWavefrontGuideEnabled(control)
-            || (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u
-            || !primeWritesTransmissionGuideDiagnostic(pixel)) {
-        return;
-    }
-
-    uint traceDiagnostic =
-            surface.adjacentInterfaceControl & PRIME_TRACE_DIAGNOSTIC_MASK;
-    uint reason = PRIME_GUIDE_STOP_TRACE_MIXED_REJECTION;
-    if (traceDiagnostic == 0u) {
-        reason = PRIME_GUIDE_STOP_TRACE_NO_CANDIDATE;
-    } else if (traceDiagnostic == PRIME_TRACE_IGNORED_EXACT_SOURCE) {
-        reason = PRIME_GUIDE_STOP_TRACE_EXACT_SOURCE;
-    } else if (traceDiagnostic == PRIME_TRACE_IGNORED_SOURCE_PRIMITIVE) {
-        reason = PRIME_GUIDE_STOP_TRACE_SOURCE_PRIMITIVE;
-    } else if (traceDiagnostic == PRIME_TRACE_IGNORED_CUTOUT) {
-        reason = PRIME_GUIDE_STOP_TRACE_CUTOUT;
-    }
-    primeStoreTransmissionTraceMissDiagnostic(
-            recordIndex, pixel, reason, record);
-
-#if defined(PRIME_ENABLE_SER)
-    SurfaceInteraction scalarSurface = primeTraceSurfaceWithoutReorder(
-            record.physicalOriginAndPreviousBsdfPdf.xyz,
-            record.rayDirectionAndDenoiserControl.xyz,
-            record.sourceAndPathControl.xy);
-    if (scalarSurface.hitKind == PRIME_HIT_SURFACE) {
-        primeStoreTransmissionTraceMissDiagnostic(
-                recordIndex,
-                pixel,
-                PRIME_GUIDE_STOP_SER_ONLY_MISS,
-                record);
-    }
-#endif
-}
-
 void primeStoreTransparentBranchIntermediate(
         uint2 pixel,
         bool transmissionBranch,
@@ -1361,11 +1007,6 @@ void primeStoreTransparentBranchIntermediate(
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
-        // This full store begins the pixel's branch lifetime. Clear an old diagnostic snapshot
-        // until this frame actually acquires guide ownership.
-        primeStoreOwnedTransmissionGuideDiagnostic(
-                pixel,
-                hasGuide ? result.guides : primeEmptyDenoiserGuides());
         primeImageStore(
                 primeNrdNoisyDiffuse,
                 coordinate,
@@ -1554,7 +1195,6 @@ void primeStoreTransparentBranchGuide(
         PrimeTransparentBranchResult result) {
     int2 coordinate = int2(pixel);
     if (transmissionBranch) {
-        primeStoreOwnedTransmissionGuideDiagnostic(pixel, result.guides);
         primeImageStore(
                 primeNrdPrimaryPosition,
                 coordinate,

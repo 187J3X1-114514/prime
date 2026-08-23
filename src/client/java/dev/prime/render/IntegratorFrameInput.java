@@ -26,9 +26,7 @@ public record IntegratorFrameInput(
         TransparentGuideMode transparentGuideMode,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
-        boolean shInput,
-        boolean rawNumericalDiagnostic,
-        boolean triangleDebug) {
+        boolean shInput) {
     public IntegratorFrameInput(
             FrameCamera camera,
             int width,
@@ -44,14 +42,12 @@ public record IntegratorFrameInput(
             TransparentGuideMode transparentGuideMode,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
-            boolean shInput,
-            boolean rawNumericalDiagnostic,
-            boolean triangleDebug) {
+            boolean shInput) {
         this(
                 camera, width, height, astronomy, packedRayCone, scatterCount,
                 PrimaryChainSettings.DEFAULT_LIMIT, sampleIndex, sampleEpoch, jitterPhase,
                 cameraInWater, postProcessingMode, transparentGuideMode, lighting, material,
-                shInput, rawNumericalDiagnostic, triangleDebug);
+                shInput);
     }
 
     public IntegratorFrameInput {
@@ -89,7 +85,7 @@ public record IntegratorFrameInput(
                 material.seamlessGlass(),
                 material.airGap(),
                 material.vanillaPbrPresets());
-        IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
+        IntegratorSettings.packSampleEpoch(sampleEpoch);
         IntegratorSettings.packPathControl(
                 scatterCount,
                 jitterPhase,
@@ -103,8 +99,7 @@ public record IntegratorFrameInput(
                 lighting.starQuarterSteps(),
                 lighting.blockLightQuarterSteps(),
                 material.roughnessSteps(),
-                shInput,
-                rawNumericalDiagnostic);
+                shInput);
     }
 
     public SunDirection sunDirection() {

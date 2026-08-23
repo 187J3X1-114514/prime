@@ -7,7 +7,6 @@ void primeWavefrontPrimaryDirect(
             PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
@@ -78,5 +77,4 @@ void primeWavefrontPrimaryDirect(
                 sun.visibility,
                 sun.penumbra);
     }
-    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }

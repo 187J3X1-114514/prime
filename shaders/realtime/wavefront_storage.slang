@@ -10,7 +10,7 @@ struct PrimeWavefrontTransportRecord {
     float4 physicalOriginAndPreviousBsdfPdf;
     uint4 sourceAndPathControl;
     float4 rayDirectionAndDenoiserControl;
-    float4 throughputAndNumericalFlags;
+    float4 throughputAndSharcState;
     uint4 medium0;
     uint4 medium1;
 };
@@ -51,13 +51,9 @@ static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT = 18u;
 static const uint PRIME_WAVEFRONT_BYTE_MASK = 0xffu;
 static const uint PRIME_WAVEFRONT_MEDIUM_COUNT_MASK = 0x3u;
 static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
-static const uint PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK = 0x1ffu;
-static const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
-static const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
 static const uint PRIME_WAVEFRONT_SHARC_SHIFT = 24u;
 static const uint PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK = 0x3fu;
 static const uint PRIME_WAVEFRONT_SHARC_EVENT_SHIFT = 6u;
-static const uint PRIME_WAVEFRONT_LOW_DIAGNOSTIC_MASK = 0xffffffu;
 static const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 static const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
 // Transparent full-mode paths use the otherwise-unused top path-control bit to request the old

@@ -18,8 +18,4 @@ void main()
             surface,
             shadowLight,
             primeEmptyVolumeStack());
-    if (surface.hitKind == PRIME_HIT_SURFACE)
-    {
-        context.diagnostics.flags ^= surface.materialControl | asuint(shadow.hitDistance);
-    }
 }

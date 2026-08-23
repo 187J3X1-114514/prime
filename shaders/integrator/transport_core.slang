@@ -16,7 +16,6 @@ import "integrator/integration_result.slang";
 import "integrator/path_contract.slang";
 import "lighting/hit_emission.slang";
 import "rt/shadow_payload.slang";
-import "rt/surface_trace_diagnostic.slang";
 
 #include "bsdf/adapter/bsdf.slang"
 
@@ -34,17 +33,12 @@ PrimeIntegratorContext primeIntegratorContextCreate() {
 }
 
 PrimeNumericalObservation primeBsdfObservationCreate() {
-    return primeNumericalObservationCreate(
-            primeWritesRawNumericalDiagnostic());
+    return primeNumericalObservationCreate(false);
 }
 
 void primeCommitBsdfObservation(
         inout PrimeIntegratorContext context,
         PrimeNumericalObservation observation) {
-    primeRecordNumerical(
-            context.diagnostics,
-            observation.flags,
-            observation.firstField);
 }
 
 float3 primeSanitizeObservedDenoiseAlbedo(
@@ -142,9 +136,7 @@ SurfaceInteraction primeSurfaceInteractionFromPayload() {
     surface.opticalControl = primeSurfacePayload.opticalControl;
     surface.motionZFlags = primeSurfacePayload.positionReserved;
     surface.adjacentBaseColor = primeSurfacePayload.adjacentBaseColor;
-    surface.adjacentInterfaceControl = surface.hitKind == PRIME_HIT_NONE
-            ? packedHitKind & PRIME_TRACE_DIAGNOSTIC_MASK
-            : primeSurfacePayload.adjacentInterfaceControl;
+    surface.adjacentInterfaceControl = primeSurfacePayload.adjacentInterfaceControl;
     return surface;
 }
 

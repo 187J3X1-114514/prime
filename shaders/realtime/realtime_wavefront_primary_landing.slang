@@ -26,18 +26,13 @@ uint primeShadePrimaryLandingSecondary(
             : PRIME_TRANSPARENT_LIGHT_EVENT_AREA;
     lightEvent.storedSunProbability = storedSunProbability;
     if (lightEvent.type == PRIME_TRANSPARENT_LIGHT_EVENT_SUN) {
-        PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
         PrimeFusedWavefrontLightResult light =
                 primeShadeTransparentSunLightEvent(
                         PrimeNoWavefrontSharcTraining(),
                         context, recordIndex, record, surface, lightEvent);
-        if (!light.diagnosticsCommitted) {
-            context.diagnostics = shadeDiagnostics;
-        }
         return light.storedSunProbability;
     }
 
-    PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
     float3 preparedThroughput = float3(0.0);
     PrimeTransparentAreaSampleInput lightData = {};
     bool preparedArea = primePrepareTransparentAreaSample(
@@ -63,9 +58,6 @@ uint primeShadePrimaryLandingSecondary(
                     preparedArea,
                     preparedThroughput,
                     area);
-    if (!light.diagnosticsCommitted) {
-        context.diagnostics = shadeDiagnostics;
-    }
     return light.storedSunProbability;
 }
 
@@ -75,7 +67,6 @@ void primeWavefrontPrimaryLandingSecondary(
             PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     uint storedSunProbability = primeShadePrimaryLandingSecondary(

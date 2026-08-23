@@ -1298,14 +1298,12 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
                 guideScatter.bsdf = guideSample.bsdfSample;
                 guideScatter.volumeStack = guideSample.volumeStack;
             } else {
-                PrimeNumericalDiagnostics savedDiagnostics = context.diagnostics;
                 guideScatter = primeSamplePathSurface(
                         context,
                         surface,
                         viewDirection,
                         float3(0.5),
                         volumeStack);
-                context.diagnostics = savedDiagnostics;
             }
             guideContinuationReusable = primeTransparentGuideContinuationReusable(
                     scatter.bsdf,

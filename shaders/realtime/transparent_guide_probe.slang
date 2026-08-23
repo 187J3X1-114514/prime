@@ -476,11 +476,9 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
         return result;
     }
 
-    PrimeNumericalDiagnostics savedDiagnostics = context.diagnostics;
     float3 initialThroughput = float3(1.0);
     if (!primeAdvanceProbeMedium(
             initialThroughput, primarySurface, volumeStack)) {
-        context.diagnostics = savedDiagnostics;
         return result;
     }
     float3 viewDirection = -cameraPath.rayDirection;
@@ -523,8 +521,6 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
                 maximumBounces,
                 result);
     }
-    // Reconstruction probes are deliberately outside the transport diagnostic domain.
-    context.diagnostics = savedDiagnostics;
     return result;
 }
 

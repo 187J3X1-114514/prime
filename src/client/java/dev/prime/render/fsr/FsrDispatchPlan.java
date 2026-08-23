@@ -29,8 +29,7 @@ public record FsrDispatchPlan(
         float cameraNear,
         float cameraFar,
         float cameraFovAngleVertical,
-        float viewSpaceToMetersFactor,
-        boolean debugView) {
+        float viewSpaceToMetersFactor) {
     public FsrDispatchPlan {
         Objects.requireNonNull(jitterOffset, "jitterOffset");
         if (renderWidth <= 0
@@ -83,11 +82,9 @@ public record FsrDispatchPlan(
             int displayHeight,
             SubpixelJitter sampleJitter,
             float frameTimeMilliseconds,
-            boolean reset,
-            FsrDebugView debugView) {
+            boolean reset) {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(sampleJitter, "sampleJitter");
-        Objects.requireNonNull(debugView, "debugView");
         float inverseCotangent =
                 Math.abs(1.0F / camera.projection().m11());
         float fieldOfView =
@@ -108,7 +105,6 @@ public record FsrDispatchPlan(
                 Float.MAX_VALUE,
                 ShaderAbi.FSR_NEAR_PLANE,
                 fieldOfView,
-                ShaderAbi.FSR_VIEW_SPACE_TO_METERS_FACTOR,
-                debugView == FsrDebugView.OVERVIEW);
+                ShaderAbi.FSR_VIEW_SPACE_TO_METERS_FACTOR);
     }
 }

@@ -39,37 +39,6 @@ import "material/material_translation.slang";
 #include "SharcCommon.h"
 #undef out
 
-#if SHARC_QUERY
-static const uint PRIME_SHARC_DIAGNOSTICS_ENABLED = 1u;
-static const uint PRIME_SHARC_DIAGNOSTIC_SAMPLE_MASK = 255u;
-static const uint PRIME_SHARC_DIAGNOSTIC_QUERY = 0u;
-static const uint PRIME_SHARC_DIAGNOSTIC_DISCRETE_SKIP = 1u;
-static const uint PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP = 2u;
-static const uint PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP = 3u;
-static const uint PRIME_SHARC_DIAGNOSTIC_LOOKUP = 4u;
-static const uint PRIME_SHARC_DIAGNOSTIC_HIT = 5u;
-
-bool primeSharcDiagnosticSample(PathState path) {
-    if ((primeSharcFrame.flags & PRIME_SHARC_DIAGNOSTICS_ENABLED) == 0u
-            || primeSharcFrame.diagnosticsAddress == uint64_t(0)) {
-        return false;
-    }
-    uint hash = primeHash32(path.pixel.x);
-    hash = primeHashCombine(hash, path.pixel.y);
-    hash = primeHashCombine(hash, path.sampleEpoch);
-    hash = primeHashCombine(hash, path.sampleIndex);
-    hash = primeHashCombine(hash, path.sampleDimension);
-    return (hash & PRIME_SHARC_DIAGNOSTIC_SAMPLE_MASK) == 0u;
-}
-
-void primeRecordSharcDiagnostic(bool sampled, uint counter) {
-    if (sampled) {
-        uint* counters = (uint*)primeSharcFrame.diagnosticsAddress;
-        InterlockedAdd(counters[counter], 1u);
-    }
-}
-#endif
-
 #if SHARC_UPDATE || SHARC_QUERY
 float primeSharcLuminance(float3 value) {
     return dot(value, float3(0.2627, 0.6780, 0.0593));

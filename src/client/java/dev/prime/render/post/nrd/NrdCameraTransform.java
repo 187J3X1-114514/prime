@@ -73,27 +73,6 @@ public final class NrdCameraTransform {
                 .mul(previousWorldToView(current, previous, worldToViewScratch));
     }
 
-    /**
-     * Projects a current-effective-camera-relative point through the exact transform used by the
-     * previous raygen frame. This deliberately bypasses the canonical NRD camera decomposition so
-     * the reprojection diagnostic can detect an error in that decomposition instead of repeating
-     * it. The exact rendered transform is relative to Minecraft's physical camera, hence the
-     * current effective pinhole to previous physical camera translation.
-     */
-    public static Matrix4f previousRenderedWorldToClip(FrameCamera current, FrameCamera previous) {
-        return previousRenderedWorldToClip(current, previous, new Matrix4f());
-    }
-
-    public static Matrix4f previousRenderedWorldToClip(
-            FrameCamera current, FrameCamera previous, Matrix4f result) {
-        return result.set(previous.inverseViewProjection())
-                .invert()
-                .translate(
-                        (float) (current.renderX() - previous.x()),
-                        (float) (current.renderY() - previous.y()),
-                        (float) (current.renderZ() - previous.z()));
-    }
-
     public static Vector2f screenUv(Matrix4fc worldToClip, Vector3fc position) {
         Vector4f clip = worldToClip.transform(
                 new Vector4f(position.x(), position.y(), position.z(), 1.0F));

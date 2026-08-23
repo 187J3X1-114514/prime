@@ -54,7 +54,7 @@ final class RayTracingPushConstantsTest {
                         input.material().vanillaPbrPresets()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
-                IntegratorSettings.packSampleEpoch(input.sampleEpoch(), input.triangleDebug()),
+                IntegratorSettings.packSampleEpoch(input.sampleEpoch()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET + Integer.BYTES));
         assertEquals(
                 IntegratorSettings.packPathControl(
@@ -87,9 +87,7 @@ final class RayTracingPushConstantsTest {
                         valid.transparentGuideMode(),
                         valid.lighting(),
                         valid.material(),
-                        valid.shInput(),
-                        valid.rawNumericalDiagnostic(),
-                        valid.triangleDebug()));
+                        valid.shInput()));
     }
 
     private static Fixture input(int sampleIndex) {
@@ -128,8 +126,6 @@ final class RayTracingPushConstantsTest {
                 TransparentGuideMode.REFLECTION_AND_TRANSMISSION,
                 lighting,
                 material,
-                true,
-                true,
                 true);
         return new Fixture(input, scene);
     }

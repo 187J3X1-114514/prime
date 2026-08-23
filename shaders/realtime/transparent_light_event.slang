@@ -11,8 +11,6 @@ struct PrimeTransparentAreaSampleInput {
     uint receiverNormal;
     float2 treeSample;
     float2 positionSample;
-    uint numericalFlags;
-    uint numericalContext;
 };
 
 #endif

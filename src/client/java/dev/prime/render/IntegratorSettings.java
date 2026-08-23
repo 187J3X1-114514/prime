@@ -74,11 +74,11 @@ public final class IntegratorSettings {
                         : 0);
     }
 
-    public static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {
+    public static int packSampleEpoch(int sampleEpoch) {
         if ((sampleEpoch & ~ShaderAbi.PATH_SAMPLE_EPOCH_MASK) != 0) {
             throw new IllegalArgumentException("Sample epoch does not fit in 31 bits");
         }
-        return sampleEpoch | (triangleDebug ? ShaderAbi.PATH_TRIANGLE_DEBUG_MASK : 0);
+        return sampleEpoch;
     }
 
     public static int packPathControl(
@@ -117,8 +117,7 @@ public final class IntegratorSettings {
             int starQuarterSteps,
             int blockLightQuarterSteps,
             int materialRoughnessSteps,
-            boolean shInput,
-            boolean rawNumericalDiagnostic) {
+            boolean shInput) {
         LightingSettings.starLinearMultiplier(starQuarterSteps);
         if (materialRoughnessSteps < MaterialSettings.MINIMUM_ROUGHNESS_STEPS
                 || materialRoughnessSteps > MaterialSettings.MAXIMUM_ROUGHNESS_STEPS
@@ -127,7 +126,6 @@ public final class IntegratorSettings {
                     "Default material roughness does not fit in the path-control ABI");
         }
         return (shInput ? ShaderAbi.PATH_SH_INPUT_MASK : 0)
-                | (rawNumericalDiagnostic ? ShaderAbi.PATH_RAW_NUMERICAL_MASK : 0)
                 | packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 | packStarEvQuarterSteps(starQuarterSteps)
                 | packEvQuarterSteps(

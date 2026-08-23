@@ -26,8 +26,6 @@ final class NrdImages implements Destroyable {
     final VulkanImage sunLighting;
     final VulkanImage sunPenumbra;
     final VulkanImage sunShadow;
-    final VulkanImage reprojectionError;
-    final VulkanImage validation;
     final VulkanImage denoisedDiffuse;
     final VulkanImage denoisedSpecular;
     final VulkanImage denoisedDiffuseSh1;
@@ -70,8 +68,6 @@ final class NrdImages implements Destroyable {
             VulkanImage sunLighting,
             VulkanImage sunPenumbra,
             VulkanImage sunShadow,
-            VulkanImage reprojectionError,
-            VulkanImage validation,
             VulkanImage denoisedDiffuse,
             VulkanImage denoisedSpecular,
             VulkanImage denoisedDiffuseSh1,
@@ -111,8 +107,6 @@ final class NrdImages implements Destroyable {
         this.sunLighting = sunLighting;
         this.sunPenumbra = sunPenumbra;
         this.sunShadow = sunShadow;
-        this.reprojectionError = reprojectionError;
-        this.validation = validation;
         this.denoisedDiffuse = denoisedDiffuse;
         this.denoisedSpecular = denoisedSpecular;
         this.denoisedDiffuseSh1 = denoisedDiffuseSh1;
@@ -184,15 +178,6 @@ final class NrdImages implements Destroyable {
                     context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " noisy sun penumbra");
             VulkanImage sunShadow = createImage(
                     context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " SIGMA sun shadow");
-            VulkanImage reprojectionError = createImage(
-                    context,
-                    created,
-                    width,
-                    height,
-                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    debugPrefix + " reprojection error");
-            VulkanImage validation = createImage(
-                    context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, debugPrefix + " validation output");
             VulkanImage denoised = createImage(
                     context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " denoised diffuse");
             VulkanImage denoisedSpecular = createImage(
@@ -277,8 +262,6 @@ final class NrdImages implements Destroyable {
                     sunLighting,
                     sunPenumbra,
                     sunShadow,
-                    reprojectionError,
-                    validation,
                     denoised,
                     denoisedSpecular,
                     denoisedDiffuseSh1,
@@ -418,4 +401,3 @@ final class NrdImages implements Destroyable {
     }
 
 }
-

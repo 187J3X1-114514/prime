@@ -47,14 +47,6 @@ public final class PrimeConfig {
     private static final String MODE_KEY = "post_processing.mode";
     private static final String QUALITY_KEY = "post_processing.quality";
     private static final String LEGACY_QUALITY_KEY = "fsr.quality";
-    // Former persisted debug keys are ignored and removed on the next settings save. Diagnostics
-    // are observation tools, not product settings, and always start disabled for a new session.
-    private static final String[] LEGACY_DEBUG_KEYS = {
-        "dlss_rr.debug_view",
-        "dlss_rr.debug_fullscreen",
-        "fsr.debug_view",
-        "nrd.debug_view"
-    };
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String STAR_EV_KEY = "lighting.star_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
@@ -266,7 +258,6 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                rewriteNeeded |= hasLegacyDebugProperties(properties);
                 AstronomyLoad astronomy = parseAstronomy(properties);
                 latitudeDegrees = astronomy.settings().latitudeDegrees();
                 solarLongitudeDegrees =
@@ -711,13 +702,6 @@ public final class PrimeConfig {
             }
             PrimeInfo.LOGGER.error("Could not save Prime settings to {}", path, exception);
         }
-    }
-
-    static boolean hasLegacyDebugProperties(Properties properties) {
-        for (String key : LEGACY_DEBUG_KEYS) {
-            if (properties.containsKey(key)) return true;
-        }
-        return false;
     }
 
     static boolean hasLegacyDisplayTransformProperties(Properties properties) {

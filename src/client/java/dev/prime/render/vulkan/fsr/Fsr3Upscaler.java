@@ -4,7 +4,6 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -163,11 +162,9 @@ public final class Fsr3Upscaler implements Destroyable {
             long frameTimeNanos,
             long sceneResetRevision,
             long textureRevision,
-            boolean forceRestart,
-            FsrDebugView fsrDebugView) {
+            boolean forceRestart) {
         this.requireOpen();
         Objects.requireNonNull(camera, "camera");
-        Objects.requireNonNull(fsrDebugView, "fsrDebugView");
         SubmittedFrame<TemporalReconstructionState.Plan> temporal = this.history.plan(
                 new TemporalReconstructionState.Input(
                         camera,
@@ -179,15 +176,13 @@ public final class Fsr3Upscaler implements Destroyable {
         return new FrameToken(
                 this,
                 temporal,
-                jitter,
-                fsrDebugView);
+                jitter);
     }
 
     public void record(
             VkCommandBuffer commandBuffer,
             FrameToken token,
             DisplaySettings.Snapshot display,
-            boolean diagnostic,
             VulkanImageInitializationBatch initialization) {
         this.requireOpen();
         if (token.owner != this
@@ -206,8 +201,7 @@ public final class Fsr3Upscaler implements Destroyable {
                 this.displayHeight,
                 token.jitter,
                 plannedTemporal.deltaMilliseconds(),
-                plannedTemporal.restart(),
-                token.fsrDebugView);
+                plannedTemporal.restart());
         token.recorded = true;
         TemporalReconstructionState.Plan temporal =
                 token.temporal.claimForExecution();
@@ -238,7 +232,6 @@ public final class Fsr3Upscaler implements Destroyable {
         computeBarrier(commandBuffer);
         this.displayPass.record(
                 commandBuffer,
-                diagnostic,
                 temporal.deltaMilliseconds() * 0.001F,
                 temporal.restart(),
                 false,
@@ -352,7 +345,6 @@ public final class Fsr3Upscaler implements Destroyable {
         private final Fsr3Upscaler owner;
         private final SubmittedFrame<TemporalReconstructionState.Plan> temporal;
         private final SubpixelJitter jitter;
-        private final FsrDebugView fsrDebugView;
         private boolean recorded;
         private boolean submitted;
         private boolean abandoned;
@@ -360,12 +352,10 @@ public final class Fsr3Upscaler implements Destroyable {
         private FrameToken(
                 Fsr3Upscaler owner,
                 SubmittedFrame<TemporalReconstructionState.Plan> temporal,
-                SubpixelJitter jitter,
-                FsrDebugView fsrDebugView) {
+                SubpixelJitter jitter) {
             this.owner = owner;
             this.temporal = temporal;
             this.jitter = jitter;
-            this.fsrDebugView = fsrDebugView;
         }
 
         public int frameIndex() {

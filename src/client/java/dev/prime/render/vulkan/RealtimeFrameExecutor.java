@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.ResourceCleanup;
+import dev.prime.render.diagnostic.ImageDiagnosticSelection;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
@@ -38,6 +39,8 @@ public final class RealtimeFrameExecutor {
             VulkanReconstructionProcessor.Frame processorFrame,
             VulkanImage output,
             VulkanImage stableRadiance,
+            ImageDiagnosticSelection diagnostics,
+            DisplayExposureDiagnostics exposureDiagnostics,
             VulkanGpuTextureView atlasView,
             List<TraceBackend.SceneTexture> sceneTextures,
             long textureRevision,
@@ -47,6 +50,7 @@ public final class RealtimeFrameExecutor {
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
+        DisplayExposureDiagnostics.Capture exposureCapture = null;
         VulkanFrameSubmission submission =
                 new VulkanFrameSubmission(this.imageInitialization);
         try {
@@ -59,6 +63,8 @@ public final class RealtimeFrameExecutor {
             Objects.requireNonNull(plan, "plan");
             Objects.requireNonNull(output, "output");
             Objects.requireNonNull(stableRadiance, "stableRadiance");
+            Objects.requireNonNull(diagnostics, "diagnostics");
+            Objects.requireNonNull(exposureDiagnostics, "exposureDiagnostics");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(sceneTextures, "sceneTextures");
             Objects.requireNonNull(mainColor, "mainColor");
@@ -98,11 +104,16 @@ public final class RealtimeFrameExecutor {
                     scene,
                     false);
             pipeline.trace(commandBuffer, plan.integrator(), scene);
+            processor.captureRendererDiagnostic(
+                    commandBuffer, this.imageInitialization, diagnostics.renderer());
             processor.record(
                     commandBuffer,
                     processorFrame,
                     plan.reconstruction(),
                     this.imageInitialization);
+            processor.presentRendererDiagnostic(commandBuffer, diagnostics.renderer());
+            exposureCapture = exposureDiagnostics.record(
+                    commandBuffer, processor.displayExposureStateBuffer());
             VulkanImageTransitions.finishAtlasRead(
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.finishSceneTextureReads(
@@ -122,6 +133,7 @@ public final class RealtimeFrameExecutor {
             HdrPresentation.publish(this.context, processor.hdrDisplayOutput(), output);
             // A normal return transfers command/resource ownership and advances Prime histories.
             submission.submitted();
+            exposureDiagnostics.submitted(exposureCapture);
             long submittedPipelineFrame = pipelineFrame;
             RuntimeException commitFailure = ResourceCleanup.run(
                     () -> pipeline.submitted(submittedPipelineFrame), null);
@@ -161,6 +173,11 @@ public final class RealtimeFrameExecutor {
                 }
                 failure = ResourceCleanup.run(
                         () -> processor.abandon(processorFrame),
+                        failure);
+                DisplayExposureDiagnostics.Capture abandonedExposureCapture =
+                        exposureCapture;
+                failure = ResourceCleanup.run(
+                        () -> exposureDiagnostics.abandon(abandonedExposureCapture),
                         failure);
                 throw failure;
             }

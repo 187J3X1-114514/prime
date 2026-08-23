@@ -5,6 +5,7 @@ import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
@@ -42,11 +43,19 @@ public interface VulkanReconstructionProcessor extends Destroyable {
             VkCommandBuffer commandBuffer,
             VulkanImageInitializationBatch initialization);
 
+    void captureRendererDiagnostic(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization,
+            RendererImageView view);
+
     void record(
             VkCommandBuffer commandBuffer,
             Frame frame,
             ReconstructionFrameParameters parameters,
             VulkanImageInitializationBatch initialization);
+
+    void presentRendererDiagnostic(
+            VkCommandBuffer commandBuffer, RendererImageView view);
 
     void abandon(Frame frame);
 

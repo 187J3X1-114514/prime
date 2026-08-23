@@ -19,7 +19,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 /** Prime's common linear Rec.2020 HDR to selectable sRGB Rec.709 display boundary. */
 public final class DisplayTransformPass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 24;
+    private static final int PUSH_SIZE = 20;
     private static final int LOCAL_SIZE = 8;
 
     private final VulkanContext context;
@@ -200,7 +200,6 @@ public final class DisplayTransformPass implements Destroyable {
 
     public void record(
             VkCommandBuffer commandBuffer,
-            boolean diagnostic,
             float deltaSeconds,
             boolean reset,
             boolean instant,
@@ -217,9 +216,8 @@ public final class DisplayTransformPass implements Destroyable {
                 deltaSeconds,
                 reset,
                 instant,
-                diagnostic,
                 display.autoExposureCompensation());
-        this.recordDisplay(commandBuffer, diagnostic, display, initialization);
+        this.recordDisplay(commandBuffer, display, initialization);
     }
 
     public void recordFrozen(
@@ -230,12 +228,11 @@ public final class DisplayTransformPass implements Destroyable {
         if (this.autoExposure != null) {
             throw new IllegalStateException("Adaptive display transform requires exposure update");
         }
-        this.recordDisplay(commandBuffer, false, display, initialization);
+        this.recordDisplay(commandBuffer, display, initialization);
     }
 
     private void recordDisplay(
             VkCommandBuffer commandBuffer,
-            boolean diagnostic,
             DisplaySettings.Snapshot display,
             VulkanImageInitializationBatch initialization) {
         java.util.Objects.requireNonNull(initialization, "initialization");
@@ -247,10 +244,9 @@ public final class DisplayTransformPass implements Destroyable {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, this.width);
             push.putInt(4, this.height);
-            push.putInt(8, diagnostic ? 1 : 0);
-            push.putFloat(12, display.finalExposureMultiplier());
-            push.putFloat(16, reinhard.outputPeak());
-            push.putFloat(20, reinhard.curvePeak());
+            push.putFloat(8, display.finalExposureMultiplier());
+            push.putFloat(12, reinhard.outputPeak());
+            push.putFloat(16, reinhard.curvePeak());
             VK12.vkCmdBindPipeline(
                     commandBuffer,
                     VK12.VK_PIPELINE_BIND_POINT_COMPUTE,

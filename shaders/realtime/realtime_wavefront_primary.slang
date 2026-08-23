@@ -264,66 +264,6 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 hasGuide,
                 primaryReflectionOnly,
                 branchResult);
-        if (transmissionBranch
-                && guideEnabled
-                && hasScatter
-                && !hasGuide
-                && continuation) {
-            uint sourceReason;
-            bool adjacentAirGap = primeHasAdjacentMedium(
-                            surface.adjacentInterfaceControl)
-                    && primeUsesAdjacentAirGap(
-                            surface.materialControl,
-                            surface.opticalControl,
-                            surface.adjacentInterfaceControl);
-            if (adjacentAirGap) {
-                sourceReason = PRIME_GUIDE_STOP_PRIMARY_AIR_GAP;
-            } else if ((surface.materialControl & PRIME_MATERIAL_THIN_WALLED) != 0u) {
-                sourceReason = PRIME_GUIDE_STOP_PRIMARY_THIN_WALLED;
-            } else if (dot(
-                            primeSurfaceOutwardShadingNormal(surface),
-                            viewDirection) >= 0.0) {
-                float3 recordDirection =
-                        record.transport.rayDirectionAndDenoiserControl.xyz;
-                PrimeOpenPbrVolumeStack recordStack =
-                        primeWavefrontVolumeStack(record.transport);
-                uint expectedStackCount = min(volumeStack.count + 1u, 2u);
-                uint2 expectedSource = uint2(
-                        surface.sectionIndex, primeSurfaceTriangleIndex(surface));
-                if ((bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) == 0u
-                        || any(recordDirection != bsdf.direction)
-                        || dot(recordDirection,
-                                primeSurfaceOutwardShadingNormal(surface)) >= 0.0) {
-                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_DIRECTION;
-                } else if (selected.volumeStack.count != expectedStackCount
-                        || recordStack.count != selected.volumeStack.count) {
-                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_STACK;
-                } else if (any(record.transport.sourceAndPathControl.xy
-                                != expectedSource)) {
-                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_SOURCE;
-                } else if (any(record.transport
-                                .physicalOriginAndPreviousBsdfPdf.xyz
-                                != surface.position)) {
-                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_ENTER_ORIGIN;
-                } else {
-                    sourceReason = PRIME_GUIDE_STOP_PRIMARY_SOLID_ENTERING;
-                }
-            } else {
-                sourceReason = volumeStack.count == 0u
-                        ? PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING_EMPTY
-                        : PRIME_GUIDE_STOP_PRIMARY_SOLID_EXITING;
-            }
-            // A true miss preserves this source-side classification. Acquiring guide ownership
-            // or reaching another terminal condition replaces it later in the branch lifetime.
-            primeStoreUnownedTransmissionGuideDiagnostic(pixel, sourceReason);
-        }
-        if (transmissionBranch && guideEnabled && !hasGuide && !continuation) {
-            primeStoreUnownedTransmissionGuideDiagnostic(
-                    pixel,
-                    hasScatter
-                            ? PRIME_GUIDE_STOP_PRIMARY_ADVANCE
-                            : PRIME_GUIDE_STOP_PRIMARY_NO_SCATTER);
-        }
     }
     return queued;
 }
@@ -339,7 +279,6 @@ void primeWavefrontPrimary<AreaNee>(
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);

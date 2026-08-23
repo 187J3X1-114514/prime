@@ -22,8 +22,6 @@ final class NrdMotionConstantsTest {
                 target,
                 matrix(1.0F),
                 matrix(21.0F),
-                matrix(41.0F),
-                6,
                 -0.5F,
                 0.25F);
 
@@ -35,17 +33,7 @@ final class NrdMotionConstantsTest {
                 target,
                 ShaderAbi.NRD_MOTION_PUSH_PREVIOUS_WORLD_TO_CLIP_OFFSET,
                 21.0F);
-        assertMatrix(
-                target,
-                ShaderAbi
-                        .NRD_MOTION_PUSH_PREVIOUS_RENDERED_WORLD_TO_CLIP_OFFSET,
-                41.0F);
-        int diagnostic =
-                ShaderAbi.NRD_MOTION_PUSH_DIAGNOSTIC_MODE_OFFSET;
-        assertEquals(6, target.getInt(diagnostic));
-        assertEquals(0, target.getInt(diagnostic + Integer.BYTES));
-        int jitter =
-                ShaderAbi.NRD_MOTION_PUSH_CURRENT_JITTER_PIXELS_OFFSET;
+        int jitter = ShaderAbi.NRD_MOTION_PUSH_CURRENT_JITTER_PIXELS_OFFSET;
         assertEquals(-0.5F, target.getFloat(jitter));
         assertEquals(0.25F, target.getFloat(jitter + Float.BYTES));
     }
@@ -60,12 +48,9 @@ final class NrdMotionConstantsTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> NrdMotionConstants.write(
-                        ByteBuffer.allocate(
-                                ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE - 1),
+                        ByteBuffer.allocate(ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE - 1),
                         identity,
                         identity,
-                        identity,
-                        0,
                         0.0F,
                         0.0F));
         assertThrows(
@@ -74,8 +59,6 @@ final class NrdMotionConstantsTest {
                         target,
                         new Matrix4f().m00(Float.NaN),
                         identity,
-                        identity,
-                        0,
                         0.0F,
                         0.0F));
         assertThrows(
@@ -84,18 +67,6 @@ final class NrdMotionConstantsTest {
                         target,
                         identity,
                         identity,
-                        identity,
-                        7,
-                        0.0F,
-                        0.0F));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> NrdMotionConstants.write(
-                        target,
-                        identity,
-                        identity,
-                        identity,
-                        0,
                         0.5001F,
                         0.0F));
     }
@@ -108,12 +79,9 @@ final class NrdMotionConstantsTest {
         return new Matrix4f().set(values);
     }
 
-    private static void assertMatrix(
-            ByteBuffer target, int offset, float first) {
+    private static void assertMatrix(ByteBuffer target, int offset, float first) {
         for (int index = 0; index < 16; index++) {
-            assertEquals(
-                    first + index,
-                    target.getFloat(offset + index * Float.BYTES));
+            assertEquals(first + index, target.getFloat(offset + index * Float.BYTES));
         }
     }
 }

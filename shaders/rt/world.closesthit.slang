@@ -10,32 +10,6 @@ import "rt/hit_common.slang";
 
 layout(location = 0) rayPayloadInEXT TracePayload primePayload;
 
-uint primeTriangleDebugHash(uint value) {
-    value ^= value >> 16u;
-    value *= 0x21f0aaadu;
-    value ^= value >> 15u;
-    value *= 0xf35a2d97u;
-    return value ^ (value >> 15u);
-}
-
-float3 primeTriangleDebugColor(PrimitiveRecord primitive) {
-    // TLAS instance indices are allocation-order state and change whenever streamed clusters
-    // rebuild the table. Primitive contents and their deterministic BLAS order remain stable.
-    uint seed = primeTriangleDebugHash(primitive.uv0 ^ primitive.uv1 ^ primitive.uv2);
-    seed = primeTriangleDebugHash(seed ^ primitive.tint);
-    seed = primeTriangleDebugHash(seed ^ primitive.normal);
-    seed = primeTriangleDebugHash(seed ^ primitive.flagsEmitter);
-    seed = primeTriangleDebugHash(seed ^ primitive.uvDensity ^ primitive.tangent);
-    seed = primeTriangleDebugHash(seed ^ GeometryIndex());
-    seed = primeTriangleDebugHash(seed ^ PrimitiveIndex());
-    float hue = float(seed & 0xffffu) * (1.0 / 65536.0);
-    float3 rgb = clamp(
-            abs(frac(hue + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0,
-            0.0,
-            1.0);
-    return 0.9 * lerp(float3(1.0), rgb, 0.75);
-}
-
 [shader("closesthit")]
 void main(
         in BuiltInTriangleIntersectionAttributes attributes) {
@@ -75,9 +49,7 @@ void main(
     primePayload.position = hit.position;
     primePayload.positionReserved = primePackSurfaceMotion(
             hit.triangleIndex, dynamic);
-    primePayload.baseColor = primeVisualizesTriangles()
-            ? lerp(material.baseColor, primeTriangleDebugColor(primitive), 0.5)
-            : material.baseColor;
+    primePayload.baseColor = material.baseColor;
     primePayload.materialControl = material.materialControl;
     primePayload.sectionIndex = InstanceID();
     if (dynamic) {

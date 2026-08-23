@@ -1,6 +1,5 @@
 package dev.prime.render.vulkan.reconstruction;
 
-import dev.prime.render.post.DlssRrDebugStatus;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionExtent;
 import dev.prime.render.post.ReconstructionFrame;
@@ -11,7 +10,6 @@ import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
 import dev.prime.render.vulkan.dlss.DlssRrPostProcessor;
 import dev.prime.render.vulkan.dlss.DlssRrProfile;
-import java.util.List;
 
 final class DlssRrBackend implements ReconstructionBackend {
     private final DlssRrNative.Context ngxContext;
@@ -91,23 +89,6 @@ final class DlssRrBackend implements ReconstructionBackend {
     @Override
     public String executionLabel() {
         return "Prime 1spp path tracing and DLSS Ray Reconstruction";
-    }
-
-    @Override
-    public List<String> debugLines(
-            ResolvedReconstruction selection,
-            ReconstructionFrame frame,
-            ReconstructionDebugSettings debugSettings) {
-        return DlssRrDebugStatus.lines(
-                selection.quality(),
-                selection.extent().width(),
-                selection.extent().height(),
-                selection.displayExtent().width(),
-                selection.displayExtent().height(),
-                true,
-                frame.reset(),
-                debugSettings.dlssRr(),
-                debugSettings.dlssRrFullscreen());
     }
 
     @Override

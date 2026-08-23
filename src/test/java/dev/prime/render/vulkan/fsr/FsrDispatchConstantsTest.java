@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.FrameCamera;
-import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.SubpixelJitter;
@@ -40,8 +39,7 @@ final class FsrDispatchConstantsTest {
                 2160,
                 new SubpixelJitter(-0.25F, 0.375F),
                 12.5F,
-                true,
-                FsrDebugView.OVERVIEW);
+                true);
         ByteBuffer target = ByteBuffer.allocateDirect(
                         FsrDispatchConstants.END)
                 .order(ByteOrder.nativeOrder());
@@ -102,7 +100,7 @@ final class FsrDispatchConstantsTest {
                 plan.viewSpaceToMetersFactor(),
                 target.getFloat(
                         FsrDispatchConstants.VIEW_SPACE_TO_METERS));
-        assertEquals(1, target.getInt(FsrDispatchConstants.FLAGS));
+        assertEquals(0, target.getInt(FsrDispatchConstants.FLAGS));
     }
 
     @Test

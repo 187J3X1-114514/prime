@@ -150,8 +150,7 @@ final class NrdTemporalStateTest {
                 NOON,
                 0.25F,
                 -0.5F,
-                true,
-                NrdDiagnostics.Mode.REPROJECTION_ERROR);
+                true);
         NrdTemporalState.Plan transition =
                 NrdTemporalState.initial().plan(input);
         NrdFramePlan plan = transition.semanticPlan(input);
@@ -182,8 +181,7 @@ final class NrdTemporalStateTest {
                 sun,
                 jitterX,
                 jitterY,
-                forceRestart,
-                NrdDiagnostics.Mode.OFF);
+                forceRestart);
     }
 
     private static FrameCamera camera(double x) {

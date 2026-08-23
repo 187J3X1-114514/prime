@@ -21,7 +21,6 @@ final class FsrDispatchConstants {
     static final int FLAGS = 428;
     static final int END = 432;
 
-    private static final int DEBUG_VIEW = 1;
 
     private FsrDispatchConstants() {
     }
@@ -66,7 +65,7 @@ final class FsrDispatchConstants {
         target.putFloat(
                 VIEW_SPACE_TO_METERS,
                 plan.viewSpaceToMetersFactor());
-        target.putInt(FLAGS, plan.debugView() ? DEBUG_VIEW : 0);
+        target.putInt(FLAGS, 0);
     }
 
     private static void putExtent(

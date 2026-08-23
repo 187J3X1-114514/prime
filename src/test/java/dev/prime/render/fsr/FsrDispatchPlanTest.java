@@ -1,7 +1,6 @@
 package dev.prime.render.fsr;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -23,8 +22,7 @@ final class FsrDispatchPlanTest {
                 2160,
                 new SubpixelJitter(-0.25F, 1.0F / 6.0F),
                 16.5F,
-                true,
-                FsrDebugView.OVERVIEW);
+                true);
 
         assertEquals(0.25F, plan.jitterOffset().x());
         assertEquals(-1.0F / 6.0F, plan.jitterOffset().y());
@@ -43,7 +41,6 @@ final class FsrDispatchPlanTest {
         assertEquals(
                 ShaderAbi.FSR_VIEW_SPACE_TO_METERS_FACTOR,
                 plan.viewSpaceToMetersFactor());
-        assertTrue(plan.debugView());
     }
 
     @Test
@@ -59,8 +56,7 @@ final class FsrDispatchPlanTest {
                         2160,
                         new SubpixelJitter(0.0F, 0.0F),
                         16.0F,
-                        false,
-                        FsrDebugView.OFF));
+                        false));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> FsrDispatchPlan.create(
@@ -71,8 +67,7 @@ final class FsrDispatchPlanTest {
                         2160,
                         new SubpixelJitter(0.0F, 0.0F),
                         Float.NaN,
-                        false,
-                        FsrDebugView.OFF));
+                        false));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> FsrDispatchPlan.create(
@@ -92,8 +87,7 @@ final class FsrDispatchPlanTest {
                         2160,
                         new SubpixelJitter(0.0F, 0.0F),
                         16.0F,
-                        false,
-                        FsrDebugView.OFF));
+                        false));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new SubpixelJitter(0.75F, 0.0F));
@@ -109,9 +103,8 @@ final class FsrDispatchPlanTest {
                 2160,
                 new SubpixelJitter(0.0F, 0.0F),
                 0.0F,
-                false,
-                FsrDebugView.OFF);
-        assertFalse(off.debugView());
+                false);
+        assertEquals(0.0F, off.frameTimeMilliseconds());
     }
 
     private static FrameCamera camera(float verticalFov) {

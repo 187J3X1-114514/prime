@@ -2,14 +2,12 @@ package dev.prime.render.vulkan.reconstruction;
 
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionExtent;
-import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import java.util.List;
 import java.util.Objects;
 
 /** Closed internal contract implemented only by Prime's three built-in backends. */
@@ -38,18 +36,7 @@ interface ReconstructionBackend {
         return quality.packedRayCone(projectionM00, projectionM11, width, height);
     }
 
-    default boolean rawNumericalDiagnostic(ReconstructionDebugSettings debugSettings) {
-        return false;
-    }
-
     String executionLabel();
-
-    default List<String> debugLines(
-            ResolvedReconstruction selection,
-            ReconstructionFrame frame,
-            ReconstructionDebugSettings debugSettings) {
-        return List.of();
-    }
 
     VulkanReconstructionProcessor create(CreateInput input);
 

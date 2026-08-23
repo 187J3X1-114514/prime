@@ -1,8 +1,8 @@
 package dev.prime.render.runtime;
 
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrInputView;
 import java.util.Objects;
 
 /** Client-thread-owned shortcut edges and non-persistent session controls. */
@@ -21,12 +21,6 @@ public final class SessionController {
                 && (this.controls.screenshotRequested() || screenshotActive)) {
             requestScreenshot(false);
         }
-        if (current.rrCycle() && !this.previous.rrCycle()) {
-            setRrDebugView(this.controls.rrDebugView().next());
-        }
-        if (current.rrLayout() && !this.previous.rrLayout()) {
-            setRrDebugFullscreen(!this.controls.rrDebugFullscreen());
-        }
         this.previous = current;
     }
 
@@ -34,42 +28,27 @@ public final class SessionController {
         this.controls = this.controls.withScreenshotRequested(value);
     }
 
-    public void setTriangleDebug(boolean value) {
-        this.controls = this.controls.withTriangleDebug(value);
-    }
-
     public void setRendererDiagnostics(boolean value) {
         this.controls = this.controls.withRendererDiagnostics(value);
     }
 
-    public void setRawOutput(boolean value) {
-        this.controls = this.controls.withRawOutput(value);
+    public void setRendererImageView(RendererImageView value) {
+        this.controls = this.controls.withRendererImageView(value);
     }
 
-    public void setNrdDebugView(NrdDiagnostics.Mode value) {
-        this.controls = this.controls.withNrdDebugView(value);
+    public void setRrInputView(RrInputView value) {
+        this.controls = this.controls.withRrInputView(value);
     }
 
-    public void setFsrDebugView(FsrDebugView value) {
-        this.controls = this.controls.withFsrDebugView(value);
-    }
-
-    public void setRrDebugView(DlssRrDebugView value) {
-        this.controls = this.controls.withRrDebugView(value);
-    }
-
-    public void setRrDebugFullscreen(boolean value) {
-        this.controls = this.controls.withRrDebugFullscreen(value);
+    public void setNrdInputView(NrdInputView value) {
+        this.controls = this.controls.withNrdInputView(value);
     }
 
     public void restoreDefaults() {
         this.controls = SessionControls.defaults();
     }
 
-    public record KeyState(
-            boolean escape,
-            boolean rrCycle,
-            boolean rrLayout) {
-        public static final KeyState NONE = new KeyState(false, false, false);
+    public record KeyState(boolean escape) {
+        public static final KeyState NONE = new KeyState(false);
     }
 }

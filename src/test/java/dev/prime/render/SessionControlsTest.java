@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrInputView;
 import org.junit.jupiter.api.Test;
 
 final class SessionControlsTest {
@@ -17,35 +17,34 @@ final class SessionControlsTest {
         SessionControls defaults = SessionControls.defaults();
         SessionControls changed = defaults
                 .withScreenshotRequested(true)
-                .withTriangleDebug(true)
                 .withRendererDiagnostics(true)
-                .withRawOutput(true)
-                .withNrdDebugView(NrdDiagnostics.Mode.NATIVE_VALIDATION)
-                .withFsrDebugView(FsrDebugView.OVERVIEW)
-                .withRrDebugView(DlssRrDebugView.MOTION)
-                .withRrDebugFullscreen(true);
+                .withRendererImageView(RendererImageView.NORMAL);
 
         assertFalse(defaults.screenshotRequested());
-        assertFalse(defaults.triangleDebug());
         assertFalse(defaults.rendererDiagnostics());
-        assertFalse(defaults.rawOutput());
-        assertEquals(NrdDiagnostics.Mode.OFF, defaults.nrdDebugView());
-        assertEquals(FsrDebugView.OFF, defaults.fsrDebugView());
-        assertEquals(DlssRrDebugView.OFF, defaults.rrDebugView());
-        assertFalse(defaults.rrDebugFullscreen());
+        assertEquals(RendererImageView.OFF, defaults.imageDiagnostics().renderer());
+        assertEquals(RrInputView.OFF, defaults.imageDiagnostics().rr());
+        assertEquals(NrdInputView.OFF, defaults.imageDiagnostics().nrd());
         assertTrue(changed.screenshotRequested());
-        assertTrue(changed.triangleDebug());
         assertTrue(changed.rendererDiagnostics());
-        assertTrue(changed.rawOutput());
-        assertEquals(NrdDiagnostics.Mode.NATIVE_VALIDATION, changed.nrdDebugView());
-        assertEquals(
-                FsrDebugView.OVERVIEW,
-                changed.fsrDebugView());
-        assertEquals(DlssRrDebugView.MOTION, changed.rrDebugView());
-        assertTrue(changed.rrDebugFullscreen());
+        assertEquals(RendererImageView.NORMAL, changed.imageDiagnostics().renderer());
         assertNotSame(defaults, changed);
-        assertSame(changed, changed.withRrDebugFullscreen(true));
         assertSame(changed, changed.withRendererDiagnostics(true));
-        assertSame(changed, changed.withRawOutput(true));
+    }
+
+    @Test
+    void selectingOneImageDomainDisablesTheOtherTwo() {
+        SessionControls controls = SessionControls.defaults()
+                .withRendererImageView(RendererImageView.GRID)
+                .withRrInputView(RrInputView.MOTION);
+
+        assertEquals(RendererImageView.OFF, controls.imageDiagnostics().renderer());
+        assertEquals(RrInputView.MOTION, controls.imageDiagnostics().rr());
+        assertEquals(NrdInputView.OFF, controls.imageDiagnostics().nrd());
+
+        controls = controls.withNrdInputView(NrdInputView.PRIMARY_NORMAL);
+        assertEquals(RendererImageView.OFF, controls.imageDiagnostics().renderer());
+        assertEquals(RrInputView.OFF, controls.imageDiagnostics().rr());
+        assertEquals(NrdInputView.PRIMARY_NORMAL, controls.imageDiagnostics().nrd());
     }
 }

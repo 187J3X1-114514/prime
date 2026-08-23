@@ -33,9 +33,7 @@ final class RealtimeFramePlanTest {
                     new ReconstructionFrame(0, JITTER, true),
                     JITTER,
                     7,
-                    PACKED_RAY_CONE,
-                    mode == PostProcessingMode.NRD_FSR,
-                    true);
+                    PACKED_RAY_CONE);
 
             assertEquals(mode, plan.integrator().postProcessingMode());
             assertEquals(input.transparentGuideMode(), plan.integrator().transparentGuideMode());
@@ -44,10 +42,6 @@ final class RealtimeFramePlanTest {
             assertEquals(7, plan.integrator().jitterPhase());
             assertEquals(JITTER, plan.jitter());
             assertTrue(plan.reconstructionReset());
-            assertTrue(plan.rendererDiagnostics());
-            assertEquals(
-                    mode == PostProcessingMode.NRD_FSR,
-                    plan.integrator().rawNumericalDiagnostic());
         }
     }
 
@@ -75,7 +69,6 @@ final class RealtimeFramePlanTest {
                 firstInput.lighting(),
                 firstInput.material(),
                 firstInput.shInput(),
-                firstInput.triangleDebug(),
                 firstInput.display(),
                 false);
         RealtimeSampleState.Plan second =
@@ -87,9 +80,7 @@ final class RealtimeFramePlanTest {
                 new ReconstructionFrame(1, JITTER, false),
                 JITTER,
                 8,
-                PACKED_RAY_CONE,
-                false,
-                false);
+                PACKED_RAY_CONE);
 
         assertFalse(second.reset());
         assertEquals(1, plan.integrator().sampleIndex());
@@ -120,9 +111,7 @@ final class RealtimeFramePlanTest {
                         new ReconstructionFrame(0, JITTER, false),
                         JITTER,
                         1,
-                        PACKED_RAY_CONE,
-                        false,
-                        false));
+                        PACKED_RAY_CONE));
         assertThrows(
                 IllegalStateException.class,
                 () -> RealtimeFramePlan.complete(
@@ -132,9 +121,7 @@ final class RealtimeFramePlanTest {
                         new ReconstructionFrame(0, new SubpixelJitter(0.0F, 0.0F), true),
                         JITTER,
                         1,
-                        PACKED_RAY_CONE,
-                        false,
-                        false));
+                        PACKED_RAY_CONE));
         ReconstructionFrameParameters wrongTexture = new ReconstructionFrameParameters(
                 parameters.camera(),
                 parameters.frameTimeNanos(),
@@ -153,9 +140,7 @@ final class RealtimeFramePlanTest {
                         new ReconstructionFrame(0, JITTER, true),
                         JITTER,
                         1,
-                        PACKED_RAY_CONE,
-                        false,
-                        false));
+                        PACKED_RAY_CONE));
     }
 
     private static RealtimeFrameInput input(PostProcessingMode mode) {
@@ -183,7 +168,6 @@ final class RealtimeFramePlanTest {
                 new LightingSettings.Snapshot(0, 0, 0, 13L),
                 new MaterialSettings.Snapshot(90, 17L),
                 true,
-                false,
                 new DisplaySettings.Snapshot(0, 50),
                 false);
     }

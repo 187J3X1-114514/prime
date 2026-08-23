@@ -88,14 +88,14 @@ ABI 和离散语义保持精确：descriptor、push constant、结构布局、pa
   各向异性粗糙度、PDF、单位方向、对称性、互易性、事件和状态转换；
 - `PrimeBsdfGpuTest` 与 `OpenPbrTransmissionSlabGpuTest`：生产 adapter 的有限性、非负响应、
   采样/求值一致性、relative eta、介质栈、Snell/TIR 和极端传播距离；
-- `PrimeBsdfDiagnosticsGpuTest`：adapter 在拒绝或净化之前对 NaN/Inf、负值与非法方向的
-  显式逐 invocation 观察，以及关闭观察时的无状态边界；
+- `PrimeBsdfDiagnosticsGpuTest`：专用测试 entry 中，adapter 在拒绝或净化之前对 NaN/Inf、
+  负值与非法方向的显式逐 invocation 观察，以及关闭观察时的无状态边界；
 - `OpenPbrDistributionGpuTest`：采样直方图与 PDF 的统计一致性，以及 Monte Carlo 能量与
   独立求积的一致性；
 - `PrimeNumericalGpuTest`：以原始 IEEE-754 bit pattern 覆盖 NaN、±Inf、正负零、次正规数、
   FP16 上界、负值、单位区间和非法方向的生产分类器；
 - `PrimeProductionMathGpuTest` 和其余 `shaderTest`：throughput、MIS、Beer-Lambert、RR、
-  灯光 PDF、NRD/显示输入及数值诊断链路。
+  灯光 PDF、NRD/显示输入及测试数值分类链路。
 
 测试必须直接检查可执行结果中的 NaN、正无穷、负无穷、负 PDF/响应、非法方向和越界状态。
 若改动触及现有参数域之外的近似、极端值或长路径传播，先扩展对应行为测试，再接受性能结果。
@@ -107,7 +107,7 @@ ABI 和离散语义保持精确：descriptor、push constant、结构布局、pa
    constant smoke test，并以同一工具链生成生产 Slang Shader。
 2. **已完成——生成 ABI 与无状态基础层**：ABI 生成器输出 Slang；迁移数值、transport、颜色、
    sampling 等叶子模块，并为每个模块复用现有数学性质测试。
-3. **已完成——独立 compute/post pipeline**：native debug、auto exposure、display/FSR、NRD/RR
+3. **已完成——独立 compute/post pipeline**：auto exposure、display/FSR、NRD/RR
    等依赖面较小的 entry point 开始，建立 shadow artifact 和逐 pipeline host 切换方式。
 4. **已完成——场景、材质与命中契约**：迁移材质 IR、LabPBR 翻译、介质边界、hit common、ray payload
    和 world/shadow hit/miss；先锁定结构 stride、payload location 和 any-hit 行为。

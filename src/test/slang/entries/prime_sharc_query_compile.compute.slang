@@ -13,6 +13,6 @@ void main()
             primeSharcFrame.cameraPosition, float3(0.0, 1.0, 0.0));
     if (parameters.hashGridData.capacity == 0)
     {
-        ((uint*)primeSharcFrame.diagnosticsAddress)[0] = asuint(voxelSize);
+        ((uint*)primeSharcFrame.resolvedAddress)[0] = asuint(voxelSize);
     }
 }

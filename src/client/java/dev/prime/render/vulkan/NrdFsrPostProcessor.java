@@ -1,7 +1,8 @@
 package dev.prime.render.vulkan;
 
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
@@ -9,7 +10,6 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubmittedFrame;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
-import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.post.nrd.NrdFrameHistory;
 import dev.prime.render.post.nrd.NrdFrameInput;
 import dev.prime.render.post.nrd.NrdFramePlan;
@@ -35,7 +35,9 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
     private final NrdFrameHistory nrdHistory = new NrdFrameHistory();
     private final Fsr3Upscaler upscaler;
     private final VulkanImage displayOutput;
-    private NativeDebugPresentPass nrdDebugPresent;
+    private final VulkanImage stableRadiance;
+    private NrdInputDebugPass nrdDebugPresent;
+    private RendererImageDebugPass rendererDebugPass;
     private boolean destroyed;
 
     private NrdFsrPostProcessor(
@@ -48,7 +50,8 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
             VulkanImage sceneColor,
             NrdDenoiser denoiser,
             Fsr3Upscaler upscaler,
-            VulkanImage displayOutput) {
+            VulkanImage displayOutput,
+            VulkanImage stableRadiance) {
         this.context = context;
         this.quality = quality;
         this.renderWidth = renderWidth;
@@ -59,6 +62,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         this.denoiser = denoiser;
         this.upscaler = upscaler;
         this.displayOutput = displayOutput;
+        this.stableRadiance = stableRadiance;
     }
 
     public static NrdFsrPostProcessor create(
@@ -107,7 +111,8 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                     sceneColor,
                     denoiser,
                     upscaler,
-                    displayOutput);
+                    displayOutput,
+                    accumulation);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(upscaler, exception);
             ResourceCleanup.destroy(denoiser, exception);
@@ -145,8 +150,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                 parameters.frameTimeNanos(),
                 parameters.sceneRevision(),
                 parameters.textureRevision(),
-                parameters.forceRestart(),
-                debugSettings.fsr());
+                parameters.forceRestart());
         try {
             SubmittedFrame<NrdFramePlan> nrd = this.nrdHistory.plan(
                     new NrdFrameInput(
@@ -157,8 +161,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                             parameters.sunDirection(),
                             fsr.jitter().x(),
                             fsr.jitter().y(),
-                            fsr.reset(),
-                            debugSettings.nrd()));
+                            fsr.reset()));
             return new FrameToken(
                     this, fsr, nrd, debugSettings);
         } catch (RuntimeException exception) {
@@ -202,6 +205,16 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
     }
 
     @Override
+    public void captureRendererDiagnostic(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization,
+            RendererImageView view) {
+        if (view.active() && view != RendererImageView.DENOISED_OUTPUT) {
+            this.rendererDebugPass().capture(commandBuffer, initialization, view);
+        }
+    }
+
+    @Override
     public void record(
             VkCommandBuffer commandBuffer,
             Frame frame,
@@ -220,23 +233,21 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                 commandBuffer,
                 token.nrdPrepared,
                 parameters.sunRadianceMultiplier());
-        boolean displayDiagnostic =
-                token.nrdPlan.plan().input().diagnostic() != NrdDiagnostics.Mode.OFF
-                        || token.debugSettings.fsr() != FsrDebugView.OFF;
         this.upscaler.record(
                 commandBuffer,
                 token.fsr,
                 parameters.display(),
-                displayDiagnostic,
                 initialization);
-        NrdDiagnostics.Mode diagnostic =
-                token.nrdPlan.plan().input().diagnostic();
-        if (diagnostic != NrdDiagnostics.Mode.OFF) {
-            this.nrdDebugPresent().record(
-                    commandBuffer,
-                    diagnostic.presentSource(),
-                    diagnostic.presentation());
+        NrdInputView diagnostic = token.debugSettings.images().nrd();
+        if (diagnostic.active()) {
+            this.nrdDebugPresent(token.nrdPrepared.inputs()).record(commandBuffer, diagnostic);
         }
+    }
+
+    @Override
+    public void presentRendererDiagnostic(
+            VkCommandBuffer commandBuffer, RendererImageView view) {
+        if (view.active()) this.rendererDebugPass().present(commandBuffer, view);
     }
 
     @Override
@@ -302,22 +313,37 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         return this.sceneColor;
     }
 
-    private NativeDebugPresentPass nrdDebugPresent() {
+    private NrdInputDebugPass nrdDebugPresent(
+            dev.prime.render.vulkan.nrd.PreparedNrdFrame prepared) {
         if (this.nrdDebugPresent == null) {
-            this.nrdDebugPresent = NativeDebugPresentPass.create(
+            this.nrdDebugPresent = NrdInputDebugPass.create(
                     this.context,
+                    this.sceneColor,
+                    prepared,
                     this.displayOutput,
-                    this.denoiser.validation(),
-                    this.denoiser.rawNumericalDiagnostic(),
-                    this.sceneColor);
+                    this.upscaler.hdrDisplayOutput());
         }
         return this.nrdDebugPresent;
+    }
+
+    private RendererImageDebugPass rendererDebugPass() {
+        if (this.rendererDebugPass == null) {
+            this.rendererDebugPass = RendererImageDebugPass.create(
+                    this.context,
+                    this.denoiser.rawFrame(),
+                    this.stableRadiance,
+                    this.upscaler.linearOutput(),
+                    this.displayOutput,
+                    this.upscaler.hdrDisplayOutput());
+        }
+        return this.rendererDebugPass;
     }
 
     @Override
     public void destroy() {
         if (this.destroyed) return;
         RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.rendererDebugPass, failure);
         failure = ResourceCleanup.destroy(this.nrdDebugPresent, failure);
         failure = ResourceCleanup.destroy(this.upscaler, failure);
         failure = ResourceCleanup.destroy(this.denoiser, failure);

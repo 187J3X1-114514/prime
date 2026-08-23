@@ -13,5 +13,4 @@ void main()
     path.previousSharcEvent = PRIME_SHARC_EVENT_DISCRETE;
     PrimeIndirectReuseResult reuse = PrimeSharcIndirectReuse().query(
             context, path, surface, false);
-    context.diagnostics.flags ^= surface.hitKind | asuint(reuse.contribution.x);
 }

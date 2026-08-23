@@ -7,14 +7,6 @@ SurfaceInteraction primeFusedWavefrontTrace(
         inout PrimeIntegratorContext context,
         uint recordIndex,
         bool transparent) {
-    uint packedDiagnostic = asuint(
-            primeWavefrontPaths[recordIndex]
-                    .transport.throughputAndNumericalFlags.w);
-    context.diagnostics.flags =
-            packedDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
-    context.diagnostics.firstContext =
-            (packedDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
-                    & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
     uint bounce = primeWavefrontPaths[recordIndex]
                     .transport.sourceAndPathControl.w
             & PRIME_WAVEFRONT_BYTE_MASK;
@@ -38,10 +30,6 @@ SurfaceInteraction primeFusedWavefrontTrace(
             rayDirection,
             sourcePrimitive,
             pathClass);
-    PrimeWavefrontTransportRecord record =
-            primeLoadWavefrontTransportRecord(recordIndex);
-    primeStoreWavefrontTransmissionMissDiagnostic(
-            recordIndex, record, traceControl, surface);
     return surface;
 }
 

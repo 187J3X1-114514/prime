@@ -13,12 +13,10 @@ public record NrdFrameInput(
         SunDirection sunDirection,
         float cameraJitterX,
         float cameraJitterY,
-        boolean forceRestart,
-        NrdDiagnostics.Mode diagnostic) {
+        boolean forceRestart) {
     public NrdFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(sunDirection, "sunDirection");
-        Objects.requireNonNull(diagnostic, "diagnostic");
         if (!camera.isFinite()) {
             throw new IllegalArgumentException(
                     "NRD camera must be finite");

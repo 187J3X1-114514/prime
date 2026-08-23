@@ -224,7 +224,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
 @SuppressWarnings("auxiliaryclass")
 abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPipeline {
     static final int DESCRIPTOR_BINDING_COUNT = 26;
-    private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
+    private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 22;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL,
             ShaderAbi.WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
@@ -242,7 +242,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
-    private final RealtimeSharcDiagnostics sharcDiagnostics;
     private VulkanBuffer wavefront;
     private OutputBindings bindings;
     private RealtimeSharc sharc;
@@ -266,7 +265,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
-        RealtimeSharcDiagnostics diagnostics = null;
         try {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 setLayout = createDescriptorSetLayout(context, stack);
@@ -283,16 +281,11 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                     schedule,
                     pipelineLabel,
                     shaderBindingTableLabel);
-            diagnostics = new RealtimeSharcDiagnostics(context);
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
-            this.sharcDiagnostics = diagnostics;
             this.lastRecordedPassCount = defaultPassCount;
         } catch (RuntimeException exception) {
-            if (diagnostics != null) {
-                diagnostics.destroy();
-            }
             if (traceProgram != null) {
                 traceProgram.destroy();
             }
@@ -314,9 +307,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
     @Override
     public long sizedResourceBytes() {
         long wavefrontBytes = this.wavefront == null ? 0L : this.wavefront.size();
-        return wavefrontBytes
-                + this.sharcDiagnostics.resourceBytes()
-                + (this.sharc == null ? 0L : this.sharc.resourceBytes());
+        return wavefrontBytes + (this.sharc == null ? 0L : this.sharc.resourceBytes());
     }
 
     public void ensureDescriptors(
@@ -419,48 +410,34 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             throw new IllegalStateException("Realtime pipeline already has a pending frame");
         }
         long backendToken = this.backend.prepareFrame(commandBuffer, initialization);
-        RealtimeSharcDiagnostics.Capture diagnostics = null;
         RealtimeSharc.Prepared prepared = null;
         try {
-            diagnostics = this.sharcDiagnostics.prepare(
-                    commandBuffer,
-                    plan.rendererDiagnostics(),
-                    this.sharc != null);
             if (this.sharc != null) {
                 prepared = this.sharc.prepare(
                         commandBuffer,
                         plan.integrator(),
                         scene,
                         textureRevision,
-                        plan.reconstructionReset(),
-                        this.sharcDiagnostics.counterAddress(diagnostics),
-                        diagnostics != null);
+                        plan.reconstructionReset());
             }
         } catch (RuntimeException exception) {
-            this.sharcDiagnostics.abandon(diagnostics);
             if (backendToken != 0L) {
                 this.backend.abandon(backendToken);
             }
             throw exception;
         }
-        if (this.sharc == null && diagnostics == null) {
+        if (this.sharc == null) {
             return backendToken;
         }
         long token = this.nextFrameToken++;
         if (token == 0L) token = this.nextFrameToken++;
-        this.pendingFrame = new PendingFrame(
-                token, backendToken, this.sharc, prepared, diagnostics);
+        this.pendingFrame = new PendingFrame(token, backendToken, this.sharc, prepared);
         return token;
     }
 
     @Override
     public boolean sharcEffective() {
         return this.sharc != null;
-    }
-
-    @Override
-    public SharcDiagnosticsSnapshot sharcDiagnostics() {
-        return this.sharcDiagnostics.latest();
     }
 
     public void submitted(long token) {
@@ -477,7 +454,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         if (pending.owner != null) {
             pending.owner.submitted(pending.sharcFrame);
         }
-        this.sharcDiagnostics.submitted(pending.diagnostics);
     }
 
     public void abandon(long token) {
@@ -493,7 +469,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         if (pending.backendToken != 0L) {
             this.backend.abandon(pending.backendToken);
         }
-        this.sharcDiagnostics.abandon(pending.diagnostics);
     }
 
     /** Releases descriptor bindings and wavefront backing after the device has become idle. */
@@ -528,15 +503,8 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer pushConstants = RayTracingPushConstants.encode(stack, input, scene);
             TraceProgram activeProgram = this.program;
-            RealtimeSharcDiagnostics.Capture diagnostics = this.pendingFrame == null
-                    ? null
-                    : this.pendingFrame.diagnostics;
             if (this.sharc != null) {
                 activeProgram = this.sharc.queryProgram();
-                this.sharcDiagnostics.recordQueryStart(commandBuffer, diagnostics);
-            } else {
-                this.sharcDiagnostics.recordReferenceQueryStart(
-                        commandBuffer, diagnostics);
             }
             this.bind(commandBuffer, stack, pushConstants, activeProgram);
             long commandOffset = queueCommandOffset(width, height);
@@ -550,11 +518,8 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                         commandBuffer,
                         this.bindings.descriptorSet,
                         width,
-                        height,
-                        this.sharcDiagnostics,
-                        diagnostics);
+                        height);
             }
-            this.sharcDiagnostics.finish(commandBuffer, diagnostics);
             this.lastRecordedPassCount = this.sharc == null
                     ? dispatchCount
                     : dispatchCount + 2;
@@ -812,8 +777,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             ShaderAbi.DESCRIPTOR_NRD_REFLECTION_SPECULAR_DIRECTION,
             ShaderAbi.DESCRIPTOR_NRD_DISPLAY_POSITION,
             ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING,
-            ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA,
-            ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC
+            ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA
         };
     }
 
@@ -833,7 +797,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 this.sharc.destroy();
                 this.sharc = null;
             }
-            this.sharcDiagnostics.destroy();
             this.program.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
             VK12.vkDestroyDescriptorSetLayout(
@@ -1061,8 +1024,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 signals.reflectionSpecularDirection(),
                 signals.displayPosition(),
                 signals.sunLighting(),
-                signals.sunPenumbra(),
-                signals.rawNumericalDiagnostic()
+                signals.sunPenumbra()
             };
         }
 
@@ -1088,8 +1050,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             long token,
             long backendToken,
             RealtimeSharc owner,
-            RealtimeSharc.Prepared sharcFrame,
-            RealtimeSharcDiagnostics.Capture diagnostics) {
+            RealtimeSharc.Prepared sharcFrame) {
     }
 
 }

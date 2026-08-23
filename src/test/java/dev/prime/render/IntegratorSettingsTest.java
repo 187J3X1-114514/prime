@@ -13,18 +13,11 @@ import org.junit.jupiter.api.Test;
 
 final class IntegratorSettingsTest {
     @Test
-    void sampleEpochKeepsTriangleDiagnosticOutOfSamplingState() {
-        assertEquals(17, IntegratorSettings.packSampleEpoch(17, false));
-        assertEquals(
-                17 | ShaderAbi.PATH_TRIANGLE_DEBUG_MASK,
-                IntegratorSettings.packSampleEpoch(17, true));
-        assertEquals(
-                17,
-                IntegratorSettings.packSampleEpoch(17, true)
-                        & ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
+    void sampleEpochUsesOnlySamplingState() {
+        assertEquals(17, IntegratorSettings.packSampleEpoch(17));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> IntegratorSettings.packSampleEpoch(-1, false));
+                () -> IntegratorSettings.packSampleEpoch(-1));
     }
 
     @Test
@@ -114,7 +107,7 @@ final class IntegratorSettingsTest {
     @Test
     void materialLightingControlStoresIndependentEvAndRoughnessFields() {
         int packed = IntegratorSettings.packMaterialLightingControl(
-                -16, 32, 16, 73, false, false);
+                -16, 32, 16, 73, false);
         int sun = ((packed >>> ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         int stars = ((packed >>> ShaderAbi.PATH_STAR_EV_QUARTER_SHIFT)
@@ -127,27 +120,22 @@ final class IntegratorSettingsTest {
         assertEquals(73, (packed >>> ShaderAbi.PATH_MATERIAL_ROUGHNESS_SHIFT)
                 & ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
         assertEquals(0, packed & ShaderAbi.PATH_SH_INPUT_MASK);
-        assertEquals(0, packed & ShaderAbi.PATH_RAW_NUMERICAL_MASK);
         assertEquals(
                 ShaderAbi.PATH_SH_INPUT_MASK,
-                IntegratorSettings.packMaterialLightingControl(-16, 32, 16, 73, true, false)
+                IntegratorSettings.packMaterialLightingControl(-16, 32, 16, 73, true)
                         & ShaderAbi.PATH_SH_INPUT_MASK);
-        assertEquals(
-                ShaderAbi.PATH_RAW_NUMERICAL_MASK,
-                IntegratorSettings.packMaterialLightingControl(-16, 32, 16, 73, false, true)
-                        & ShaderAbi.PATH_RAW_NUMERICAL_MASK);
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        -129, 0, 0, 80, false, false));
+                        -129, 0, 0, 80, false));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        0, 33, 0, 80, false, false));
+                        0, 33, 0, 80, false));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        0, 0, 128, 80, false, false));
+                        0, 0, 128, 80, false));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        0, 0, 0, 101, false, false));
+                        0, 0, 0, 101, false));
     }
 
     @Test

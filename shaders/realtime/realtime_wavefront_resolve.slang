@@ -22,13 +22,6 @@ void primeWavefrontResolve(
     }
     PrimeWavefrontTransportRecord primaryRecord =
             primeWavefrontPaths[primeWavefrontIndex(pixel, 0u)].transport;
-    uint primaryDiagnostic =
-            asuint(primaryRecord.throughputAndNumericalFlags.w);
-    diagnostics.flags =
-            primaryDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
-    diagnostics.firstContext =
-            (primaryDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
-                    & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
     PrimeIntegrationResult result = primeLoadWavefrontIntermediate(
             pixel, primeWavefrontIndex(pixel, 0u), primaryRecord);
     float2 cameraSample = primeRealtimeCameraSample(pixel);

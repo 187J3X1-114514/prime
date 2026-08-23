@@ -18,23 +18,6 @@ void primeWavefrontTransparentResolve(
     uint secondaryPathControl = secondaryRecord.sourceAndPathControl.w;
     uint reflectionControl = asuint(
             secondaryRecord.rayDirectionAndDenoiserControl.w);
-    uint primaryDiagnostic =
-            asuint(primaryRecord.throughputAndNumericalFlags.w);
-    context.diagnostics.flags =
-            primaryDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
-    context.diagnostics.firstContext =
-            (primaryDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
-                    & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
-    uint secondaryDiagnostic = asuint(
-            secondaryRecord.throughputAndNumericalFlags.w);
-    uint secondaryFlags =
-            secondaryDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
-    if (context.diagnostics.flags == 0u && secondaryFlags != 0u) {
-        context.diagnostics.firstContext =
-                (secondaryDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
-                        & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
-    }
-    context.diagnostics.flags |= secondaryFlags;
 
     float2 cameraSample = primeRealtimeCameraSample(pixel);
     bool guideModeEnabled = primeTransparentGuideMode()
@@ -100,33 +83,6 @@ void primeWavefrontTransparentResolve(
         result.transmissionGuides = primeEmptyDenoiserGuides();
         result.transmissionAnchorDistance = -1.0;
     }
-    bool transmissionGuideReached = (asuint(
-            primaryRecord.rayDirectionAndDenoiserControl.w)
-            & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
-    uint transmissionGuideBounce = (asuint(
-            primaryRecord.rayDirectionAndDenoiserControl.w)
-            >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
-            & PRIME_WAVEFRONT_BYTE_MASK;
-    bool transmissionActive = primeWavefrontActive(primaryRecord);
-    float3 transmissionGuideStatus = transmissionGuideReached
-            ? float3(
-                    1.0,
-                    transmissionGuideBounce == 0u ? 1.0 : 0.0,
-                    primeWavefrontGuideProbeFallback(primaryPathControl)
-                            ? 1.0
-                            : 0.0)
-            : primeGuideStopDiagnosticColor(
-                    result.transparentReflectionOnly
-                            ? PRIME_GUIDE_STOP_REFLECTION_ONLY
-                            : (transmissionActive
-                                    ? PRIME_GUIDE_STOP_DISPATCH_LIMIT
-                                    : PRIME_GUIDE_STOP_INACTIVE_UNCLASSIFIED));
-    if (guideModeEnabled
-            && !transmissionGuideReached
-            && transmissionActive) {
-        primeStoreUnownedTransmissionGuideDiagnostic(
-                pixel, PRIME_GUIDE_STOP_DISPATCH_LIMIT);
-    }
 #if !defined(PRIME_TWO_STAGE_WAVEFRONT)
     if (hasProbes) {
         if ((probeMask & PRIME_GUIDE_PROBE_TRANSMISSION_MASK) != 0u
@@ -160,6 +116,5 @@ void primeWavefrontTransparentResolve(
             pixel,
             cameraSample,
             result,
-            reflectionPreviousVirtualPosition,
-            transmissionGuideStatus);
+            reflectionPreviousVirtualPosition);
 }

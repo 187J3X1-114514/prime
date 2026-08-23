@@ -174,7 +174,6 @@ final class AutoExposurePass implements Destroyable {
             float deltaSeconds,
             boolean reset,
             boolean instant,
-            boolean diagnostic,
             float compensation) {
         if (this.destroyed) {
             throw new IllegalStateException("Auto-exposure pass is destroyed");
@@ -190,19 +189,6 @@ final class AutoExposurePass implements Destroyable {
             throw new IllegalArgumentException(
                     "Auto-exposure compensation must be finite and between zero and one");
         }
-        if (diagnostic) {
-            if (reset) {
-                VK12.vkCmdFillBuffer(
-                        commandBuffer,
-                        this.exposureState.handle(),
-                        0L,
-                        EXPOSURE_STATE_SIZE,
-                        0);
-                writesToCompute(commandBuffer);
-            }
-            return;
-        }
-
         VK12.vkCmdFillBuffer(
                 commandBuffer,
                 this.histogram.handle(),

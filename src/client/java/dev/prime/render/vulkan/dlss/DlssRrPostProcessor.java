@@ -4,7 +4,8 @@ import dev.prime.render.FrameCamera;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
-import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.diagnostic.RrInputView;
+import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
@@ -19,6 +20,7 @@ import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.VulkanSync;
+import dev.prime.render.vulkan.RendererImageDebugPass;
 import dev.prime.render.post.nrd.NrdCameraTransform;
 import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
@@ -41,7 +43,9 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
     private final DlssRrNative.Feature feature;
     private final DisplayTransformPass displayTransform;
     private final VulkanImage displayOutput;
+    private final VulkanImage stableRadiance;
     private DlssRrDebugPass debugPass;
+    private RendererImageDebugPass rendererDebugPass;
     private final Matrix4f ngxProjection = new Matrix4f();
     private final ReconstructionFrameHistory history =
             new ReconstructionFrameHistory();
@@ -59,7 +63,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
             DlssRrPreparePass preparePass,
             DlssRrNative.Feature feature,
             DisplayTransformPass displayTransform,
-            VulkanImage displayOutput) {
+            VulkanImage displayOutput,
+            VulkanImage stableRadiance) {
         this.context = context;
         this.ngxContext = ngxContext;
         this.quality = quality;
@@ -72,6 +77,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         this.feature = feature;
         this.displayTransform = displayTransform;
         this.displayOutput = displayOutput;
+        this.stableRadiance = stableRadiance;
     }
 
     public static DlssRrPostProcessor create(
@@ -120,7 +126,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                     preparePass,
                     feature,
                     displayTransform,
-                    displayOutput);
+                    displayOutput,
+                    accumulation);
         } catch (RuntimeException exception) {
             RuntimeException failure = ResourceCleanup.run(context::awaitIdle, exception);
             failure = ResourceCleanup.close(feature, failure);
@@ -160,8 +167,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
             long sceneRevision,
             long textureRevision,
             boolean forceRestart,
-            DlssRrDebugView debugView,
-            boolean debugFullscreen) {
+            RrInputView debugView) {
         requireOpen();
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(debugView, "debugView");
@@ -177,8 +183,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 this,
                 temporal,
                 jitter,
-                debugView,
-                debugFullscreen);
+                debugView);
     }
 
     @Override
@@ -191,8 +196,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 parameters.sceneRevision(),
                 parameters.textureRevision(),
                 parameters.forceRestart(),
-                debugSettings.dlssRr(),
-                debugSettings.dlssRrFullscreen());
+                debugSettings.images().rr());
     }
 
     public void prepareForRayTrace(
@@ -200,6 +204,16 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
             VulkanImageInitializationBatch initialization) {
         requireOpen();
         this.targets.prepareForRayTrace(commandBuffer, initialization);
+    }
+
+    @Override
+    public void captureRendererDiagnostic(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization,
+            RendererImageView view) {
+        if (view.active() && view != RendererImageView.DENOISED_OUTPUT) {
+            this.rendererDebugPass().capture(commandBuffer, initialization, view);
+        }
     }
 
     public void record(
@@ -219,13 +233,6 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         token.recorded = true;
         TemporalReconstructionState.Plan temporal =
                 token.temporal.claimForExecution();
-        DlssRrDebugPass activeDebugPass = null;
-        if (token.debugView != DlssRrDebugView.OFF) {
-            activeDebugPass = this.debugPass();
-            allCommandsToCompute(commandBuffer);
-            activeDebugPass.capture(commandBuffer, initialization);
-            captureToPrepare(commandBuffer);
-        }
         this.preparePass.record(
                 commandBuffer,
                 temporal.camera(),
@@ -260,21 +267,14 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         allCommandsToCompute(commandBuffer);
         this.displayTransform.record(
                 commandBuffer,
-                false,
                 temporal.deltaMilliseconds() * 0.001F,
                 temporal.restart(),
                 false,
                 display,
                 initialization);
-        if (activeDebugPass != null) {
+        if (token.debugView.active()) {
             allCommandsToCompute(commandBuffer);
-            activeDebugPass.record(
-                    commandBuffer,
-                    token.debugView,
-                    token.debugFullscreen,
-                    temporal.frameIndex(),
-                    DlssRrProfile.jitterPhaseCount(this.quality),
-                    display);
+            this.debugPass().record(commandBuffer, token.debugView);
         }
     }
 
@@ -296,22 +296,17 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 initialization);
     }
 
+    @Override
+    public void presentRendererDiagnostic(
+            VkCommandBuffer commandBuffer, RendererImageView view) {
+        if (view.active()) this.rendererDebugPass().present(commandBuffer, view);
+    }
+
     private static void allCommandsToCompute(VkCommandBuffer commandBuffer) {
         VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK12.VK_ACCESS_MEMORY_WRITE_BIT,
-                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-    }
-
-    private static void captureToPrepare(VkCommandBuffer commandBuffer) {
-        // Capture reads the aliased material/metadata images immediately before RR preparation
-        // mutates them. This execution dependency preserves that diagnostic boundary.
-        VulkanSync.memoryBarrier(
-                commandBuffer,
-                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
     }
@@ -322,9 +317,22 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                     this.context,
                     this.targets,
                     this.displayOutput,
-                    this.displayTransform.exposureState());
+                    this.displayTransform.hdrOutput());
         }
         return this.debugPass;
+    }
+
+    private RendererImageDebugPass rendererDebugPass() {
+        if (this.rendererDebugPass == null) {
+            this.rendererDebugPass = RendererImageDebugPass.create(
+                    this.context,
+                    this.targets,
+                    this.stableRadiance,
+                    this.targets.rrOutput(),
+                    this.displayOutput,
+                    this.displayTransform.hdrOutput());
+        }
+        return this.rendererDebugPass;
     }
 
     public void submitted(FrameToken token) {
@@ -377,6 +385,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         // work has retired, and a later caller must be able to retry this ownership boundary.
         this.context.awaitIdle();
         RuntimeException failure = ResourceCleanup.close(this.feature, null);
+        failure = ResourceCleanup.destroy(this.rendererDebugPass, failure);
         failure = ResourceCleanup.destroy(this.debugPass, failure);
         failure = ResourceCleanup.destroy(this.displayTransform, failure);
         failure = ResourceCleanup.destroy(this.preparePass, failure);
@@ -390,8 +399,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         private final SubmittedFrame<TemporalReconstructionState.Plan> temporal;
         private final SubpixelJitter jitter;
         private final ReconstructionFrame semantic;
-        private final DlssRrDebugView debugView;
-        private final boolean debugFullscreen;
+        private final RrInputView debugView;
         private boolean recorded;
         private boolean submitted;
         private boolean abandoned;
@@ -400,15 +408,13 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 DlssRrPostProcessor owner,
                 SubmittedFrame<TemporalReconstructionState.Plan> temporal,
                 SubpixelJitter jitter,
-                DlssRrDebugView debugView,
-                boolean debugFullscreen) {
+                RrInputView debugView) {
             this.owner = owner;
             this.temporal = temporal;
             this.jitter = jitter;
             this.semantic = new ReconstructionFrame(
                     temporal.plan().frameIndex(), jitter, temporal.plan().restart());
             this.debugView = debugView;
-            this.debugFullscreen = debugFullscreen;
         }
 
         @Override public ReconstructionFrame semantic() {

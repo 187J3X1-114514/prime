@@ -10,7 +10,6 @@ uint primeShadePrimaryLandingPrimary(
     PrimeTransparentLightEvent lightEvent;
     lightEvent.type = PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY;
     lightEvent.storedSunProbability = 0u;
-    PrimeNumericalDiagnostics shadeDiagnostics = context.diagnostics;
     PathState path = primeWavefrontPath(
             primeWavefrontPixel(recordIndex), record);
     float3 preparedThroughput = float3(0.0);
@@ -38,9 +37,6 @@ uint primeShadePrimaryLandingPrimary(
                     preparedArea,
                     preparedThroughput,
                     area);
-    if (!light.diagnosticsCommitted) {
-        context.diagnostics = shadeDiagnostics;
-    }
     return light.storedSunProbability;
 }
 
@@ -50,13 +46,11 @@ void primeWavefrontPrimaryLandingLight(
             PRIME_WAVEFRONT_TRACE_QUEUE_0, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint storedSunProbability = primeShadePrimaryLandingPrimary(
             context, recordIndex, record, surface);
     primeStoreWavefrontSunFamilyProbability(
             recordIndex, storedSunProbability);
-    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     // Shadow traversal may reorder SER invocations, so reserve the bridge queue scalarly.
     primeAppendWavefrontContinuation(
             PrimePostTraceWavefrontContinuationAppender(),

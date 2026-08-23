@@ -59,8 +59,4 @@ public interface RawWavefrontFrame {
         return false;
     }
 
-    /** Raygen writes this alias only while raw numerical diagnostics are selected. */
-    default VulkanImage rawNumericalDiagnostic() {
-        return noisyDiffuse();
-    }
 }

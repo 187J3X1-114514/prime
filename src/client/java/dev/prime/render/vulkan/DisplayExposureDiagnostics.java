@@ -22,26 +22,23 @@ public final class DisplayExposureDiagnostics implements Destroyable {
         this.context = java.util.Objects.requireNonNull(context, "context");
     }
 
-    public void capture(long sourceBuffer) {
+    public Capture record(VkCommandBuffer commandBuffer, long sourceBuffer) {
         if (this.destroyed) {
             throw new IllegalStateException("Exposure diagnostics are destroyed");
         }
+        java.util.Objects.requireNonNull(commandBuffer, "commandBuffer");
         if (sourceBuffer == 0L) {
             throw new IllegalArgumentException("Exposure diagnostic source is null");
         }
         if (this.pendingReadback != null) {
-            return;
+            return null;
         }
         VulkanBuffer readback = this.context.createReadbackBuffer(
                 STATE_SIZE,
                 VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 "Prime automatic-exposure diagnostics");
-        boolean submitted = false;
         this.pendingReadback = readback;
         try {
-            var encoder = this.context.commandEncoder();
-            VkCommandBuffer commandBuffer =
-                    encoder.allocateAndBeginTransientCommandBuffer();
             memoryBarrier(commandBuffer);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkBufferCopy.Buffer copy = VkBufferCopy.calloc(1, stack)
@@ -51,21 +48,39 @@ public final class DisplayExposureDiagnostics implements Destroyable {
                 VK12.vkCmdCopyBuffer(
                         commandBuffer, sourceBuffer, readback.handle(), copy);
             }
-            VulkanContext.check(
-                    VK12.vkEndCommandBuffer(commandBuffer),
-                    "end automatic-exposure diagnostic copy command buffer");
-            encoder.execute(commandBuffer);
-            submitted = true;
-            this.context.afterSubmission(() -> this.complete(readback));
+            return new Capture(this, readback);
         } catch (RuntimeException exception) {
             this.pendingReadback = null;
-            if (submitted) {
-                ResourceCleanup.run(() -> this.context.defer(readback), exception);
-            } else {
-                ResourceCleanup.destroy(readback, exception);
-            }
+            ResourceCleanup.destroy(readback, exception);
             throw exception;
         }
+    }
+
+    public void submitted(Capture capture) {
+        if (capture == null) {
+            return;
+        }
+        capture.require(this);
+        try {
+            this.context.afterSubmission(() -> this.complete(capture.readback));
+        } catch (RuntimeException exception) {
+            if (this.pendingReadback == capture.readback) {
+                this.pendingReadback = null;
+            }
+            ResourceCleanup.run(() -> this.context.defer(capture.readback), exception);
+            throw exception;
+        }
+    }
+
+    public void abandon(Capture capture) {
+        if (capture == null) {
+            return;
+        }
+        capture.require(this);
+        if (this.pendingReadback == capture.readback) {
+            this.pendingReadback = null;
+        }
+        capture.readback.destroy();
     }
 
     public Snapshot latest() {
@@ -122,6 +137,22 @@ public final class DisplayExposureDiagnostics implements Destroyable {
             return Float.isFinite(this.automaticExposureEv)
                     && Float.isFinite(this.targetExposureEv)
                     && Float.isFinite(this.measuredLogBrightness);
+        }
+    }
+
+    public static final class Capture {
+        private final DisplayExposureDiagnostics owner;
+        private final VulkanBuffer readback;
+
+        private Capture(DisplayExposureDiagnostics owner, VulkanBuffer readback) {
+            this.owner = owner;
+            this.readback = readback;
+        }
+
+        private void require(DisplayExposureDiagnostics expected) {
+            if (this.owner != expected) {
+                throw new IllegalArgumentException("Exposure capture belongs to another owner");
+            }
         }
     }
 }

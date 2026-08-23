@@ -282,7 +282,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 if (this.offlineRenderer.hasSizedResources()) {
                     this.modeLifecycle = this.modeLifecycle.allocateOfflineSized();
                 }
-                this.debugLines = this.withRendererDiagnostics(List.of(), settings);
+                this.debugLines = this.withRendererDiagnostics(settings);
                 return;
             }
             this.cancelOfflineSession();
@@ -298,10 +298,10 @@ public final class VulkanRenderer implements AutoCloseable {
         FrameCamera frameCamera = this.camera;
         AstronomyState frameAstronomy = this.astronomyState;
         if (scene == null || frameCamera == null || frameAstronomy == null) {
-            this.debugLines = List.of();
+            this.debugLines = this.withRendererDiagnostics(settings);
             return;
         }
-        List<String> rendererDebugLines = this.realtimeRenderer.render(
+        this.realtimeRenderer.render(
                 new RealtimeRenderer.RenderInput(
                         mainTarget,
                         scene,
@@ -317,36 +317,39 @@ public final class VulkanRenderer implements AutoCloseable {
                         atlas.sampler(),
                         atlas.textureRevision(),
                         this.sceneTextures));
-        this.debugLines = this.withRendererDiagnostics(rendererDebugLines, settings);
+        this.debugLines = this.withRendererDiagnostics(settings);
         if (this.realtimeRenderer.hasSizedResources()) {
             this.modeLifecycle = this.modeLifecycle.allocateRealtimeSized();
         }
     }
 
-    private List<String> withRendererDiagnostics(
-            List<String> rendererLines,
-            RendererSettings settings) {
+    private List<String> withRendererDiagnostics(RendererSettings settings) {
         if (!this.frameControls.rendererDiagnostics()) {
-            return rendererLines;
+            return List.of();
         }
         OfflineSession offlineSession = this.offlineRenderer.session();
         TerrainScene.ResidentSceneView scene = offlineSession == null
                 ? this.terrain.residentScene()
                 : offlineSession.scene();
-        if (scene == null) {
-            return rendererLines;
-        }
+
         TerrainScene.CompactionStats stats = this.terrain.compactionStats();
-        TerrainScene.SceneStatistics sceneStats = scene.statistics();
+        TerrainScene.SceneStatistics sceneStats = scene == null
+                ? null
+                : scene.statistics();
         long sourceBytes = Math.addExact(
                 Math.addExact(stats.waitingSourceBytes(), stats.readySourceBytes()),
                 stats.inFlightSourceBytes());
-        ArrayList<String> lines = new ArrayList<>(rendererLines.size() + 12);
-        lines.addAll(rendererLines);
+        OfflineRenderer.DiagnosticSnapshot offline =
+                this.offlineRenderer.diagnosticSnapshot();
+        RealtimeRenderer.DiagnosticSnapshot realtime = offline == null
+                ? this.realtimeRenderer.diagnosticSnapshot()
+                : null;
+
+        ArrayList<String> lines = new ArrayList<>(14);
         lines.add("Prime renderer diagnostics");
         lines.add(String.format(
                 Locale.ROOT,
-                "Graphics device: %s; shader execution reordering: %s; opacity micromaps: %s",
+                "Device: %s; SER: %s; opacity micromaps: %s",
                 this.context.capabilities().deviceName(),
                 this.context.capabilities().invocationReorderSupported()
                         ? "enabled"
@@ -354,155 +357,127 @@ public final class VulkanRenderer implements AutoCloseable {
                 this.context.capabilities().opacityMicromapSupported()
                         ? "enabled"
                         : "unavailable"));
-        OfflineRenderer.DiagnosticSnapshot offline =
-                this.offlineRenderer.diagnosticSnapshot();
-        if (offline != null) {
-            lines.add(String.format(
-                    Locale.ROOT,
-                    "Rendering path: offline path-tracing accumulation; resolution: %d x %d; accumulated samples: %,d",
-                    offline.width(),
-                    offline.height(),
-                    offline.accumulatedSamples()));
-        } else {
-            RealtimeRenderer.DiagnosticSnapshot realtime =
-                    this.realtimeRenderer.diagnosticSnapshot();
-            if (realtime != null) {
-                lines.add(String.format(
-                        Locale.ROOT,
-                        "Rendering path: %s; quality: %s",
-                        renderingPath(realtime.postProcessingMode()),
-                        reconstructionQuality(realtime.quality())));
-                lines.add(String.format(
-                        Locale.ROOT,
-                        "Render resolution: %d x %d; display resolution: %d x %d; accumulated samples: %,d; integrator passes: %d; integrator bytes: %,d",
-                        realtime.renderWidth(),
-                        realtime.renderHeight(),
-                        realtime.displayWidth(),
-                        realtime.displayHeight(),
-                        realtime.accumulatedSamples(),
-                        realtime.integratorPassCount(),
-                        realtime.integratorResourceBytes()));
-                String sharcStatus = realtime.sharcEffective()
-                        ? "enabled (256 MiB cache)"
+        lines.add(String.format(
+                Locale.ROOT,
+                "Path: %s; quality: %s",
+                offline != null
+                        ? "offline path-tracing accumulation"
+                        : realtime != null
+                                ? renderingPath(realtime.postProcessingMode())
+                                : "n/a",
+                realtime != null
+                        ? reconstructionQuality(realtime.quality())
+                        : "n/a"));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Resolution: render %s; display %s",
+                offline != null
+                        ? extent(offline.width(), offline.height())
+                        : realtime != null
+                                ? extent(realtime.renderWidth(), realtime.renderHeight())
+                                : "n/a",
+                offline != null
+                        ? extent(offline.width(), offline.height())
+                        : realtime != null
+                                ? extent(realtime.displayWidth(), realtime.displayHeight())
+                                : "n/a"));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Work: samples %s; integrator passes %s; integrator resources %s",
+                offline != null
+                        ? count(offline.accumulatedSamples())
+                        : realtime != null
+                                ? count(realtime.accumulatedSamples())
+                                : "n/a",
+                realtime != null ? count(realtime.integratorPassCount()) : "n/a",
+                realtime != null ? bytes(realtime.integratorResourceBytes()) : "n/a"));
+        String sharcStatus = realtime == null
+                ? "n/a"
+                : realtime.sharcEffective()
+                        ? "enabled; cache 268,435,456 bytes"
                         : !realtime.sharcRequested()
                                 ? "disabled by user"
                                 : "unavailable: " + realtime.sharcUnavailableReason();
-                lines.add("SHARC radiance cache: " + sharcStatus);
-                if (realtime.sharcEffective()) {
-                    var sharc = realtime.sharcDiagnostics();
-                    if (sharc == null) {
-                        lines.add(
-                                "SHARC diagnostics: waiting for asynchronous GPU readback");
-                    } else {
-                        if (sharc.timestampsSupported()) {
-                            lines.add(String.format(
-                                    Locale.ROOT,
-                                    "SHARC rolling GPU time - update: %.3f ms; resolve: %.3f ms; query render: %.3f ms; total: %.3f ms",
-                                    sharc.updateMilliseconds(),
-                                    sharc.resolveMilliseconds(),
-                                    sharc.queryMilliseconds(),
-                                    sharc.totalMilliseconds()));
-                            if (sharc.referenceCaptureCount() == 0L) {
-                                lines.add(
-                                        "SHARC benefit estimate: keep diagnostics enabled and briefly disable SHARC to capture a reference frame");
-                            } else {
-                                lines.add(String.format(
-                                        Locale.ROOT,
-                                        "SHARC reference query render: %.3f ms; estimated net saving: %+.3f ms (%s); reference captures: %,d",
-                                        sharc.referenceQueryMilliseconds(),
-                                        sharc.estimatedNetSavingMilliseconds(),
-                                        percentage(sharc.estimatedNetSavingRate()),
-                                        sharc.referenceCaptureCount()));
-                            }
-                        } else {
-                            lines.add(
-                                    "SHARC GPU time: unavailable because this queue cannot timestamp graphics and compute stages");
-                        }
-                        lines.add(String.format(
-                                Locale.ROOT,
-                                "SHARC sampled queries (1/%d): %,d; lookups: %,d; hits: %,d; lookup hit rate: %s; path termination rate: %s",
-                                sharc.samplingPeriod(),
-                                sharc.sampledQueries(),
-                                sharc.lookupAttempts(),
-                                sharc.hits(),
-                                percentage(sharc.lookupHitRate()),
-                                percentage(sharc.terminationRate())));
-                        lines.add(String.format(
-                                Locale.ROOT,
-                                "SHARC sampled eligibility skips - discrete: %,d; short segment: %,d; narrow glossy footprint: %,d; captures: %,d",
-                                sharc.discreteSkips(),
-                                sharc.shortSegmentSkips(),
-                                sharc.glossyFootprintSkips(),
-                                sharc.captureCount()));
-                    }
-                }
-            }
-        }
+        lines.add("SHARC: " + sharcStatus);
         lines.add(String.format(
                 Locale.ROOT,
-                "Top-level acceleration structure instances: %,d; area-light emitters: %,d; top-level light-tree nodes: %,d",
-                sceneStats.tlasInstanceCount(),
-                sceneStats.areaLightEmitterCount(),
-                sceneStats.topLevelLightTreeNodeCount()));
+                "Scene: TLAS instances %s; area-light emitters %s; light-tree nodes %s",
+                sceneStats == null ? "n/a" : count(sceneStats.tlasInstanceCount()),
+                sceneStats == null ? "n/a" : count(sceneStats.areaLightEmitterCount()),
+                sceneStats == null ? "n/a" : count(sceneStats.topLevelLightTreeNodeCount())));
         lines.add(String.format(
                 Locale.ROOT,
-                "Triangle references after instancing: %,d; unique bottom-level geometry triangles: %,d",
-                sceneStats.instancedTriangleCount(),
-                sceneStats.uniqueBlasTriangleCount()));
+                "Geometry: instanced triangle references %s; unique BLAS triangles %s",
+                sceneStats == null ? "n/a" : count(sceneStats.instancedTriangleCount()),
+                sceneStats == null ? "n/a" : count(sceneStats.uniqueBlasTriangleCount())));
+
         var exposure = offlineSession == null
                 ? this.realtimeRenderer.exposureDiagnosticSnapshot()
                 : offlineSession.exposure().diagnosticSnapshot();
-        if (exposure == null) {
-            lines.add("Automatic exposure metering: waiting for asynchronous GPU readback");
-        } else if (!exposure.initialized()) {
-            lines.add("Automatic exposure metering: state is not initialized");
-        } else if (!exposure.finite()) {
-            lines.add(String.format(
-                    Locale.ROOT,
-                    "Automatic exposure metering: non-finite state (current=%s, target=%s, measured log brightness=%s)",
-                    exposure.automaticExposureEv(),
-                    exposure.targetExposureEv(),
-                    exposure.measuredLogBrightness()));
-        } else {
-            lines.add(String.format(
-                    Locale.ROOT,
-                    "Automatic exposure value: %+.2f stops; target: %+.2f stops; metered linear Rec.2020 relative luminance (log2): %+.2f",
-                    exposure.automaticExposureEv(),
-                    exposure.targetExposureEv(),
-                    exposure.measuredLogBrightness()));
-            float manualExposure =
-                    settings.display().finalExposureQuarterSteps() * 0.25F;
-            lines.add(String.format(
-                    Locale.ROOT,
-                    "Manual final exposure: %+.2f stops; combined display exposure: %+.2f stops",
-                    manualExposure,
-                    exposure.automaticExposureEv() + manualExposure));
-        }
+        String exposureState = exposure == null
+                ? "waiting for GPU readback"
+                : !exposure.initialized()
+                        ? "uninitialized"
+                        : exposure.finite() ? "ready" : "non-finite";
         lines.add(String.format(
                 Locale.ROOT,
-                "Bottom-level acceleration structure compaction jobs - query pending: %,d; ready: %,d; source retirement pending: %,d",
+                "Automatic exposure: current %s stops; target %s stops; metered log2 luminance %s; state %s",
+                exposure == null ? "n/a" : scalar(exposure.automaticExposureEv()),
+                exposure == null ? "n/a" : scalar(exposure.targetExposureEv()),
+                exposure == null ? "n/a" : scalar(exposure.measuredLogBrightness()),
+                exposureState));
+        float manualExposure =
+                settings.display().finalExposureQuarterSteps() * 0.25F;
+        lines.add(String.format(
+                Locale.ROOT,
+                "Display exposure: manual %s stops; combined %s stops",
+                scalar(manualExposure),
+                exposure != null && exposure.finite()
+                        ? scalar(exposure.automaticExposureEv() + manualExposure)
+                        : "n/a"));
+        lines.add(String.format(
+                Locale.ROOT,
+                "BLAS compaction: query pending %,d; ready %,d; retirement pending %,d; completed %,d",
                 stats.waiting(),
                 stats.ready(),
-                stats.retiring()));
-        lines.add(String.format(
-                Locale.ROOT,
-                "Uncompacted source backing - query pending: %.1f MiB; ready: %.1f MiB; source retirement pending: %.1f MiB; total: %.1f MiB",
-                mebibytes(stats.waitingSourceBytes()),
-                mebibytes(stats.readySourceBytes()),
-                mebibytes(stats.inFlightSourceBytes()),
-                mebibytes(sourceBytes)));
-        lines.add(String.format(
-                Locale.ROOT,
-                "Known reclaimable backing: %.1f MiB; cumulatively reclaimed: %.1f MiB; completed compactions: %,d",
-                mebibytes(stats.knownReclaimableBytes()),
-                mebibytes(stats.reclaimedBytes()),
+                stats.retiring(),
                 stats.completedCount()));
         lines.add(String.format(
                 Locale.ROOT,
-                "Compacted-target overlap reserved: %.1f MiB; reserved high-water mark: %.1f MiB",
-                mebibytes(stats.reservedTargetBytes()),
-                mebibytes(stats.highWaterTargetBytes())));
+                "Uncompacted backing: query pending %s; ready %s; retirement pending %s; total %s",
+                bytes(stats.waitingSourceBytes()),
+                bytes(stats.readySourceBytes()),
+                bytes(stats.inFlightSourceBytes()),
+                bytes(sourceBytes)));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Reclamation: known reclaimable %s; cumulatively reclaimed %s",
+                bytes(stats.knownReclaimableBytes()),
+                bytes(stats.reclaimedBytes())));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Compacted-target reservation: current %s; high-water %s",
+                bytes(stats.reservedTargetBytes()),
+                bytes(stats.highWaterTargetBytes())));
         return List.copyOf(lines);
+    }
+
+    static String extent(int width, int height) {
+        return String.format(Locale.ROOT, "%,d x %,d", width, height);
+    }
+
+    static String count(long value) {
+        return String.format(Locale.ROOT, "%,d", value);
+    }
+
+    static String bytes(long value) {
+        return String.format(Locale.ROOT, "%,d bytes", value);
+    }
+
+    static String scalar(float value) {
+        return Float.isFinite(value)
+                ? String.format(Locale.ROOT, "%+.9g", value)
+                : Float.toString(value);
     }
 
     private static String renderingPath(
@@ -524,16 +499,6 @@ public final class VulkanRenderer implements AutoCloseable {
             case PERFORMANCE -> "performance";
             case ULTRA_PERFORMANCE -> "ultra performance";
         };
-    }
-
-    private static double mebibytes(long bytes) {
-        return bytes / (1024.0 * 1024.0);
-    }
-
-    private static String percentage(double ratio) {
-        return Double.isFinite(ratio)
-                ? String.format(Locale.ROOT, "%.1f%%", ratio * 100.0)
-                : "n/a";
     }
 
     private boolean updateOfflineSession(

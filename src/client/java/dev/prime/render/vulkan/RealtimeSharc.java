@@ -238,9 +238,7 @@ final class RealtimeSharc implements Destroyable {
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             long textureRevision,
-            boolean reconstructionReset,
-            long diagnosticsAddress,
-            boolean diagnosticsEnabled) {
+            boolean reconstructionReset) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(scene, "scene");
         if (this.trainingRecords == null
@@ -323,9 +321,6 @@ final class RealtimeSharc implements Destroyable {
             constants.putLong(
                     ShaderAbi.SHARC_FRAME_RESOLVED_ADDRESS_OFFSET,
                     this.resolved.deviceAddress());
-            constants.putLong(
-                    ShaderAbi.SHARC_FRAME_DIAGNOSTICS_ADDRESS_OFFSET,
-                    diagnosticsAddress);
             putVec3(constants, ShaderAbi.SHARC_FRAME_CAMERA_POSITION_OFFSET,
                     cameraX, cameraY, cameraZ);
             constants.putFloat(
@@ -346,9 +341,6 @@ final class RealtimeSharc implements Destroyable {
             constants.putInt(
                     ShaderAbi.SHARC_FRAME_UPDATE_PHASE_OFFSET,
                     updatePhase(frameIndex));
-            constants.putInt(
-                    ShaderAbi.SHARC_FRAME_FLAGS_OFFSET,
-                    diagnosticsEnabled ? 1 : 0);
             constants.putLong(
                     ShaderAbi.SHARC_FRAME_TRAINING_RECORDS_ADDRESS_OFFSET,
                     this.trainingRecords.deviceAddress());
@@ -411,9 +403,7 @@ final class RealtimeSharc implements Destroyable {
             VkCommandBuffer commandBuffer,
             long integratorDescriptorSet,
             int width,
-            int height,
-            RealtimeSharcDiagnostics diagnostics,
-            RealtimeSharcDiagnostics.Capture capture) {
+            int height) {
         if (this.trainingRecords == null
                 || this.trainingWidth != trainingWidth(width)
                 || this.trainingHeight != trainingHeight(height)) {
@@ -428,7 +418,6 @@ final class RealtimeSharc implements Destroyable {
                     VK12.VK_ACCESS_SHADER_WRITE_BIT,
                     VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK12.VK_ACCESS_SHADER_READ_BIT);
-            diagnostics.recordUpdateStart(commandBuffer, capture);
             VK12.vkCmdBindPipeline(
                     commandBuffer,
                     VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -444,7 +433,6 @@ final class RealtimeSharc implements Destroyable {
             int updateCount = Math.multiplyExact(pathCount, TRAINING_ANCHOR_COUNT);
             VK12.vkCmdDispatch(
                     commandBuffer, Math.floorDiv(updateCount - 1, 64) + 1, 1, 1);
-            diagnostics.recordUpdateEnd(commandBuffer, capture);
             VulkanSync.bufferBarriers(
                     commandBuffer,
                     stack,
@@ -463,7 +451,6 @@ final class RealtimeSharc implements Destroyable {
                     stack.longs(integratorDescriptorSet),
                     null);
             VK12.vkCmdDispatch(commandBuffer, (CAPACITY + 255) / 256, 1, 1);
-            diagnostics.recordResolveEnd(commandBuffer, capture);
             VulkanSync.bufferBarriers(
                     commandBuffer,
                     stack,

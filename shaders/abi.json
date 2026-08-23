@@ -181,13 +181,11 @@
       ]
     },
     "nrdMotionPushConstants": {
-      "size": 208,
+      "size": 144,
       "fields": [
         { "name": "currentClipToWorld", "type": "mat4", "offset": 0 },
         { "name": "previousWorldToClip", "type": "mat4", "offset": 64 },
-        { "name": "previousRenderedWorldToClip", "type": "mat4", "offset": 128 },
-        { "name": "diagnosticMode", "type": "uint", "offset": 192 },
-        { "name": "currentJitterPixels", "type": "vec2", "offset": 200 }
+        { "name": "currentJitterPixels", "type": "vec2", "offset": 128 }
       ]
     },
     "sharcFrameConstants": {
@@ -196,7 +194,6 @@
         { "name": "hashEntriesAddress", "type": "uint64_t", "offset": 0 },
         { "name": "accumulationAddress", "type": "uint64_t", "offset": 8 },
         { "name": "resolvedAddress", "type": "uint64_t", "offset": 16 },
-        { "name": "diagnosticsAddress", "type": "uint64_t", "offset": 24 },
         { "name": "cameraPosition", "type": "vec3", "offset": 32 },
         { "name": "logarithmBase", "type": "float", "offset": 44 },
         { "name": "previousCameraPosition", "type": "vec3", "offset": 48 },
@@ -208,7 +205,6 @@
         { "name": "accumulationFrames", "type": "uint", "offset": 80 },
         { "name": "staleFrames", "type": "uint", "offset": 84 },
         { "name": "updatePhase", "type": "uint", "offset": 88 },
-        { "name": "flags", "type": "uint", "offset": 92 },
         { "name": "trainingRecordsAddress", "type": "uint64_t", "offset": 96 },
         { "name": "trainingWidth", "type": "uint", "offset": 104 },
         { "name": "trainingHeight", "type": "uint", "offset": 108 }
@@ -264,7 +260,6 @@
     "nrdSunPenumbra": 21,
     "nrdDiffuseDirection": 22,
     "nrdSpecularDirection": 23,
-    "rawNumericalDiagnostic": 24,
     "nrdReflectionNoisyDiffuse": 25,
     "nrdReflectionNoisySpecular": 26,
     "nrdReflectionNormalRoughness": 27,
@@ -321,7 +316,6 @@
     "airGapMask": "0x04000000",
     "vanillaPbrPresetsMask": "0x08000000",
     "sampleEpochMask": "0x7fffffff",
-    "triangleDebugMask": "0x80000000",
     "maximumBouncesMask": "0xff",
     "latitudeShift": 8,
     "latitudeMask": "0xff",
@@ -341,7 +335,6 @@
     "materialRoughnessMask": "0x7f",
     "materialRoughnessStepsPerUnit": 100,
     "shInputMask": "0x00800000",
-    "rawNumericalMask": "0x01000000",
     "starEvQuarterShift": 25,
     "starEvQuarterMask": "0x7f",
     "starEvQuarterBias": 32,

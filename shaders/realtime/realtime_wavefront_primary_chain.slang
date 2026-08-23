@@ -22,7 +22,6 @@ void primeQueuePrimaryChainLanding(
         uint recordIndex,
         SurfaceInteraction surface) {
     primeStoreWavefrontSurface(recordIndex, surface);
-    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     primeAppendWavefrontContinuation(
             PrimePostTraceWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_PRIMARY_QUEUE,
@@ -67,12 +66,6 @@ void primeProcessPrimaryChainBranch(
                     && !primeWavefrontGuideProbeFallback(
                             record.sourceAndPathControl.w);
             if (guidePending) {
-                if (primeWavefrontTransmissionBranch(control)
-                        && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
-                    primeStoreUnownedTransmissionGuideDiagnostic(
-                            primeWavefrontPixel(recordIndex),
-                            PRIME_GUIDE_STOP_CHAIN_LIMIT);
-                }
                 primeInvalidatePrimaryChainGuide(recordIndex, record);
             }
             record = primeWavefrontWithActive(record, false);
@@ -97,13 +90,6 @@ void primeProcessPrimaryChainBranch(
                         surface,
                         control);
         if (!continuation) {
-            if (transparent
-                    && primeWavefrontTransmissionBranch(control)
-                    && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
-                primeStoreUnownedTransmissionGuideDiagnostic(
-                        primeWavefrontPixel(recordIndex),
-                        PRIME_GUIDE_STOP_SURFACE);
-            }
             return;
         }
         transitions++;

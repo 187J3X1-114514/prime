@@ -20,7 +20,6 @@ import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
-import dev.prime.render.vulkan.SharcDiagnosticsSnapshot;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
@@ -125,7 +124,6 @@ final class RealtimeRenderer implements Destroyable {
                 this.sharcRequested && !this.context.capabilities().sharcSupported()
                         ? this.context.capabilities().sharcUnavailableReason()
                         : "",
-                this.pipeline.sharcDiagnostics(),
                 this.exposureDiagnostics.latest());
     }
 
@@ -217,7 +215,7 @@ final class RealtimeRenderer implements Destroyable {
         return !resourcesMatch || replacePipeline;
     }
 
-    List<String> render(RenderInput input) {
+    void render(RenderInput input) {
         Objects.requireNonNull(input, "input");
         if (!(input.mainTarget().getColorTexture() instanceof VulkanGpuTexture mainColor)) {
             throw new IllegalStateException("Prime expected a Vulkan main color texture");
@@ -231,15 +229,13 @@ final class RealtimeRenderer implements Destroyable {
                 || height <= 0
                 || input.mainTarget().width != width
                 || input.mainTarget().height != height) {
-            return List.of();
+            return;
         }
 
         RealtimeRenderSettings settings = input.settings();
         boolean sharcChanged = this.sharcRequested != settings.sharcEnabled();
         this.sharcRequested = settings.sharcEnabled();
-        PostProcessingMode requestedMode = input.controls().rawOutput()
-                ? PostProcessingMode.DISABLED
-                : settings.postProcessing();
+        PostProcessingMode requestedMode = settings.postProcessing();
         ResolvedReconstruction requestedSelection = this.reconstructionRegistry.resolve(
                 requestedMode,
                 settings.reconstructionQuality(),
@@ -261,7 +257,7 @@ final class RealtimeRenderer implements Destroyable {
         boolean reconfigured = resized || materialChanged || sharcChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
-            return List.of();
+            return;
         }
         ResolvedReconstruction selection = images.selection();
         int renderWidth = selection.extent().width();
@@ -309,22 +305,17 @@ final class RealtimeRenderer implements Destroyable {
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
-                input.controls().triangleDebug(),
                 settings.display(),
                 reconfigured);
         RealtimeSampleState.Plan sampleFrame = this.planSample(frameInput.sampleStateInput());
         ReconstructionFrameParameters postParameters =
                 frameInput.reconstructionInput(sampleFrame.reset());
-        ReconstructionDebugSettings debugSettings = new ReconstructionDebugSettings(
-                input.controls().nrdDebugView(),
-                input.controls().fsrDebugView(),
-                input.controls().rrDebugView(),
-                input.controls().rrDebugFullscreen());
+        ReconstructionDebugSettings debugSettings =
+                new ReconstructionDebugSettings(input.controls().imageDiagnostics());
         VulkanReconstructionProcessor.Frame postFrame =
                 processor.beginFrame(postParameters, debugSettings);
         ReconstructionFrame reconstructionFrame = postFrame.semantic();
         RealtimeFramePlan framePlan;
-        List<String> debugLines;
         try {
             framePlan = RealtimeFramePlan.complete(
                     frameInput,
@@ -335,10 +326,7 @@ final class RealtimeRenderer implements Destroyable {
                     selection.jitterPhase(reconstructionFrame.frameIndex()),
                     selection.packedRayCone(
                             input.camera().projection().m00(),
-                            input.camera().projection().m11()),
-                    selection.rawNumericalDiagnostic(debugSettings),
-                    input.controls().rendererDiagnostics());
-            debugLines = selection.debugLines(reconstructionFrame, debugSettings);
+                            input.camera().projection().m11()));
         } catch (RuntimeException exception) {
             throw ResourceCleanup.run(() -> processor.abandon(postFrame), exception);
         }
@@ -354,14 +342,12 @@ final class RealtimeRenderer implements Destroyable {
                 postFrame,
                 target,
                 history,
+                input.controls().imageDiagnostics(),
+                this.exposureDiagnostics,
                 input.atlasView(),
                 input.sceneTextures(),
                 input.textureRevision(),
                 mainColor);
-        if (input.controls().rendererDiagnostics()) {
-            this.exposureDiagnostics.capture(
-                    processor.displayExposureStateBuffer());
-        }
         this.commitSample(sampleFrame);
         int accumulatedSamples = this.sampleIndex();
         if (accumulatedSamples >= 16
@@ -371,7 +357,6 @@ final class RealtimeRenderer implements Destroyable {
                     accumulatedSamples,
                     input.scene().revision());
         }
-        return debugLines;
     }
 
     void requestReset() {
@@ -439,7 +424,6 @@ final class RealtimeRenderer implements Destroyable {
             boolean sharcRequested,
             boolean sharcEffective,
             String sharcUnavailableReason,
-            SharcDiagnosticsSnapshot sharcDiagnostics,
             DisplayExposureDiagnostics.Snapshot exposure) {}
 
     void releaseSizedResourcesAfterIdle() {

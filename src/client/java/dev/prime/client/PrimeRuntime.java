@@ -5,9 +5,9 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.mixin.MinecraftAccessor;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrInputView;
 import dev.prime.render.runtime.RendererFrameSettings;
 import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.runtime.RuntimeDiagnostics;
@@ -224,14 +224,6 @@ public final class PrimeRuntime {
         return activeRenderer != null && activeRenderer.screenshotActive();
     }
 
-    public boolean triangleDebug() {
-        return this.session.controls().triangleDebug();
-    }
-
-    public void setTriangleDebug(boolean value) {
-        this.session.setTriangleDebug(value);
-    }
-
     public boolean rendererDiagnostics() {
         return this.session.controls().rendererDiagnostics();
     }
@@ -240,45 +232,28 @@ public final class PrimeRuntime {
         this.session.setRendererDiagnostics(value);
     }
 
-    public boolean rawOutput() {
-        return this.session.controls().rawOutput();
+    public RendererImageView rendererImageView() {
+        return this.session.controls().imageDiagnostics().renderer();
     }
 
-    public void setRawOutput(boolean value) {
-        this.session.setRawOutput(value);
-        this.requestRealtimeReset();
+    public void setRendererImageView(RendererImageView value) {
+        this.session.setRendererImageView(value);
     }
 
-    public NrdDiagnostics.Mode nrdDebugView() {
-        return this.session.controls().nrdDebugView();
+    public RrInputView rrInputView() {
+        return this.session.controls().imageDiagnostics().rr();
     }
 
-    public void setNrdDebugView(NrdDiagnostics.Mode value) {
-        this.session.setNrdDebugView(value);
+    public void setRrInputView(RrInputView value) {
+        this.session.setRrInputView(value);
     }
 
-    public FsrDebugView fsrDebugView() {
-        return this.session.controls().fsrDebugView();
+    public NrdInputView nrdInputView() {
+        return this.session.controls().imageDiagnostics().nrd();
     }
 
-    public void setFsrDebugView(FsrDebugView value) {
-        this.session.setFsrDebugView(value);
-    }
-
-    public DlssRrDebugView rrDebugView() {
-        return this.session.controls().rrDebugView();
-    }
-
-    public void setRrDebugView(DlssRrDebugView value) {
-        this.session.setRrDebugView(value);
-    }
-
-    public boolean rrDebugFullscreen() {
-        return this.session.controls().rrDebugFullscreen();
-    }
-
-    public void setRrDebugFullscreen(boolean value) {
-        this.session.setRrDebugFullscreen(value);
+    public void setNrdInputView(NrdInputView value) {
+        this.session.setNrdInputView(value);
     }
 
     public void restoreSessionDefaults() {
@@ -357,14 +332,8 @@ public final class PrimeRuntime {
     private void updateSessionShortcuts(Minecraft minecraft) {
         long window = minecraft.getWindow().handle();
         boolean escape = pressed(window, GLFW.GLFW_KEY_ESCAPE);
-        boolean control = pressed(window, GLFW.GLFW_KEY_LEFT_CONTROL)
-                || pressed(window, GLFW.GLFW_KEY_RIGHT_CONTROL);
-        boolean alt = pressed(window, GLFW.GLFW_KEY_LEFT_ALT)
-                || pressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
-        boolean rrCycle = control && alt && pressed(window, GLFW.GLFW_KEY_F12);
-        boolean rrLayout = control && alt && pressed(window, GLFW.GLFW_KEY_F11);
         this.session.update(
-                new SessionController.KeyState(escape, rrCycle, rrLayout),
+                new SessionController.KeyState(escape),
                 this.screenshotActive());
     }
 

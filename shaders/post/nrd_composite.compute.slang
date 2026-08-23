@@ -19,46 +19,34 @@ import "core/nrd_sh.slang";
 [[vk::binding(5, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeStableAccumulation;
 [[vk::binding(6, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture3D<float4> primeCompositeAerialRadiance;
 [[vk::binding(7, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture3D<float4> primeCompositeAerialTransmittance;
-[[vk::binding(8, 0)]] [[vk::image_format("rgba8")]] RWTexture2D<float4> primeNrdValidation;
-[[vk::binding(9, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReprojectionError;
-[[vk::binding(10, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeMotionDiagnostic;
-[[vk::binding(11, 0)]] [[vk::image_format("r8")]] writeonly RWTexture2D<float4> primeFsrReactiveMask;
-[[vk::binding(12, 0)]] [[vk::image_format("r8")]] writeonly RWTexture2D<float4> primeFsrTransparencyCompositionMask;
-[[vk::binding(13, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeUnshadowedSunLighting;
-[[vk::binding(14, 0)]] [[vk::image_format("r16f")]] readonly RWTexture2D<float4> primeSigmaSunShadow;
-[[vk::binding(15, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeDenoisedDiffuseSh1;
-[[vk::binding(16, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeDenoisedSpecularSh1;
-[[vk::binding(17, 0)]] [[vk::image_format("rgb10_a2")]] readonly RWTexture2D<float4> primeCompositeNormalRoughness;
-[[vk::binding(18, 0)]] [[vk::image_format("r32f")]] readonly RWTexture2D<float4> primeCompositeViewZ;
-[[vk::binding(19, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeCompositePrimaryPosition;
-[[vk::binding(20, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeNoisySpecular;
-[[vk::binding(21, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedDiffuse;
-[[vk::binding(22, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedSpecular;
-[[vk::binding(23, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionCompositeMaterial;
-[[vk::binding(24, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionCompositeSpecularMaterial;
-[[vk::binding(25, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedDiffuseSh1;
-[[vk::binding(26, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedSpecularSh1;
-[[vk::binding(27, 0)]] [[vk::image_format("rgb10_a2")]] readonly RWTexture2D<float4> primeReflectionCompositeNormalRoughness;
-[[vk::binding(28, 0)]] [[vk::image_format("r32f")]] readonly RWTexture2D<float4> primeReflectionCompositeViewZ;
-[[vk::binding(29, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeReflectionCompositePosition;
-[[vk::binding(30, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeDisplayPosition;
+[[vk::binding(8, 0)]] [[vk::image_format("r8")]] writeonly RWTexture2D<float4> primeFsrReactiveMask;
+[[vk::binding(9, 0)]] [[vk::image_format("r8")]] writeonly RWTexture2D<float4> primeFsrTransparencyCompositionMask;
+[[vk::binding(10, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeUnshadowedSunLighting;
+[[vk::binding(11, 0)]] [[vk::image_format("r16f")]] readonly RWTexture2D<float4> primeSigmaSunShadow;
+[[vk::binding(12, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeDenoisedDiffuseSh1;
+[[vk::binding(13, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeDenoisedSpecularSh1;
+[[vk::binding(14, 0)]] [[vk::image_format("rgb10_a2")]] readonly RWTexture2D<float4> primeCompositeNormalRoughness;
+[[vk::binding(15, 0)]] [[vk::image_format("r32f")]] readonly RWTexture2D<float4> primeCompositeViewZ;
+[[vk::binding(16, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeCompositePrimaryPosition;
+[[vk::binding(17, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeNoisySpecular;
+[[vk::binding(18, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedDiffuse;
+[[vk::binding(19, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedSpecular;
+[[vk::binding(20, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionCompositeMaterial;
+[[vk::binding(21, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionCompositeSpecularMaterial;
+[[vk::binding(22, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedDiffuseSh1;
+[[vk::binding(23, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeReflectionDenoisedSpecularSh1;
+[[vk::binding(24, 0)]] [[vk::image_format("rgb10_a2")]] readonly RWTexture2D<float4> primeReflectionCompositeNormalRoughness;
+[[vk::binding(25, 0)]] [[vk::image_format("r32f")]] readonly RWTexture2D<float4> primeReflectionCompositeViewZ;
+[[vk::binding(26, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeReflectionCompositePosition;
+[[vk::binding(27, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeDisplayPosition;
 
 struct PrimeCompositePushConstants {
     uint2 outputExtent;
-    uint diagnosticMode;
     float sunRadianceMultiplier;
     float2 currentJitterPixels;
     float2 epipoleNdc;
 };
 [[vk::push_constant]] ConstantBuffer<PrimeCompositePushConstants> primeCompositePush;
-
-static const uint PRIME_DIAGNOSTIC_OFF = 0u;
-static const uint PRIME_DIAGNOSTIC_NRD_VALIDATION = 1u;
-static const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
-static const uint PRIME_DIAGNOSTIC_MOTION = 3u;
-static const uint PRIME_DIAGNOSTIC_SPECULAR_INPUT = 4u;
-static const uint PRIME_DIAGNOSTIC_SPECULAR_OUTPUT = 5u;
-static const uint PRIME_DIAGNOSTIC_SPECULAR_REMODULATED = 6u;
 
 // The viewport corner angles are identical for every lane in this 8x8 workgroup.
 groupshared AtmEpipolarRange primeCompositeEpipolarRange;
@@ -390,36 +378,6 @@ float3 primeCompositeSh0Color(float4 sh0) {
     return primeNrdSgExtractColor(primeNrdUnpackSg(sh0, float3(0.0)));
 }
 
-float3 primeCompositeRemodulatedSpecular(
-        uint2 pixel,
-        float4 material) {
-    PrimeCompositeResolveGuide guide =
-            primeCompositeLoadResolveGuide(
-                    int2(pixel),
-                    false,
-                    material,
-                    false);
-    return primeCompositeResolveBranchValue(
-            int2(pixel),
-            false,
-            guide,
-            true);
-}
-
-float3 primeCompositeDisplayDiagnostic(float3 radiance) {
-    radiance = primeNrdIsFinite(radiance) ? max(radiance, float3(0.0)) : float3(0.0);
-    return primeDisplayTransformToSrgb(radiance, 1.0);
-}
-
-bool primeCompositeIsValidationSceneTile(uint2 pixel) {
-    // Match NRD's 4x4 viewport selection at pixel centers. REBLUR deliberately leaves the middle
-    // six tiles untouched for the application-provided beauty image.
-    uint2 viewport = min(
-            (pixel * 4u + 2u) / primeCompositePush.outputExtent,
-            uint2(3u));
-    return (viewport.x == 1u || viewport.x == 2u) && viewport.y >= 1u;
-}
-
 [numthreads(8, 8, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex) {
     if (groupIndex == 0u) {
@@ -443,78 +401,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
             int2(pixel),
             float4(primeFsrSanitizeMask(
                     fsrMasks.transparencyAndComposition)));
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_INPUT) {
-        primeWriteImageStore(
-                primeCompositeOutput,
-                int2(pixel),
-                float4(primeCompositeDisplayDiagnostic(primeCompositeSh0Color(
-                        primeReadonlyImageLoad(primeNoisySpecular, int2(pixel)))), 1.0));
-        return;
-    }
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_OUTPUT) {
-        primeWriteImageStore(
-                primeCompositeOutput,
-                int2(pixel),
-                float4(primeCompositeDisplayDiagnostic(primeCompositeSh0Color(
-                        primeReadonlyImageLoad(primeDenoisedSpecular, int2(pixel)))), 1.0));
-        return;
-    }
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_REMODULATED) {
-        float4 material = primeReadonlyImageLoad(
-                primeCompositeMaterial, int2(pixel));
-        primeWriteImageStore(
-                primeCompositeOutput,
-                int2(pixel),
-                float4(primeCompositeDisplayDiagnostic(
-                        primeCompositeRemodulatedSpecular(
-                                pixel,
-                                material)), 1.0));
-        return;
-    }
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-        primeWriteImageStore(
-                primeCompositeOutput,
-                int2(pixel),
-                float4(primeReadonlyImageLoad(primeReprojectionError, int2(pixel)).rgb, 1.0));
-        return;
-    }
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_MOTION) {
-        float3 motion = primeReadonlyImageLoad(primeMotionDiagnostic, int2(pixel)).xyz;
-        float2 motionPixels = motion.xy;
-        float3 positiveColor = max(motionPixels.x, 0.0) * float3(1.0, 0.0, 0.0)
-                + max(motionPixels.y, 0.0) * float3(0.0, 1.0, 0.0);
-        float3 negativeColor = max(-motionPixels.x, 0.0) * float3(0.0, 1.0, 1.0)
-                + max(-motionPixels.y, 0.0) * float3(1.0, 0.0, 1.0);
-        float3 motionColor = (positiveColor + negativeColor + abs(motion.z)) * 0.25;
-        primeWriteImageStore(
-                primeCompositeOutput,
-                int2(pixel),
-                float4(clamp(motionColor, float3(0.0), float3(1.0)), 1.0));
-        return;
-    }
     float4 material = primeReadonlyImageLoad(primeCompositeMaterial, int2(pixel));
     float3 radiance = primeCompositeRadiance(
             pixel,
             material,
             displayPosition.xyz,
             visibleMaterialFlags);
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
-        float3 validationColor;
-        if (primeCompositeIsValidationSceneTile(pixel)) {
-            validationColor = primeCompositeDisplayDiagnostic(radiance);
-            primeWriteImageStore(
-                    primeNrdValidation,
-                    int2(pixel),
-                    float4(validationColor, 1.0));
-        } else {
-            validationColor = primeImageLoad(primeNrdValidation, int2(pixel)).rgb;
-        }
-        primeWriteImageStore(
-                primeCompositeOutput,
-                int2(pixel),
-                float4(validationColor, 1.0));
-        return;
-    }
     primeWriteImageStore(
             primeCompositeOutput,
             int2(pixel),

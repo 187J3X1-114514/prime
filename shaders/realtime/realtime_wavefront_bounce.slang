@@ -7,7 +7,6 @@
 
 struct PrimeFusedWavefrontLightResult {
     uint storedSunProbability;
-    bool diagnosticsCommitted;
 };
 
 struct PrimeTransparentLightEvent {
@@ -104,26 +103,18 @@ bool primePrepareTransparentAreaSample(
             preparedSample,
             PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
             PRIME_SAMPLE_DIMENSION_SECONDARY);
-    lightData.numericalFlags = context.diagnostics.flags;
-    lightData.numericalContext =
-            context.diagnostics.firstContext;
     return true;
 }
 
 AreaLightSample primeExecuteTransparentAreaSample(
         inout PrimeIntegratorContext context,
         PrimeTransparentAreaSampleInput lightData) {
-    PrimeNumericalDiagnostics diagnostics;
-    diagnostics.flags = lightData.numericalFlags;
-    diagnostics.firstContext =
-            lightData.numericalContext;
     AreaLightSample area = primeSampleAreaLight(
-            diagnostics,
+            context.diagnostics,
             lightData.position,
             lightData.receiverNormal,
             lightData.treeSample,
             lightData.positionSample);
-    context.diagnostics = diagnostics;
     return area;
 }
 
@@ -138,7 +129,6 @@ PrimeFusedWavefrontLightResult primeShadeTransparentSunLightEvent<SharcTraining>
 {
     PrimeFusedWavefrontLightResult result;
     result.storedSunProbability = event.storedSunProbability;
-    result.diagnosticsCommitted = false;
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
@@ -180,7 +170,6 @@ PrimeFusedWavefrontLightResult primeShadeTransparentSunLightEvent<SharcTraining>
                 control,
                 contribution);
     }
-    result.diagnosticsCommitted = true;
     return result;
 }
 
@@ -198,10 +187,7 @@ PrimeFusedWavefrontLightResult primeShadeTransparentAreaLightEvent<SharcTraining
 {
     PrimeFusedWavefrontLightResult result;
     result.storedSunProbability = event.storedSunProbability;
-    result.diagnosticsCommitted = false;
     if (!preparedArea) {
-        result.diagnosticsCommitted =
-                event.type == PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY;
         return result;
     }
 
@@ -252,7 +238,6 @@ PrimeFusedWavefrontLightResult primeShadeTransparentAreaLightEvent<SharcTraining
                         * (sun.lighting.specular * sun.visibility
                                 + nonsun.specular));
         result.storedSunProbability = 0u;
-        result.diagnosticsCommitted = true;
         return result;
     }
 
@@ -277,7 +262,6 @@ PrimeFusedWavefrontLightResult primeShadeTransparentAreaLightEvent<SharcTraining
                 control,
                 contribution);
     }
-    result.diagnosticsCommitted = true;
     return result;
 }
 #endif

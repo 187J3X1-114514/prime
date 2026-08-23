@@ -52,7 +52,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 96
 				|| surfaceInteraction.size != 96 || wavefrontSurfaceRecord.size != 96
 				|| push.size != 128
-				|| nrdMotionPush.size != 208 || sharcFrame.size != 112
+				|| nrdMotionPush.size != 144 || sharcFrame.size != 112
 				|| sunShadowQuery.size != 48
 				|| schema.sceneTextureCount != 64) {
 			throw new GradleException(
@@ -150,7 +150,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')
 				|| !schema.pathControl.airGapMask.toString().equalsIgnoreCase('0x04000000')
 				|| !schema.pathControl.vanillaPbrPresetsMask.toString().equalsIgnoreCase('0x08000000')
-				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
 				|| schema.pathControl.transparentGuideModeShift != 29
@@ -166,14 +165,13 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0x7f')
 				|| schema.pathControl.materialRoughnessStepsPerUnit != 100
 				|| !schema.pathControl.shInputMask.toString().equalsIgnoreCase('0x00800000')
-				|| !schema.pathControl.rawNumericalMask.toString().equalsIgnoreCase('0x01000000')
 				|| schema.pathControl.starEvQuarterShift != 25
 				|| !schema.pathControl.starEvQuarterMask.toString().equalsIgnoreCase('0x7f')
 				|| schema.pathControl.starEvQuarterBias != 32
 				|| schema.pathControl.maximumBounces != 128
 				|| schema.pathControl.russianRouletteStart != 1) {
 			throw new GradleException(
-					'Prime path controls must preserve sampling, diagnostics, camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
+					'Prime path controls must preserve sampling, camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -325,7 +323,6 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.realtimeDescriptors.nrdSunPenumbra};
     public static final int DESCRIPTOR_NRD_DIFFUSE_DIRECTION = ${schema.realtimeDescriptors.nrdDiffuseDirection};
     public static final int DESCRIPTOR_NRD_SPECULAR_DIRECTION = ${schema.realtimeDescriptors.nrdSpecularDirection};
-    public static final int DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC = ${schema.realtimeDescriptors.rawNumericalDiagnostic};
     public static final int DESCRIPTOR_NRD_REFLECTION_NOISY_DIFFUSE = ${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse};
     public static final int DESCRIPTOR_NRD_REFLECTION_NOISY_SPECULAR = ${schema.realtimeDescriptors.nrdReflectionNoisySpecular};
     public static final int DESCRIPTOR_NRD_REFLECTION_NORMAL_ROUGHNESS = ${schema.realtimeDescriptors.nrdReflectionNormalRoughness};
@@ -384,7 +381,6 @@ public final class ShaderAbi {
     public static final int PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
     public static final int PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
-    public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
     public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
     public static final int PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
     public static final int PATH_LATITUDE_MASK = ${schema.pathControl.latitudeMask};
@@ -404,7 +400,6 @@ public final class ShaderAbi {
     public static final int PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
     public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
     public static final int PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
-    public static final int PATH_RAW_NUMERICAL_MASK = ${schema.pathControl.rawNumericalMask};
     public static final int PATH_STAR_EV_QUARTER_SHIFT = ${schema.pathControl.starEvQuarterShift};
     public static final int PATH_STAR_EV_QUARTER_MASK = ${schema.pathControl.starEvQuarterMask};
     public static final int PATH_STAR_EV_QUARTER_BIAS = ${schema.pathControl.starEvQuarterBias};
@@ -501,7 +496,6 @@ static const uint PRIME_PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamless
 static const uint PRIME_PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
 static const uint PRIME_PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
 static const uint PRIME_PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
-static const uint PRIME_PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
 static const uint PRIME_PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
 static const uint PRIME_PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
 static const uint PRIME_PATH_LATITUDE_MASK = ${schema.pathControl.latitudeMask};
@@ -521,7 +515,6 @@ static const uint PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT = ${schema.pathControl.mat
 static const uint PRIME_PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
 static const float PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
 static const uint PRIME_PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
-static const uint PRIME_PATH_RAW_NUMERICAL_MASK = ${schema.pathControl.rawNumericalMask};
 static const uint PRIME_PATH_STAR_EV_QUARTER_SHIFT = ${schema.pathControl.starEvQuarterShift};
 static const uint PRIME_PATH_STAR_EV_QUARTER_MASK = ${schema.pathControl.starEvQuarterMask};
 static const int PRIME_PATH_STAR_EV_QUARTER_BIAS = ${schema.pathControl.starEvQuarterBias};
@@ -772,8 +765,6 @@ public RWTexture2D<float> primeNrdSunPenumbra;
 public RWTexture2D<float4> primeNrdDiffuseDirection;
 [[vk::binding(${schema.realtimeDescriptors.nrdSpecularDirection}, 1)]] [[vk::image_format("rgba16f")]]
 public RWTexture2D<float4> primeNrdSpecularDirection;
-[[vk::binding(${schema.realtimeDescriptors.rawNumericalDiagnostic}, 1)]] [[vk::image_format("rgba16f")]]
-public writeonly RWTexture2D<float4> primeRawNumericalDiagnostic;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse}, 1)]] [[vk::image_format("rgba16f")]]
 public RWTexture2D<float4> primeNrdReflectionNoisyDiffuse;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionNoisySpecular}, 1)]] [[vk::image_format("rgba16f")]]

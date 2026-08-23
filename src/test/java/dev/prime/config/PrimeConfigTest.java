@@ -9,7 +9,6 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
-import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -246,7 +245,6 @@ final class PrimeConfigTest {
         assertEquals(
                 ReconstructionQualityMode.PERFORMANCE,
                 ReconstructionQualityMode.fromId("future_quality"));
-        assertEquals(DlssRrDebugView.OFF, DlssRrDebugView.fromId("future_view"));
     }
 
     @Test
@@ -276,7 +274,7 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
+    void serializedContentsContainCurrentPersistentSettings() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
@@ -296,8 +294,6 @@ final class PrimeConfigTest {
         assertEquals(
                 100,
                 PrimeSettings.defaults().voxelTextureSurfaceStrengthSteps());
-        assertFalse(serialized.contains("debug_view"));
-        assertFalse(serialized.contains("debug_fullscreen"));
         assertTrue(serialized.contains("astronomy.latitude_degrees=30\n"));
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
@@ -317,10 +313,7 @@ final class PrimeConfigTest {
         assertTrue(PrimeSettings.defaults().vanillaPbrPresets());
 
         Properties properties = new Properties();
-        assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));
         assertFalse(PrimeConfig.hasLegacyDisplayTransformProperties(properties));
-        properties.setProperty("dlss_rr.debug_view", "motion");
-        assertTrue(PrimeConfig.hasLegacyDebugProperties(properties));
         properties.setProperty("display.transform", "oklab");
         assertTrue(PrimeConfig.hasLegacyDisplayTransformProperties(properties));
     }

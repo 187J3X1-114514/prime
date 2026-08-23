@@ -35,7 +35,6 @@ final class NrdInputPreparationPass implements Destroyable {
     private final long pipeline;
     private final Matrix4f currentClipToWorld = new Matrix4f();
     private final Matrix4f previousWorldToClip = new Matrix4f();
-    private final Matrix4f previousRenderedWorldToClip = new Matrix4f();
     private final Matrix4f worldToViewScratch = new Matrix4f();
     private boolean destroyed;
 
@@ -134,7 +133,6 @@ final class NrdInputPreparationPass implements Destroyable {
                 images.motion,
                 images.viewZ,
                 images.primaryPosition,
-                images.reprojectionError,
                 images.fsrDepth,
                 images.noisyDiffuse,
                 images.noisySpecular,
@@ -207,15 +205,12 @@ final class NrdInputPreparationPass implements Destroyable {
             FrameCamera previous,
             int width,
             int height,
-            int diagnosticMode,
             float cameraJitterX,
             float cameraJitterY,
             PreparedNrdFrame output) {
         NrdCameraTransform.currentClipToWorld(camera, this.currentClipToWorld);
         NrdCameraTransform.previousWorldToClip(
                 camera, previous, this.previousWorldToClip, this.worldToViewScratch);
-        NrdCameraTransform.previousRenderedWorldToClip(
-                camera, previous, this.previousRenderedWorldToClip);
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VK12.vkCmdBindPipeline(
                     commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -231,8 +226,6 @@ final class NrdInputPreparationPass implements Destroyable {
                     push,
                     this.currentClipToWorld,
                     this.previousWorldToClip,
-                    this.previousRenderedWorldToClip,
-                    diagnosticMode,
                     cameraJitterX,
                     cameraJitterY);
             VK12.vkCmdPushConstants(

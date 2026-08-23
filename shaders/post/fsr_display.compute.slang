@@ -4,7 +4,6 @@ import "post/display_transform.slang";
 struct PrimeFsrDisplayPushConstants
 {
     uint2 outputExtent;
-    uint debugView;
     float finalExposureMultiplier;
     float reinhardOutputPeak;
     float reinhardCurvePeak;
@@ -28,11 +27,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     float3 radiance = primeFsrLinearOutput.Load(int3(pixel, 0)).rgb;
     bool hdrActive = primeFsrDisplayPush.reinhardOutputPeak > 1.0;
-    if (primeFsrDisplayPush.debugView != 0) {
-        float3 debugColor = clamp(radiance, 0.0, 1.0);
-        primeDisplayOutput.Store(pixel, float4(debugColor, 1.0));
-        return;
-    }
     if (any(isnan(radiance)) || any(isinf(radiance))) radiance = float3(0.0);
     float exposure = exp2(primeAutoExposureState[0].exposureEv)
             * primeFsrDisplayPush.finalExposureMultiplier;

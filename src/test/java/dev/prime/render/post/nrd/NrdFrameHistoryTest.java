@@ -107,8 +107,7 @@ final class NrdFrameHistoryTest {
                 NOON,
                 0.25F,
                 -0.25F,
-                false,
-                NrdDiagnostics.Mode.OFF);
+                false);
     }
 
     private static FrameCamera camera(double x) {

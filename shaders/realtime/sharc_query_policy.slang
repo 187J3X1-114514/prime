@@ -10,11 +10,8 @@
 
 bool primeSharcCacheEligible(
         PathState path,
-        SurfaceInteraction surface,
-        bool diagnosticSample) {
+        SurfaceInteraction surface) {
     if (path.previousSharcEvent == PRIME_SHARC_EVENT_DISCRETE) {
-        primeRecordSharcDiagnostic(
-                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_DISCRETE_SKIP);
         return false;
     }
 
@@ -22,8 +19,6 @@ bool primeSharcCacheEligible(
             surface.position, surface.geometricNormal);
     const float voxelDiagonalScale = 1.7320508075688772;
     if (surface.t <= voxelSize * voxelDiagonalScale) {
-        primeRecordSharcDiagnostic(
-                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP);
         return false;
     }
     if (path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY) {
@@ -33,8 +28,6 @@ bool primeSharcCacheEligible(
         float footprintRadius = surface.t * sqrt(
                 0.5 * alphaSquared / max(1.0 - alphaSquared, 1.0e-6));
         if (footprintRadius <= voxelSize) {
-            primeRecordSharcDiagnostic(
-                    diagnosticSample, PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP);
             return false;
         }
     }
@@ -50,10 +43,7 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
         PrimeIndirectReuseResult result;
         result.contribution = float3(0.0);
         result.hit = false;
-        bool diagnosticSample = primeSharcDiagnosticSample(path);
-        primeRecordSharcDiagnostic(
-                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_QUERY);
-        if (!primeSharcCacheEligible(path, surface, diagnosticSample)) {
+        if (!primeSharcCacheEligible(path, surface)) {
             return result;
         }
         // Training paths must trace their complete transport suffix without cached feedback.
@@ -73,14 +63,10 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
                 primeEvaluateLocalHitEmission(
                         context, path, surface, previousUsedAreaNee));
         float3 radiance;
-        primeRecordSharcDiagnostic(
-                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_LOOKUP);
         if (!SharcGetCachedRadiance(
                 primeSharcParameters(), hit, radiance, false)) {
             return result;
         }
-        primeRecordSharcDiagnostic(
-                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_HIT);
         primeCompleteSharcTraining(path, radiance);
         result.contribution = path.throughput * radiance;
         result.hit = true;

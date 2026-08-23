@@ -22,8 +22,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 final class NrdCompositePass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int BINDING_COUNT = 31;
-    private static final int PUSH_SIZE = 32;
+    private static final int BINDING_COUNT = 28;
+    private static final int PUSH_SIZE = 28;
     private final VulkanContext context;
     private final long descriptorSetLayout;
     private final long descriptorPool;
@@ -132,9 +132,6 @@ final class NrdCompositePass implements Destroyable {
                 stableAccumulation,
                 atmosphere.aerialRadiance(),
                 atmosphere.aerialTransmittance(),
-                images.validation,
-                images.reprojectionError,
-                images.motion,
                 images.fsrReactiveMask,
                 images.fsrTransparencyCompositionMask,
                 images.sunLighting,
@@ -202,7 +199,6 @@ final class NrdCompositePass implements Destroyable {
             VkCommandBuffer commandBuffer,
             int width,
             int height,
-            int diagnosticMode,
             float sunRadianceMultiplier,
             float cameraJitterX,
             float cameraJitterY,
@@ -221,12 +217,11 @@ final class NrdCompositePass implements Destroyable {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, width);
             push.putInt(4, height);
-            push.putInt(8, diagnosticMode);
-            push.putFloat(12, sunRadianceMultiplier);
-            push.putFloat(16, cameraJitterX);
-            push.putFloat(20, cameraJitterY);
-            push.putFloat(24, epipoleX);
-            push.putFloat(28, epipoleY);
+            push.putFloat(8, sunRadianceMultiplier);
+            push.putFloat(12, cameraJitterX);
+            push.putFloat(16, cameraJitterY);
+            push.putFloat(20, epipoleX);
+            push.putFloat(24, epipoleY);
             VK12.vkCmdPushConstants(
                     commandBuffer,
                     this.pipelineLayout,

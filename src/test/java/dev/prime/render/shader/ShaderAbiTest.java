@@ -59,7 +59,6 @@ final class ShaderAbiTest {
         assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);
         assertEquals(21, ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA);
         assertEquals(128, ShaderAbi.MAXIMUM_BOUNCES);
-        assertEquals(24, ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC);
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
@@ -101,7 +100,6 @@ final class ShaderAbiTest {
         assertEquals(0x02000000, ShaderAbi.PATH_SEAMLESS_GLASS_MASK);
         assertEquals(0x04000000, ShaderAbi.PATH_AIR_GAP_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
-        assertEquals(0x80000000, ShaderAbi.PATH_TRIANGLE_DEBUG_MASK);
         assertEquals(0xff, ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);
         assertEquals(8, ShaderAbi.PATH_LATITUDE_SHIFT);
         assertEquals(0xff, ShaderAbi.PATH_LATITUDE_MASK);
@@ -121,7 +119,6 @@ final class ShaderAbiTest {
         assertEquals(0x7f, ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
         assertEquals(100, ShaderAbi.PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT);
         assertEquals(0x00800000, ShaderAbi.PATH_SH_INPUT_MASK);
-        assertEquals(0x01000000, ShaderAbi.PATH_RAW_NUMERICAL_MASK);
         assertEquals(25, ShaderAbi.PATH_STAR_EV_QUARTER_SHIFT);
         assertEquals(0x7f, ShaderAbi.PATH_STAR_EV_QUARTER_MASK);
         assertEquals(32, ShaderAbi.PATH_STAR_EV_QUARTER_BIAS);
@@ -237,11 +234,9 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.SHARC_FRAME_HASH_ENTRIES_ADDRESS_OFFSET);
         assertEquals(8, ShaderAbi.SHARC_FRAME_ACCUMULATION_ADDRESS_OFFSET);
         assertEquals(16, ShaderAbi.SHARC_FRAME_RESOLVED_ADDRESS_OFFSET);
-        assertEquals(24, ShaderAbi.SHARC_FRAME_DIAGNOSTICS_ADDRESS_OFFSET);
         assertEquals(32, ShaderAbi.SHARC_FRAME_CAMERA_POSITION_OFFSET);
         assertEquals(48, ShaderAbi.SHARC_FRAME_PREVIOUS_CAMERA_POSITION_OFFSET);
         assertEquals(72, ShaderAbi.SHARC_FRAME_CAPACITY_OFFSET);
-        assertEquals(92, ShaderAbi.SHARC_FRAME_FLAGS_OFFSET);
         assertEquals(96, ShaderAbi.SHARC_FRAME_TRAINING_RECORDS_ADDRESS_OFFSET);
         assertEquals(104, ShaderAbi.SHARC_FRAME_TRAINING_WIDTH_OFFSET);
         assertEquals(108, ShaderAbi.SHARC_FRAME_TRAINING_HEIGHT_OFFSET);

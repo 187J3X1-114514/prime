@@ -45,7 +45,5 @@ public interface RealtimeIntegratorPipeline extends Destroyable {
 
     boolean sharcEffective();
 
-    SharcDiagnosticsSnapshot sharcDiagnostics();
-
     void releaseSizedResourcesAfterIdle();
 }

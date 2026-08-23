@@ -30,10 +30,8 @@ PrimePathScatter primeSamplePrimaryChainGuideContinuation(
         return result;
     }
 
-    PrimeNumericalDiagnostics savedDiagnostics = context.diagnostics;
     result = primeSamplePathSurface(
             context, surface, viewDirection, float3(0.5), volumeStack);
-    context.diagnostics = savedDiagnostics;
     return result;
 }
 

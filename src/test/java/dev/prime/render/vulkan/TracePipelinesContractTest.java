@@ -171,16 +171,13 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void rrHandoffDiagnosticsShareOneExactDescriptorLayout() throws IOException {
-        Set<Integer> display = descriptorBindings(
-                List.of("rr_debug.comp.spv"), 0);
-        Set<Integer> expectedDisplay = java.util.stream.IntStream.rangeClosed(0, 18)
-                .boxed()
-                .collect(java.util.stream.Collectors.toSet());
-        assertEquals(expectedDisplay, display);
+    void imageDiagnosticsUseOneIsolatedSourceAndTargetLayout() throws IOException {
         assertEquals(
-                Set.of(1, 5, 6, 14, 15, 16),
-                descriptorBindings(List.of("rr_debug_capture.comp.spv"), 0));
+                Set.of(0, 1),
+                descriptorBindings(List.of("image_diagnostic_rgba8.comp.spv"), 0));
+        assertEquals(
+                Set.of(0, 1),
+                descriptorBindings(List.of("image_diagnostic_rgba16.comp.spv"), 0));
     }
 
     @Test

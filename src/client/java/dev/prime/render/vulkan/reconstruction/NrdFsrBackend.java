@@ -45,11 +45,6 @@ final class NrdFsrBackend implements ReconstructionBackend {
     }
 
     @Override
-    public boolean rawNumericalDiagnostic(ReconstructionDebugSettings debugSettings) {
-        return debugSettings.nrd().rawNumerical();
-    }
-
-    @Override
     public String executionLabel() {
         return "Prime 1spp path tracing, NRD, and FidelityFX FSR 3.1.4";
     }

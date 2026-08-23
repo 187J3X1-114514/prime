@@ -1,14 +1,12 @@
 package dev.prime.render.vulkan.reconstruction;
 
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionExtent;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.post.TransparentGuideMode;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.List;
 
 /** Requested product mode resolved to one executable built-in backend and render extent. */
 public record ResolvedReconstruction(
@@ -63,16 +61,8 @@ public record ResolvedReconstruction(
                 this.extent.height());
     }
 
-    public boolean rawNumericalDiagnostic(ReconstructionDebugSettings debugSettings) {
-        return this.backend.rawNumericalDiagnostic(debugSettings);
-    }
-
     public String executionLabel() {
         return this.backend.executionLabel();
     }
 
-    public List<String> debugLines(
-            ReconstructionFrame frame, ReconstructionDebugSettings debugSettings) {
-        return this.backend.debugLines(this, frame, debugSettings);
-    }
 }

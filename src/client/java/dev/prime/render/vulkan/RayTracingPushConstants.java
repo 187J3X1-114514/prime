@@ -69,8 +69,7 @@ public final class RayTracingPushConstants {
                         input.material().vanillaPbrPresets()));
         buffer.putInt(
                 pathOffset + Integer.BYTES,
-                IntegratorSettings.packSampleEpoch(
-                        input.sampleEpoch(), input.triangleDebug()));
+                IntegratorSettings.packSampleEpoch(input.sampleEpoch()));
         buffer.putInt(
                 pathOffset + 2 * Integer.BYTES,
                 IntegratorSettings.packPathControl(
@@ -86,7 +85,6 @@ public final class RayTracingPushConstants {
                         input.lighting().starQuarterSteps(),
                         input.lighting().blockLightQuarterSteps(),
                         input.material().roughnessSteps(),
-                        input.shInput(),
-                        input.rawNumericalDiagnostic()));
+                        input.shInput()));
     }
 }

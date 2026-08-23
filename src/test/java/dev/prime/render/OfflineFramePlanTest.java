@@ -33,8 +33,6 @@ final class OfflineFramePlanTest {
         assertEquals(0, first.integrator().jitterPhase());
         assertEquals(0, first.integrator().packedRayCone() >>> 16);
         assertFalse(first.integrator().shInput());
-        assertFalse(first.integrator().rawNumericalDiagnostic());
-        assertFalse(first.integrator().triangleDebug());
         first.requireSceneRevision(input.sceneRevision());
         assertThrows(
                 IllegalStateException.class,

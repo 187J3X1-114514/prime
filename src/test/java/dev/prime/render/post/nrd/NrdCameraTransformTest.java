@@ -65,48 +65,6 @@ final class NrdCameraTransformTest {
     }
 
     @Test
-    void exactDiagnosticProjectionBypassesCanonicalViewEffectDecomposition() {
-        Matrix4f previousRenderedViewProjection = new Matrix4f(PROJECTION)
-                .translate(0.2F, -0.1F, 0.0F);
-        FrameCamera previous = new FrameCamera(
-                new Matrix4f(PROJECTION),
-                new Matrix4f(),
-                new Matrix4f(previousRenderedViewProjection).invert(),
-                0.0,
-                0.0,
-                0.0,
-                -0.2,
-                0.1,
-                0.0);
-        FrameCamera current = new FrameCamera(
-                new Matrix4f(PROJECTION),
-                new Matrix4f(),
-                new Matrix4f(PROJECTION).invert(),
-                1.0,
-                0.0,
-                0.0,
-                1.15,
-                -0.05,
-                0.0);
-        Vector3f currentRelative = new Vector3f(
-                STATIC_WORLD_POINT.x - (float) current.renderX(),
-                STATIC_WORLD_POINT.y - (float) current.renderY(),
-                STATIC_WORLD_POINT.z - (float) current.renderZ());
-        Vector3f previousPhysicalRelative = new Vector3f(
-                STATIC_WORLD_POINT.x - (float) previous.x(),
-                STATIC_WORLD_POINT.y - (float) previous.y(),
-                STATIC_WORLD_POINT.z - (float) previous.z());
-
-        Vector2f diagnosticUv = renderedScreenUv(
-                NrdCameraTransform.previousRenderedWorldToClip(current, previous),
-                currentRelative);
-        Vector2f directUv = renderedScreenUv(
-                previousRenderedViewProjection, previousPhysicalRelative);
-        assertEquals(directUv.x, diagnosticUv.x, EPSILON);
-        assertEquals(directUv.y, diagnosticUv.y, EPSILON);
-    }
-
-    @Test
     void jitteredHitAndSkyDirectionsHaveZeroMotionForAStaticCamera() {
         FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
         Matrix4f clipToWorld = NrdCameraTransform.currentClipToWorld(camera);
@@ -168,14 +126,6 @@ final class NrdCameraTransformTest {
         assertEquals(directPreviousUv.x, motion.previousUv.x, EPSILON);
         assertEquals(directPreviousUv.y, motion.previousUv.y, EPSILON);
 
-        Vector2f exactRenderedPreviousUv = renderedScreenUv(
-                NrdCameraTransform.previousRenderedWorldToClip(current, previous),
-                new Vector3f(
-                        STATIC_WORLD_POINT.x - (float) current.renderX(),
-                        STATIC_WORLD_POINT.y - (float) current.renderY(),
-                        STATIC_WORLD_POINT.z - (float) current.renderZ()));
-        assertEquals(directPreviousUv.x, exactRenderedPreviousUv.x, EPSILON);
-        assertEquals(directPreviousUv.y, exactRenderedPreviousUv.y, EPSILON);
     }
 
     private static Motion motion(FrameCamera previous, FrameCamera current) {
@@ -207,15 +157,6 @@ final class NrdCameraTransformTest {
         return Math.abs(NrdCameraTransform.previousWorldToView(current, previous)
                 .transformPosition(currentRelative)
                 .z);
-    }
-
-    private static Vector2f renderedScreenUv(Matrix4f worldToClip, Vector3f position) {
-        Vector4f clip = worldToClip.transform(
-                new Vector4f(position.x, position.y, position.z, 1.0F));
-        float inverseW = 1.0F / clip.w;
-        return new Vector2f(
-                clip.x * inverseW * 0.5F + 0.5F,
-                clip.y * inverseW * 0.5F + 0.5F);
     }
 
     private static Vector3f rayDirection(Matrix4f clipToWorld, Vector2f uv) {

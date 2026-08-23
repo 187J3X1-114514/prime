@@ -81,8 +81,6 @@ public record OfflineFrameInput(
                         TransparentGuideMode.DISABLED,
                         this.lighting,
                         this.material,
-                        false,
-                        false,
                         false));
     }
 

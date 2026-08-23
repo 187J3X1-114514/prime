@@ -1,36 +1,24 @@
 package dev.prime.render.runtime;
 
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.post.nrd.NrdDiagnostics;
-import java.util.Objects;
+import dev.prime.render.diagnostic.ImageDiagnosticSelection;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrInputView;
 
 /** Immutable, non-persistent controls owned by the client runtime. */
 public record SessionControls(
         boolean screenshotRequested,
-        boolean triangleDebug,
         boolean rendererDiagnostics,
-        boolean rawOutput,
-        NrdDiagnostics.Mode nrdDebugView,
-        FsrDebugView fsrDebugView,
-        DlssRrDebugView rrDebugView,
-        boolean rrDebugFullscreen) {
+        ImageDiagnosticSelection imageDiagnostics) {
     public SessionControls {
-        nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
-        fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
-        rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
+        imageDiagnostics = java.util.Objects.requireNonNull(imageDiagnostics, "imageDiagnostics");
     }
 
     public static SessionControls defaults() {
         return new SessionControls(
                 false,
                 false,
-                false,
-                false,
-                NrdDiagnostics.Mode.OFF,
-                FsrDebugView.OFF,
-                DlssRrDebugView.OFF,
-                false);
+                ImageDiagnosticSelection.off());
     }
 
     public SessionControls withScreenshotRequested(boolean value) {
@@ -38,27 +26,8 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         value,
-                        this.triangleDebug,
                         this.rendererDiagnostics,
-                        this.rawOutput,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
-    }
-
-    public SessionControls withTriangleDebug(boolean value) {
-        return value == this.triangleDebug
-                ? this
-                : new SessionControls(
-                        this.screenshotRequested,
-                        value,
-                        this.rendererDiagnostics,
-                        this.rawOutput,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
+                        this.imageDiagnostics);
     }
 
     public SessionControls withRendererDiagnostics(boolean value) {
@@ -66,85 +35,28 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
-                        this.triangleDebug,
                         value,
-                        this.rawOutput,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
+                        this.imageDiagnostics);
     }
 
-    public SessionControls withRawOutput(boolean value) {
-        return value == this.rawOutput
+    public SessionControls withRendererImageView(RendererImageView value) {
+        return withImageDiagnostics(this.imageDiagnostics.withRenderer(value));
+    }
+
+    public SessionControls withRrInputView(RrInputView value) {
+        return withImageDiagnostics(this.imageDiagnostics.withRr(value));
+    }
+
+    public SessionControls withNrdInputView(NrdInputView value) {
+        return withImageDiagnostics(this.imageDiagnostics.withNrd(value));
+    }
+
+    private SessionControls withImageDiagnostics(ImageDiagnosticSelection value) {
+        return value.equals(this.imageDiagnostics)
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
-                        this.triangleDebug,
                         this.rendererDiagnostics,
-                        value,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
-    }
-
-    public SessionControls withNrdDebugView(NrdDiagnostics.Mode value) {
-        Objects.requireNonNull(value, "value");
-        return value == this.nrdDebugView
-                ? this
-                : new SessionControls(
-                        this.screenshotRequested,
-                        this.triangleDebug,
-                        this.rendererDiagnostics,
-                        this.rawOutput,
-                        value,
-                        this.fsrDebugView,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
-    }
-
-    public SessionControls withFsrDebugView(FsrDebugView value) {
-        Objects.requireNonNull(value, "value");
-        return value == this.fsrDebugView
-                ? this
-                : new SessionControls(
-                        this.screenshotRequested,
-                        this.triangleDebug,
-                        this.rendererDiagnostics,
-                        this.rawOutput,
-                        this.nrdDebugView,
-                        value,
-                        this.rrDebugView,
-                        this.rrDebugFullscreen);
-    }
-
-    public SessionControls withRrDebugView(DlssRrDebugView value) {
-        Objects.requireNonNull(value, "value");
-        return value == this.rrDebugView
-                ? this
-                : new SessionControls(
-                        this.screenshotRequested,
-                        this.triangleDebug,
-                        this.rendererDiagnostics,
-                        this.rawOutput,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        value,
-                        this.rrDebugFullscreen);
-    }
-
-    public SessionControls withRrDebugFullscreen(boolean value) {
-        return value == this.rrDebugFullscreen
-                ? this
-                : new SessionControls(
-                        this.screenshotRequested,
-                        this.triangleDebug,
-                        this.rendererDiagnostics,
-                        this.rawOutput,
-                        this.nrdDebugView,
-                        this.fsrDebugView,
-                        this.rrDebugView,
                         value);
     }
 }

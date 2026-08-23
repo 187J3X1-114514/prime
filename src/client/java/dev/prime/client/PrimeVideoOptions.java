@@ -11,11 +11,11 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.diagnostic.NrdInputView;
+import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrInputView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.util.List;
@@ -32,15 +32,15 @@ public final class PrimeVideoOptions {
             List.of(PostProcessingMode.NRD_FSR, PostProcessingMode.DLSS_RR);
     private static final List<ReconstructionQualityMode> QUALITY_MODES =
             List.of(ReconstructionQualityMode.values());
-    private static final List<DlssRrDebugView> RR_DEBUG_VIEWS = List.of(DlssRrDebugView.values());
-    private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
-    private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
-            List.of(NrdDiagnostics.Mode.values());
+    private static final List<RendererImageView> RENDERER_IMAGE_VIEWS =
+            List.of(RendererImageView.values());
+    private static final List<RrInputView> RR_INPUT_VIEWS = List.of(RrInputView.values());
+    private static final List<NrdInputView> NRD_INPUT_VIEWS = List.of(NrdInputView.values());
 
     private PrimeVideoOptions() {
     }
 
-    public static OptionSet create(Consumer<Boolean> sharcChanged) {
+    public static OptionSet create(Consumer<Boolean> sharcChanged, Runnable diagnosticChanged) {
         return new OptionSet(
                 new Rendering(
                         pathTracingEnabled(),
@@ -70,13 +70,10 @@ public final class PrimeVideoOptions {
                         airGap(),
                         vanillaPbrPresets()),
                 new Diagnostics(
-                        triangleDebug(),
                         rendererDiagnostics(),
-                        rawOutput(),
-                        nrdDebugView(),
-                        fsrDebugView(),
-                        dlssRrDebugView(),
-                        dlssRrDebugFullscreen()));
+                        rendererImageView(diagnosticChanged),
+                        rrInputView(diagnosticChanged),
+                        nrdInputView(diagnosticChanged)));
     }
 
     private static OptionInstance<Boolean> pathTracingEnabled() {
@@ -190,16 +187,6 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setPostProcessingMode);
     }
 
-    private static OptionInstance<Boolean> triangleDebug() {
-        PrimeRuntime runtime = PrimeRuntime.instance();
-        return OptionInstance.createBoolean(
-                "prime.options.debug.triangle_distribution",
-                OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.triangle_distribution.tooltip")),
-                runtime.triangleDebug(),
-                runtime::setTriangleDebug);
-    }
-
     private static OptionInstance<Boolean> rendererDiagnostics() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
@@ -208,16 +195,6 @@ public final class PrimeVideoOptions {
                         "prime.options.debug.renderer_diagnostics.tooltip")),
                 runtime.rendererDiagnostics(),
                 runtime::setRendererDiagnostics);
-    }
-
-    private static OptionInstance<Boolean> rawOutput() {
-        PrimeRuntime runtime = PrimeRuntime.instance();
-        return OptionInstance.createBoolean(
-                "prime.options.debug.raw_output",
-                OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.raw_output.tooltip")),
-                runtime.rawOutput(),
-                runtime::setRawOutput);
     }
 
     private static OptionInstance<ReconstructionQualityMode> qualityMode() {
@@ -265,29 +242,40 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setSolarLongitudeDegrees);
     }
 
-    private static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
+    private static OptionInstance<RendererImageView> rendererImageView(Runnable changed) {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
-                "prime.options.dlss_rr.debug_view",
+                "prime.options.debug.renderer_image",
                 OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.dlss_rr.debug_view.tooltip")),
+                        Component.translatable("prime.options.debug.renderer_image.tooltip")),
                 (caption, mode) -> Component.translatable(
-                        "prime.options.dlss_rr.debug_view." + mode.id()),
-                new OptionInstance.Enum<>(
-                        RR_DEBUG_VIEWS,
-                        Codec.STRING.xmap(DlssRrDebugView::fromId, DlssRrDebugView::id)),
-                runtime.rrDebugView(),
-                runtime::setRrDebugView);
+                        "prime.options.debug.image_view." + mode.id()),
+                new OptionInstance.SliderableEnum<>(
+                        RENDERER_IMAGE_VIEWS,
+                        Codec.STRING.xmap(RendererImageView::fromId, RendererImageView::id)),
+                runtime.rendererImageView(),
+                value -> {
+                    runtime.setRendererImageView(value);
+                    changed.run();
+                });
     }
 
-    private static OptionInstance<Boolean> dlssRrDebugFullscreen() {
+    private static OptionInstance<RrInputView> rrInputView(Runnable changed) {
         PrimeRuntime runtime = PrimeRuntime.instance();
-        return OptionInstance.createBoolean(
-                "prime.options.dlss_rr.debug_fullscreen",
+        return new OptionInstance<>(
+                "prime.options.debug.rr_input",
                 OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.dlss_rr.debug_fullscreen.tooltip")),
-                runtime.rrDebugFullscreen(),
-                runtime::setRrDebugFullscreen);
+                        Component.translatable("prime.options.debug.rr_input.tooltip")),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.debug.image_view." + mode.id()),
+                new OptionInstance.SliderableEnum<>(
+                        RR_INPUT_VIEWS,
+                        Codec.STRING.xmap(RrInputView::fromId, RrInputView::id)),
+                runtime.rrInputView(),
+                value -> {
+                    runtime.setRrInputView(value);
+                    changed.run();
+                });
     }
 
     private static OptionInstance<Integer> sunExposure() {
@@ -414,34 +402,22 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setVanillaPbrPresets);
     }
 
-    private static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
+    private static OptionInstance<NrdInputView> nrdInputView(Runnable changed) {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
-                "prime.options.nrd.debug_view",
+                "prime.options.debug.nrd_input",
                 OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.nrd.debug_view.tooltip")),
+                        Component.translatable("prime.options.debug.nrd_input.tooltip")),
                 (caption, mode) -> Component.translatable(
-                        "prime.options.nrd.debug_view." + mode.id()),
-                new OptionInstance.Enum<>(
-                        NRD_DEBUG_VIEWS,
-                        Codec.STRING.xmap(NrdDiagnostics.Mode::fromId, NrdDiagnostics.Mode::id)),
-                runtime.nrdDebugView(),
-                runtime::setNrdDebugView);
-    }
-
-    private static OptionInstance<FsrDebugView> fsrDebugView() {
-        PrimeRuntime runtime = PrimeRuntime.instance();
-        return new OptionInstance<>(
-                "prime.options.fsr.debug_view",
-                OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.fsr.debug_view.tooltip")),
-                (caption, mode) -> Component.translatable(
-                        "prime.options.fsr.debug_view." + mode.id()),
-                new OptionInstance.Enum<>(
-                        FSR_DEBUG_VIEWS,
-                        Codec.STRING.xmap(FsrDebugView::fromId, FsrDebugView::id)),
-                runtime.fsrDebugView(),
-                runtime::setFsrDebugView);
+                        "prime.options.debug.image_view." + mode.id()),
+                new OptionInstance.SliderableEnum<>(
+                        NRD_INPUT_VIEWS,
+                        Codec.STRING.xmap(NrdInputView::fromId, NrdInputView::id)),
+                runtime.nrdInputView(),
+                value -> {
+                    runtime.setNrdInputView(value);
+                    changed.run();
+                });
     }
 
     private static OptionInstance<Integer> exposureOption(
@@ -604,12 +580,9 @@ public final class PrimeVideoOptions {
     }
 
     public record Diagnostics(
-            OptionInstance<Boolean> triangleDebug,
             OptionInstance<Boolean> rendererDiagnostics,
-            OptionInstance<Boolean> rawOutput,
-            OptionInstance<NrdDiagnostics.Mode> nrdDebugView,
-            OptionInstance<FsrDebugView> fsrDebugView,
-            OptionInstance<DlssRrDebugView> rrDebugView,
-            OptionInstance<Boolean> rrDebugFullscreen) {
+            OptionInstance<RendererImageView> rendererImageView,
+            OptionInstance<RrInputView> rrInputView,
+            OptionInstance<NrdInputView> nrdInputView) {
     }
 }

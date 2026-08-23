@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import dev.prime.render.ResourceCleanup;
+import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.PostProcessingMode;
@@ -26,23 +27,33 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
     private final BasicRawWavefrontFrame rawFrame;
     private final NoisyCompositePass composite;
     private final DisplayTransformPass displayTransform;
+    private final VulkanContext context;
+    private final VulkanImage stableRadiance;
+    private final VulkanImage displayOutput;
+    private RendererImageDebugPass rendererDebugPass;
     private final ReconstructionFrameHistory history =
             new ReconstructionFrameHistory();
     private boolean destroyed;
 
     private NoisyPostProcessor(
+            VulkanContext context,
             ReconstructionQualityMode quality,
             int width,
             int height,
             BasicRawWavefrontFrame rawFrame,
             NoisyCompositePass composite,
-            DisplayTransformPass displayTransform) {
+            DisplayTransformPass displayTransform,
+            VulkanImage stableRadiance,
+            VulkanImage displayOutput) {
+        this.context = context;
         this.quality = quality;
         this.width = width;
         this.height = height;
         this.rawFrame = rawFrame;
         this.composite = composite;
         this.displayTransform = displayTransform;
+        this.stableRadiance = stableRadiance;
+        this.displayOutput = displayOutput;
     }
 
     public static NoisyPostProcessor create(
@@ -63,7 +74,15 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
             displayTransform = DisplayTransformPass.createRealtime(
                     context, rawFrame.linearOutput(), rawFrame, displayOutput);
             return new NoisyPostProcessor(
-                    quality, width, height, rawFrame, composite, displayTransform);
+                    context,
+                    quality,
+                    width,
+                    height,
+                    rawFrame,
+                    composite,
+                    displayTransform,
+                    stableRadiance,
+                    displayOutput);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(displayTransform, exception);
             ResourceCleanup.destroy(composite, exception);
@@ -119,6 +138,16 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
     }
 
     @Override
+    public void captureRendererDiagnostic(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization,
+            RendererImageView view) {
+        if (view.active() && view != RendererImageView.DENOISED_OUTPUT) {
+            this.rendererDebugPass().capture(commandBuffer, initialization, view);
+        }
+    }
+
+    @Override
     public void record(
             VkCommandBuffer commandBuffer,
             Frame frame,
@@ -135,12 +164,30 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
                 parameters.sunRadianceMultiplier());
         this.displayTransform.record(
                 commandBuffer,
-                false,
                 temporal.deltaMilliseconds() * 0.001F,
                 temporal.restart(),
                 false,
                 parameters.display(),
                 initialization);
+    }
+
+    @Override
+    public void presentRendererDiagnostic(
+            VkCommandBuffer commandBuffer, RendererImageView view) {
+        if (view.active()) this.rendererDebugPass().present(commandBuffer, view);
+    }
+
+    private RendererImageDebugPass rendererDebugPass() {
+        if (this.rendererDebugPass == null) {
+            this.rendererDebugPass = RendererImageDebugPass.create(
+                    this.context,
+                    this.rawFrame,
+                    this.stableRadiance,
+                    this.rawFrame.linearOutput(),
+                    this.displayOutput,
+                    this.displayTransform.hdrOutput());
+        }
+        return this.rendererDebugPass;
     }
 
     @Override
@@ -192,6 +239,7 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
     public void destroy() {
         if (this.destroyed) return;
         RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.rendererDebugPass, failure);
         failure = ResourceCleanup.destroy(this.displayTransform, failure);
         failure = ResourceCleanup.destroy(this.composite, failure);
         failure = ResourceCleanup.destroy(this.rawFrame, failure);

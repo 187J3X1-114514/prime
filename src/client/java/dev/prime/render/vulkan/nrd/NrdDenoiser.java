@@ -64,8 +64,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     static final int MOTION_NRD_BINDING = 0;
-    static final int MOTION_FSR_BINDING = 23;
-    static final int MOTION_BINDING_COUNT = 24;
+    static final int MOTION_FSR_BINDING = 22;
+    static final int MOTION_BINDING_COUNT = 23;
     // Wavefront resolve writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -233,14 +233,6 @@ public final class NrdDenoiser implements Destroyable {
         return this.images.fsrDepth;
     }
 
-    public VulkanImage validation() {
-        return this.images.validation;
-    }
-
-    public VulkanImage rawNumericalDiagnostic() {
-        return this.images.reprojectionError;
-    }
-
     public VulkanImage fsrReactiveMask() {
         return this.images.fsrReactiveMask;
     }
@@ -302,7 +294,6 @@ public final class NrdDenoiser implements Destroyable {
         NrdFramePlan plan = Objects.requireNonNull(frame, "frame")
                 .claimForExecution();
         NrdFrameInput input = plan.input();
-        int diagnosticMode = input.diagnostic().outputSelector();
         rayTraceToComputeBarrier(commandBuffer);
         PreparedNrdFrame prepared = this.inputPreparationPipeline.record(
                 commandBuffer,
@@ -310,7 +301,6 @@ public final class NrdDenoiser implements Destroyable {
                 plan.historyCamera(),
                 this.width,
                 this.height,
-                diagnosticMode,
                 input.cameraJitterX(),
                 input.cameraJitterY(),
                 this.preparedFrame);
@@ -348,7 +338,7 @@ public final class NrdDenoiser implements Destroyable {
                 plan.frameIndex(),
                 plan.restart(),
                 plan.deltaMilliseconds(),
-                input.diagnostic().nativeValidation(),
+                false,
                 input.sunDirection()));
         NrdNative.DispatchList dispatches = this.nativeInstance.getDispatches();
         FrameBindings bindings = this.acquireBindings(dispatches.size());
@@ -390,7 +380,6 @@ public final class NrdDenoiser implements Destroyable {
                     commandBuffer,
                     this.width,
                     this.height,
-                    input.diagnostic().outputSelector(),
                     sunRadianceMultiplier,
                     input.cameraJitterX(),
                     input.cameraJitterY(),
@@ -481,7 +470,6 @@ public final class NrdDenoiser implements Destroyable {
             case NrdNative.RESOURCE_OUT_SPEC_SH0 -> reflection ? this.images.reflectionDenoisedSpecular : this.images.denoisedSpecular;
             case NrdNative.RESOURCE_OUT_SPEC_SH1 -> reflection ? this.images.reflectionDenoisedSpecularSh1 : this.images.denoisedSpecularSh1;
             case NrdNative.RESOURCE_OUT_SHADOW_TRANSLUCENCY -> this.images.sunShadow;
-            case NrdNative.RESOURCE_OUT_VALIDATION -> this.images.validation;
             case NrdNative.RESOURCE_TRANSIENT_POOL -> checkedPoolImage(
                     this.images.transientPool, indexInPool, "transient");
             case NrdNative.RESOURCE_PERMANENT_POOL -> checkedPoolImage(
@@ -734,9 +722,6 @@ public final class NrdDenoiser implements Destroyable {
             return this.planned.plan().input().sunDirection();
         }
 
-        public int diagnosticMode() {
-            return this.planned.plan().input().diagnostic().outputSelector();
-        }
     }
 
     public static final class FrameToken {
@@ -802,9 +787,6 @@ public final class NrdDenoiser implements Destroyable {
         }
         @Override public VulkanImage displayPosition() { return this.images.displayPosition; }
         @Override public boolean usesShInputs() { return true; }
-        @Override public VulkanImage rawNumericalDiagnostic() {
-            return this.images.reprojectionError;
-        }
     }
 
     private static final class ComputePipeline implements Destroyable {

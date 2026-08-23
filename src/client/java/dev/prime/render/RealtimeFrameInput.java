@@ -27,7 +27,6 @@ public record RealtimeFrameInput(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
-        boolean triangleDebug,
         DisplaySettings.Snapshot display,
         boolean forceReset) {
     public RealtimeFrameInput(
@@ -49,7 +48,6 @@ public record RealtimeFrameInput(
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             boolean shInput,
-            boolean triangleDebug,
             DisplaySettings.Snapshot display,
             boolean forceReset) {
         this(
@@ -57,7 +55,7 @@ public record RealtimeFrameInput(
                 textureRevision, width, height, displayWidth, displayHeight, astronomy,
                 cameraInWater, postProcessingMode, quality, transparentGuideMode,
                 scatterCount, PrimaryChainSettings.DEFAULT_LIMIT, lighting, material,
-                shInput, triangleDebug, display, forceReset);
+                shInput, display, forceReset);
     }
 
     public RealtimeFrameInput {
@@ -124,8 +122,7 @@ public record RealtimeFrameInput(
             int sampleIndex,
             int sampleEpoch,
             int jitterPhase,
-            int packedRayCone,
-            boolean rawNumericalDiagnostic) {
+            int packedRayCone) {
         return new IntegratorFrameInput(
                 this.camera,
                 this.width,
@@ -142,9 +139,7 @@ public record RealtimeFrameInput(
                 this.transparentGuideMode,
                 this.lighting,
                 this.material,
-                this.shInput,
-                rawNumericalDiagnostic,
-                this.triangleDebug);
+                this.shInput);
     }
 
     public SunDirection sunDirection() {

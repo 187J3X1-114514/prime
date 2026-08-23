@@ -33,10 +33,8 @@ public static const uint PRIME_NUMERICAL_FIELD_UNIT = 4;
 public static const uint PRIME_NUMERICAL_FIELD_DIRECTION = 5;
 public static const uint PRIME_NUMERICAL_FIELD_OUTPUT = 6;
 
-// Adapter layers may reject or sanitize an intermediate before it becomes a transport value.
-// This small explicit observation crosses that boundary without depending on renderer resources
-// or hidden mutable shader state. UINT_MAX marks a disabled observer, so normal rendering pays
-// only the predictable early-out while raw-diagnostic mode retains the first failing field.
+// Dedicated test entries enable observations. Production adapters construct the disabled value;
+// the resulting constant no-op state is eliminated from optimized production entry points.
 public struct PrimeNumericalObservation
 {
     public uint flags;

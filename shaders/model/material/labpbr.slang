@@ -28,6 +28,36 @@ public struct PrimeCanonicalOptics
     public uint opticalControl;
 };
 
+public struct PrimeLabPbrNormalAtlasSample
+{
+    public float3 tangentNormal;
+    public float distributionRoughness;
+};
+
+public PrimeLabPbrNormalAtlasSample primeAdaptLabPbrNormalAtlas(float4 sourceSample)
+{
+    PrimeLabPbrNormalAtlasSample result;
+    float2 normalXY = sourceSample.xy * 2.0 - 1.0;
+    float normalZ = sqrt(max(1.0 - dot(normalXY, normalXY), 0.0));
+    result.tangentNormal = normalize(float3(normalXY, normalZ));
+    result.distributionRoughness = clamp(sourceSample.a, 0.0, 1.0);
+    return result;
+}
+
+public float primeCombineLabPbrNormalRoughness(
+        float materialRoughness, float distributionRoughness)
+{
+    // Approximate convolution in squared-alpha space. The atlas stores perceptual roughness
+    // so smooth normal mips retain useful precision in RGBA8.
+    float materialAlpha = materialRoughness * materialRoughness;
+    float distributionAlpha = distributionRoughness * distributionRoughness;
+    float combinedAlphaSquared = min(
+            materialAlpha * materialAlpha
+                    + distributionAlpha * distributionAlpha,
+            1.0);
+    return sqrt(sqrt(combinedAlphaSquared));
+}
+
 public PrimeCanonicalOptics primeAdaptLabPbrSpecular(float4 sourceSample)
 {
     uint4 bytes = uint4(round(clamp(sourceSample, 0.0, 1.0) * 255.0));

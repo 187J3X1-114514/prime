@@ -3,13 +3,12 @@ package dev.prime.render.scene;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Immutable sprite identity, atlas layout and animation facts captured at the vanilla boundary. */
+/** Immutable logical texture identity and animation facts captured at the vanilla boundary. */
 public final class CapturedSprite {
+    public static final int MAX_TEXTURE_ID = (1 << 24) - 1;
+
     private final SpriteId id;
-    private final float u0;
-    private final float v0;
-    private final float u1;
-    private final float v1;
+    private final int textureId;
     private final int frameWidth;
     private final int frameHeight;
     private final boolean animated;
@@ -18,21 +17,15 @@ public final class CapturedSprite {
 
     public CapturedSprite(
             SpriteId id,
-            float u0,
-            float v0,
-            float u1,
-            float v1,
+            int textureId,
             int frameWidth,
             int frameHeight,
             boolean animated,
             int[] uniqueFrames,
             SpritePixelView pixelView) {
         this.id = Objects.requireNonNull(id, "id");
-        if (!Float.isFinite(u0)
-                || !Float.isFinite(v0)
-                || !Float.isFinite(u1)
-                || !Float.isFinite(v1)) {
-            throw new IllegalArgumentException("Captured sprite atlas coordinates must be finite");
+        if (textureId <= 0 || textureId > MAX_TEXTURE_ID) {
+            throw new IllegalArgumentException("Captured texture ID must be a nonzero 24-bit value");
         }
         if (frameWidth <= 0 || frameHeight <= 0) {
             throw new IllegalArgumentException("Captured sprite frame dimensions must be positive");
@@ -54,10 +47,7 @@ public final class CapturedSprite {
                 }
             }
         }
-        this.u0 = u0;
-        this.v0 = v0;
-        this.u1 = u1;
-        this.v1 = v1;
+        this.textureId = textureId;
         this.frameWidth = frameWidth;
         this.frameHeight = frameHeight;
         this.animated = animated;
@@ -69,20 +59,8 @@ public final class CapturedSprite {
         return this.id;
     }
 
-    public float u0() {
-        return this.u0;
-    }
-
-    public float v0() {
-        return this.v0;
-    }
-
-    public float u1() {
-        return this.u1;
-    }
-
-    public float v1() {
-        return this.v1;
+    public int textureId() {
+        return this.textureId;
     }
 
     public int frameWidth() {
@@ -119,10 +97,7 @@ public final class CapturedSprite {
             return false;
         }
         return this.id.equals(sprite.id)
-                && Float.floatToIntBits(this.u0) == Float.floatToIntBits(sprite.u0)
-                && Float.floatToIntBits(this.v0) == Float.floatToIntBits(sprite.v0)
-                && Float.floatToIntBits(this.u1) == Float.floatToIntBits(sprite.u1)
-                && Float.floatToIntBits(this.v1) == Float.floatToIntBits(sprite.v1)
+                && this.textureId == sprite.textureId
                 && this.frameWidth == sprite.frameWidth
                 && this.frameHeight == sprite.frameHeight
                 && this.animated == sprite.animated
@@ -132,10 +107,7 @@ public final class CapturedSprite {
     @Override
     public int hashCode() {
         int result = this.id.hashCode();
-        result = 31 * result + Float.floatToIntBits(this.u0);
-        result = 31 * result + Float.floatToIntBits(this.v0);
-        result = 31 * result + Float.floatToIntBits(this.u1);
-        result = 31 * result + Float.floatToIntBits(this.v1);
+        result = 31 * result + this.textureId;
         result = 31 * result + this.frameWidth;
         result = 31 * result + this.frameHeight;
         result = 31 * result + Boolean.hashCode(this.animated);

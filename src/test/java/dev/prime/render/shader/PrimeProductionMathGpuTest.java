@@ -132,7 +132,7 @@ final class PrimeProductionMathGpuTest {
                 materialCases(kinds, inputWords),
                 65_536 * kinds,
                 inputWords,
-                8,
+                10,
                 MATERIAL_SEED);
     }
 

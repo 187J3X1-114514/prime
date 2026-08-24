@@ -16,9 +16,6 @@
 - 评估把 Section geometry 和 light record 直接写入可增长 staging/native 存储，减少
   Section→cluster 所有权转移期间的 Java 数组驻留，同时保持单 cluster 原子替换和单 base
   BLAS/TLAS instance；
-- 扩展现有跨 cluster `VoxelBlasPool`：在已完成的内容寻址 BLAS 复用基础上，测量并决定是否
-  继续共享 mesh、primitive 与 OMM；保持 resource epoch、引用所有权、compaction 注册和退休
-  顺序明确；
 - 评估地形静态更新更有效的批处理；动态捕获固定逐帧重建 BLAS/TLAS，不做 dirty check
   或 refit。新 geometry 不得在可见性结构外提前发布。
 - 评估让同一 motion/lifetime domain 内的动态表面复用静态 `SurfaceDefinition` resolver；必须
@@ -31,8 +28,6 @@
   艺术需求；后续应明确 SDR 参考白以下的外观保持边界，并只用额外 headroom 展开 HDR 高光；
 - 场景几何 LOD；
 - 云渲染（细节待定）；
-- 将当前已读取但尚未参与着色的切线空间法线接入闭包，并为 normal-map handedness、
-  动画、relief 共存和重建 guide 建立一致契约；
 - 评估 LabPBR AO/porosity 的物理用途；不能把源格式字节直接泄漏到积分器或用环境遮蔽重复
   压暗已经由路径追踪求出的间接光；
 - 月亮（月相）：作为夜晚的主光源；月相跟随 Minecraft 原版状态，轨迹取太阳轨迹的

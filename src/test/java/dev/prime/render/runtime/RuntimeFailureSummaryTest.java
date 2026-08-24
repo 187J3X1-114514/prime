@@ -10,13 +10,13 @@ final class RuntimeFailureSummaryTest {
     @Test
     void wrappedFailureKeepsRootCauseAndTerrainContext() {
         IllegalArgumentException root = new IllegalArgumentException(
-                "Captured Section quad contains a non-normalized\n atlas UV");
+                "Captured Section quad contains a non-normalized\n local texture UV");
         IllegalStateException failure = new IllegalStateException(
                 "Terrain section (900, -4, -732) failed in cluster (900, -4, -732)", root);
 
         assertEquals(
                 "IllegalArgumentException: Captured Section quad contains a non-normalized "
-                        + "atlas UV | Terrain section (900, -4, -732) failed in cluster "
+                        + "local texture UV | Terrain section (900, -4, -732) failed in cluster "
                         + "(900, -4, -732)",
                 RuntimeFailureSummary.describe(failure));
     }

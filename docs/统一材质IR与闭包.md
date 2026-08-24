@@ -3,14 +3,15 @@
 Prime 的材质数据只能沿以下方向流动：
 
 ```text
-Minecraft 表面语义 / LabPBR / 默认值
+Minecraft 表面语义 / 规范 TextureRecord / 默认值
   → MaterialRecipe
   → PrimeMaterialSample
   → opaque / dielectric / foliage 紧凑状态
   → traits / evaluate / sample / albedo operation dispatcher
 ```
 
-源格式只在输入适配层出现。命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
+源格式和 atlas 坐标只在输入适配层出现，完整纹理契约见[纹理翻译架构](纹理翻译架构.md)。
+命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
 的规范语义；它们不得根据 LabPBR 字节、纹理来源或 roughness 猜测材质类别和离散事件。
 Prime 的 OpenPBR ABI、公式和专用状态位于 `shaders/bsdf/compact`，材质翻译与窄适配位于
 `shaders/model/material` 和 `shaders/service/bsdf`；
@@ -67,22 +68,30 @@ roughness、`materialControl` 和 `opticalControl`。合成顺序固定为：
 2. 建立全局 roughness 与 dielectric F0 默认值；
 3. 若开启原版预设，应用 builtin class；
 4. 若当前 sprite 有有效 `_s`，LabPBR adapter 覆盖 roughness、Fresnel、SSS 和 porosity；
-5. 应用玻璃、水、薄壁、叶片和 alpha 语义。
+5. 若当前 sprite 有有效 `_n`，应用分布感知法线与粗糙度；
+6. 应用玻璃、水、薄壁、叶片和 alpha 语义。
 
 availability 是逐 sprite 事实；关闭时不采样 descriptor 完整性所需的 1×1 dummy image。
-normal alpha 只留在 CPU relief 路径，命中载荷不再携带未使用的 raw LabPBR normal。发光仍由
-emitter 管线独立提取。
+“无 / 资源包法线 / 几何位移”在地形翻译前解析为互斥模式；默认资源包法线，无 `_n` 时
+不会生成法线依赖或命中采样。法线 page 的 RG 保存归一化平均方向，B 保留 AO，A 保存从
+平均法线长度反演的等效 GGX 感知粗糙度；运行时在 squared-alpha 空间与材质粗糙度合并。
+原始 normal alpha 只留在 CPU 位移路径。几何法线仍唯一决定可见性、介质边界和射线原点；
+法线贴图的 BSDF 方向另受几何半球约束。发光仍由 emitter 管线独立提取。
 
 `materialControl` 的低 8 位依次表达 family、medium、thin-walled、animated、visible
 emission 和 decorative interface。decorative interface 表示玻璃 alpha 规则选中的磨砂或
 切割界面，与数值 roughness 分开保存，以便相邻空气微缝做语义兼容判断。
 
-`opticalControl` 的三个 byte 分别为 Fresnel、subsurface 和 porosity code：
+`opticalControl` 的低三个 byte 分别为 Fresnel、subsurface 和 porosity code，bit 24 表示当前
+表面实际使用了法线贴图，以便积分器只对这些路径执行几何半球约束：
 
 - Fresnel 0 精确表示 dielectric F0 0.04；1..230 表示规范化后的 LabPBR dielectric；
   231..238 是固定命名金属；239 是 base-color conductor；240..255 保留；
 - subsurface 0 表示关闭，1..190 表示权重 `code / 190`；
 - porosity 0..64 表示 `code / 64`，当前闭包尚不求值，但不再保留源格式字节。
+
+subsurface code 只保留作者输入；生产闭包仅在非金属材质明确标记 thin-walled 时消费该权重。
+厚材质不尝试缺少散射半径控制的表面穿透近似，统一把 subsurface 权重清零并退化为常规漫反射。
 
 玻璃保持既有规则：稳定 reference alpha 判定 stained，当前 alpha 与 seamless 开关判定
 decorative；无色 decorative 使用 opaque rough dielectric，染色 decorative 保持透射；光滑

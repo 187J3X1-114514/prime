@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 final class MaterialRecipeResolverTest {
     private static final SpriteId ID = new SpriteId("minecraft", "block/oak_planks");
     private static final CapturedSprite SPRITE = new CapturedSprite(
-            ID, 0.0F, 0.0F, 1.0F, 1.0F, 16, 16, true, new int[] {0}, null);
+            ID, 1, 16, 16, true, new int[] {0}, null);
 
     @Test
     void resolvesPerSpriteAvailabilityWithoutInferringItFromDummyTextures() {
@@ -37,8 +37,7 @@ final class MaterialRecipeResolverTest {
                 false,
                 false,
                 true,
-                true,
-                false);
+                true);
 
         assertEquals(CoverageMode.ALPHA_CUTOUT, control.material().coverage());
         assertEquals(ScatteringFamily.OPAQUE, control.material().scattering());
@@ -64,12 +63,38 @@ final class MaterialRecipeResolverTest {
                 true,
                 false,
                 true,
-                false,
                 false);
 
         assertEquals(ScatteringFamily.DIELECTRIC_SOLID, control.material().scattering());
         assertEquals(MediumHint.WATER, control.material().medium());
         assertTrue(control.material().hasDetail(MaterialDetail.OPTICAL_TEXTURE));
         assertFalse(control.tangentNegative());
+    }
+
+    @Test
+    void disablingNormalTexturesPreservesEveryOtherResourcePackChannel() {
+        LabPbrEmissionMap emission = LabPbrEmissionMap.fromSpecular(
+                new int[] {0x01000000}, 1, 1, 1, 1, 1, 1);
+        LabPbrHeightMap height = LabPbrHeightMap.fromNormal(
+                new int[] {0x028080ff}, 1, 1, 1, 1, 1, 1);
+        LabPbrMaterialMap material = new LabPbrMaterialMap(
+                new LabPbrMaterialMap.Pixels(
+                        new int[] {0xff8080ff}, 1, 1, 1, 1, 1),
+                new LabPbrMaterialMap.Pixels(
+                        new int[] {0xff000400}, 1, 1, 1, 1, 1));
+        LabPbrMaterialSet source = new LabPbrMaterialSet(
+                Set.of(ID),
+                Set.of(ID),
+                Map.of(ID, emission),
+                Map.of(ID, height),
+                Map.of(ID, material));
+
+        LabPbrMaterialSet filtered = source.withoutNormalTextures();
+
+        assertFalse(filtered.hasNormal(ID));
+        assertTrue(filtered.hasSpecular(ID));
+        assertEquals(emission, filtered.emissionMap(ID));
+        assertEquals(height, filtered.heightMap(ID));
+        assertEquals(material, filtered.materialMap(ID));
     }
 }

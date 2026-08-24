@@ -134,7 +134,7 @@ public final class SectionMeshAccumulator {
         }
         if (!normalizedUv) {
             throw new IllegalArgumentException(
-                    "Captured Section quad contains a non-normalized atlas UV");
+                    "Captured Section quad contains a non-normalized local texture UV");
         }
     }
 
@@ -288,7 +288,6 @@ public final class SectionMeshAccumulator {
                 surface.geometryTransmissive(),
                 surface.thinWalled(),
                 (packedTangent & 0x1_0000_0000L) != 0L,
-                false,
                 false));
         packedTint = PrimitivePacking.packTintControl(packedTint, flags);
         int encodedEmitterIndex = this.lights.addTriangle(
@@ -316,11 +315,9 @@ public final class SectionMeshAccumulator {
                 this.labPbrMaterials.emissionMap(surface.sprite().id()));
         destination.primitives.add(packedTint);
         destination.primitives.add(packedNormal);
-        destination.primitives.add(PrimitivePacking.packControlEmitter(
-                flags,
-                encodedEmitterIndex == 0
-                        ? PrimitivePacking.NO_EMITTER_INDEX
-                        : encodedEmitterIndex - 1));
+        destination.primitives.add(encodedEmitterIndex == 0
+                ? PrimitivePacking.packControlTexture(flags, surface.sprite().textureId())
+                : PrimitivePacking.packControlEmitter(flags, encodedEmitterIndex - 1));
         destination.primitives.add(packedUvDensity);
         destination.primitives.add((int) packedTangent);
         destination.relations.add(this.surfaceRelationRecord(
@@ -355,7 +352,6 @@ public final class SectionMeshAccumulator {
                                     || ClusterSceneTranslator.isTransmissive(adjacent)
                                             && adjacent.collisionEmpty(),
                             false,
-                            false,
                             false));
             int control = CpuSectionMesh.SURFACE_RELATION_BOUNDARY
                     | CpuSectionMesh.SURFACE_RELATION_MICRO_GAP_ELIGIBLE
@@ -364,7 +360,8 @@ public final class SectionMeshAccumulator {
                 control,
                 PrimitivePacking.packUv(endpoint.referenceU(), endpoint.referenceV()),
                 PrimitivePacking.packTint(
-                        ClusterSceneTranslator.averageColor(adjacent))
+                        ClusterSceneTranslator.averageColor(adjacent)),
+                adjacent.sprite().textureId()
             };
         }
         SurfaceDefinition.MaterialBinding secondary;
@@ -434,7 +431,6 @@ public final class SectionMeshAccumulator {
                         || ClusterSceneTranslator.isTransmissive(captured)
                                 && captured.collisionEmpty(),
                 (packedTangent & 0x1_0000_0000L) != 0L,
-                false,
                 false));
         int packedTint = PrimitivePacking.packTintControl(
                 PrimitivePacking.packTint(
@@ -446,8 +442,7 @@ public final class SectionMeshAccumulator {
             PrimitivePacking.packUv(uv2U, uv2V),
             packedTint,
             packedNormal,
-            PrimitivePacking.packControlEmitter(
-                    flags, PrimitivePacking.NO_EMITTER_INDEX),
+            PrimitivePacking.packControlTexture(flags, captured.sprite().textureId()),
             PrimitivePacking.packUvDensity(
                     edge1X, edge1Y, edge1Z,
                     edge2X, edge2Y, edge2Z,

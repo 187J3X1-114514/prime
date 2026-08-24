@@ -54,8 +54,10 @@ final class ShaderAbiTest {
         assertEquals(15, ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR);
         assertEquals(16, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL);
         assertEquals(17, ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY);
-        assertEquals(18, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
-        assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
+        assertEquals(18, ShaderAbi.DESCRIPTOR_TEXTURE_RECORDS);
+        assertEquals(19, ShaderAbi.DESCRIPTOR_MATERIAL_NORMAL_PAGES);
+        assertEquals(49, ShaderAbi.DESCRIPTOR_MATERIAL_OPTICAL_PAGES);
+        assertEquals(16, ShaderAbi.MATERIAL_PAGE_COUNT);
         assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);
         assertEquals(21, ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA);
         assertEquals(128, ShaderAbi.MAXIMUM_BOUNCES);

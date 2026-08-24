@@ -9,6 +9,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -281,11 +282,11 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("renderer.primary_chain_limit=8\n"));
         assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
-        assertTrue(serialized.contains(
-                "experimental.voxel_texture_surfaces=false\n"));
-        assertTrue(serialized.contains(
-                "experimental.voxel_texture_surface_strength=1\n"));
-        assertFalse(PrimeSettings.defaults().voxelTextureSurfaces());
+        assertTrue(serialized.contains("material.surface_detail=normal\n"));
+        assertTrue(serialized.contains("material.displacement_height=1\n"));
+        assertEquals(
+                SurfaceDetailMode.RESOURCE_NORMAL,
+                PrimeSettings.defaults().surfaceDetailMode());
         assertEquals(
                 100,
                 PrimeSettings.defaults().voxelTextureSurfaceStrengthSteps());
@@ -302,6 +303,22 @@ final class PrimeConfigTest {
         assertTrue(PrimeSettings.defaults().seamlessGlass());
         assertTrue(PrimeSettings.defaults().airGap());
         assertTrue(PrimeSettings.defaults().vanillaPbrPresets());
+    }
+
+    @Test
+    void persistedSurfaceDetailAcceptsOnlyTheThreeCurrentModes() {
+        assertEquals(
+                SurfaceDetailMode.NONE,
+                PrimeConfigCodec.parseSurfaceDetailMode("none"));
+        assertEquals(
+                SurfaceDetailMode.RESOURCE_NORMAL,
+                PrimeConfigCodec.parseSurfaceDetailMode("normal"));
+        assertEquals(
+                SurfaceDetailMode.GEOMETRIC_DISPLACEMENT,
+                PrimeConfigCodec.parseSurfaceDetailMode("displacement"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfigCodec.parseSurfaceDetailMode("true"));
     }
 
     @Test

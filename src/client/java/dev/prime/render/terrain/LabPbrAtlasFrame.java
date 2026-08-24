@@ -38,6 +38,7 @@ public record LabPbrAtlasFrame(
     }
 
     public record Sprite(
+            int textureId,
             int x,
             int y,
             int contentWidth,
@@ -47,14 +48,12 @@ public record LabPbrAtlasFrame(
             MaterialSource specular,
             int animationIndex) {
         public Sprite {
-            if (x < 0 || y < 0 || contentWidth <= 0 || contentHeight <= 0 || padding < 0) {
+            if (textureId <= 0 || textureId > (1 << 24) - 1
+                    || x < 0 || y < 0 || contentWidth <= 0 || contentHeight <= 0 || padding < 0) {
                 throw new IllegalArgumentException("Invalid LabPBR sprite placement");
             }
             if (animationIndex < -1) {
                 throw new IllegalArgumentException("Invalid LabPBR animation index");
-            }
-            if (normal == null && specular == null) {
-                throw new IllegalArgumentException("LabPBR sprite must contain an auxiliary map");
             }
         }
 
@@ -101,6 +100,9 @@ public record LabPbrAtlasFrame(
             int frameHeight,
             int columns,
             int frameCount) {
+        private static final double[] MACRO_NORMAL_LENGTH_BY_ROUGHNESS_BYTE =
+                createMacroNormalLengthTable();
+
         public MaterialSource {
             Objects.requireNonNull(pixels, "pixels");
             if (width <= 0 || height <= 0 || frameWidth <= 0 || frameHeight <= 0
@@ -200,7 +202,7 @@ public record LabPbrAtlasFrame(
                     baseFrameWidth,
                     baseFrameHeight,
                     specular);
-            return blendArgb(current, next, progress, specular);
+            return blendFiltered(current, next, progress, specular);
         }
 
         private int filteredFrame(
@@ -233,10 +235,12 @@ public record LabPbrAtlasFrame(
                     (int) Math.ceil(baseY1 * this.frameHeight / baseFrameHeight),
                     sourceY0 + 1,
                     this.frameHeight);
-            long alpha = 0L;
             long red = 0L;
             long green = 0L;
             long blue = 0L;
+            double normalX = 0.0;
+            double normalY = 0.0;
+            double normalZ = 0.0;
             int count = 0;
             long emission = 0L;
             int sentinelCount = 0;
@@ -244,33 +248,61 @@ public record LabPbrAtlasFrame(
                 for (int x = sourceX0; x < sourceX1; x++) {
                     int pixel = this.pixels[(frameY + y) * this.width + frameX + x];
                     int encodedAlpha = pixel >>> 24;
-                    alpha += encodedAlpha;
                     if (specular) {
                         if (encodedAlpha == 255) {
                             sentinelCount++;
                         } else {
                             emission += encodedAlpha;
                         }
+                        red += pixel >>> 16 & 0xff;
+                        green += pixel >>> 8 & 0xff;
+                        blue += pixel & 0xff;
+                    } else {
+                        double xNormal = (pixel >>> 16 & 0xff) * (2.0 / 255.0) - 1.0;
+                        double yNormal = (pixel >>> 8 & 0xff) * (2.0 / 255.0) - 1.0;
+                        double zNormal = Math.sqrt(Math.max(
+                                1.0 - xNormal * xNormal - yNormal * yNormal,
+                                0.0));
+                        double inverseLength = 1.0 / Math.sqrt(Math.max(
+                                xNormal * xNormal
+                                        + yNormal * yNormal
+                                        + zNormal * zNormal,
+                                1.0E-20));
+                        normalX += xNormal * inverseLength;
+                        normalY += yNormal * inverseLength;
+                        normalZ += zNormal * inverseLength;
+                        blue += pixel & 0xff;
                     }
-                    red += pixel >>> 16 & 0xff;
-                    green += pixel >>> 8 & 0xff;
-                    blue += pixel & 0xff;
                     count++;
                 }
             }
-            int filteredAlpha = specular
-                    ? (sentinelCount == count
-                            ? 255
-                            : (int) ((emission + count / 2L) / count))
-                    : (int) ((alpha + count / 2L) / count);
+            if (!specular) {
+                double meanX = normalX / count;
+                double meanY = normalY / count;
+                double meanZ = normalZ / count;
+                double meanLength = Math.sqrt(
+                        meanX * meanX + meanY * meanY + meanZ * meanZ);
+                double inverseMeanLength = 1.0 / Math.max(meanLength, 1.0E-20);
+                return encodeDistributionRoughness(meanLength) << 24
+                        | encodeSnorm(meanX * inverseMeanLength) << 16
+                        | encodeSnorm(meanY * inverseMeanLength) << 8
+                        | (int) ((blue + count / 2L) / count);
+            }
+            int filteredAlpha = sentinelCount == count
+                    ? 255
+                    : (int) ((emission + count / 2L) / count);
             return filteredAlpha << 24
                     | (int) ((red + count / 2L) / count) << 16
                     | (int) ((green + count / 2L) / count) << 8
                     | (int) ((blue + count / 2L) / count);
         }
 
-        private static int blendArgb(
+        /** Blends two already filtered animation texels without repeating mip filtering. */
+        public static int blendFiltered(
                 int current, int next, int progress, boolean specular) {
+            if (progress < 0 || progress > 999) {
+                throw new IllegalArgumentException("Invalid material animation progress");
+            }
             int inverse = 1000 - progress;
             int currentAlpha = current >>> 24;
             int nextAlpha = next >>> 24;
@@ -286,6 +318,30 @@ public record LabPbrAtlasFrame(
             } else {
                 alpha = (currentAlpha * inverse + nextAlpha * progress + 500) / 1000;
             }
+            if (!specular) {
+                double currentX = (current >>> 16 & 0xff) * (2.0 / 255.0) - 1.0;
+                double currentY = (current >>> 8 & 0xff) * (2.0 / 255.0) - 1.0;
+                double currentZ = Math.sqrt(Math.max(
+                        1.0 - currentX * currentX - currentY * currentY,
+                        0.0));
+                double nextX = (next >>> 16 & 0xff) * (2.0 / 255.0) - 1.0;
+                double nextY = (next >>> 8 & 0xff) * (2.0 / 255.0) - 1.0;
+                double nextZ = Math.sqrt(Math.max(
+                        1.0 - nextX * nextX - nextY * nextY,
+                        0.0));
+                double x = currentX * inverse + nextX * progress;
+                double y = currentY * inverse + nextY * progress;
+                double z = currentZ * inverse + nextZ * progress;
+                double inverseLength = 1.0 / Math.sqrt(Math.max(
+                        x * x + y * y + z * z,
+                        1.0E-20));
+                int blue = ((current & 0xff) * inverse
+                        + (next & 0xff) * progress + 500) / 1000;
+                return alpha << 24
+                        | encodeSnorm(x * inverseLength) << 16
+                        | encodeSnorm(y * inverseLength) << 8
+                        | blue;
+            }
             int red = ((current >>> 16 & 0xff) * inverse
                     + (next >>> 16 & 0xff) * progress + 500) / 1000;
             int green = ((current >>> 8 & 0xff) * inverse
@@ -296,6 +352,64 @@ public record LabPbrAtlasFrame(
 
         private static int clamp(int value, int minimum, int maximum) {
             return Math.max(minimum, Math.min(maximum, value));
+        }
+
+        private static int encodeSnorm(double value) {
+            return encodeUnorm(value * 0.5 + 0.5);
+        }
+
+        private static int encodeUnorm(double value) {
+            return clamp((int) Math.round(value * 255.0), 0, 255);
+        }
+
+        private static int encodeDistributionRoughness(double meanNormalLength) {
+            if (meanNormalLength >= 1.0) {
+                return 0;
+            }
+            if (meanNormalLength <= MACRO_NORMAL_LENGTH_BY_ROUGHNESS_BYTE[255]) {
+                return 255;
+            }
+            int lower = 0;
+            int upper = 255;
+            while (upper - lower > 1) {
+                int middle = (lower + upper) >>> 1;
+                if (MACRO_NORMAL_LENGTH_BY_ROUGHNESS_BYTE[middle]
+                        > meanNormalLength) {
+                    lower = middle;
+                } else {
+                    upper = middle;
+                }
+            }
+            return MACRO_NORMAL_LENGTH_BY_ROUGHNESS_BYTE[lower] - meanNormalLength
+                            <= meanNormalLength
+                                    - MACRO_NORMAL_LENGTH_BY_ROUGHNESS_BYTE[upper]
+                    ? lower
+                    : upper;
+        }
+
+        private static double[] createMacroNormalLengthTable() {
+            double[] table = new double[256];
+            for (int encoded = 0; encoded < table.length; encoded++) {
+                double roughness = encoded / 255.0;
+                table[encoded] = macroNormalLength(roughness * roughness);
+            }
+            return table;
+        }
+
+        private static double macroNormalLength(double alpha) {
+            if (alpha <= 0.0) {
+                return 1.0;
+            }
+            if (alpha >= 1.0) {
+                return 2.0 / 3.0;
+            }
+            // Hill et al., "Material Advances in Call of Duty: WWII", Listing 7: closed-form
+            // macrosurface-area GGX average normal length.
+            double a = Math.sqrt(1.0 - alpha * alpha);
+            double inverseHyperbolicTangent =
+                    0.5 * Math.log((1.0 + a) / (1.0 - a));
+            return (a - alpha * alpha * inverseHyperbolicTangent)
+                    / (a * a * a);
         }
     }
 }

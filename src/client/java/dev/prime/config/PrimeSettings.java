@@ -4,6 +4,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -13,7 +14,7 @@ import java.util.Objects;
 public record PrimeSettings(
         boolean pathTracingEnabled,
         boolean sharcEnabled,
-        boolean voxelTextureSurfaces,
+        SurfaceDetailMode surfaceDetailMode,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
@@ -30,6 +31,7 @@ public record PrimeSettings(
         }
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
+        surfaceDetailMode = Objects.requireNonNull(surfaceDetailMode, "surfaceDetailMode");
         astronomy = Objects.requireNonNull(astronomy, "astronomy");
         lighting = Objects.requireNonNull(lighting, "lighting");
         display = Objects.requireNonNull(display, "display");
@@ -41,7 +43,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 true,
                 true,
-                false,
+                SurfaceDetailMode.DEFAULT,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 PostProcessingMode.DEFAULT,
                 ReconstructionQualityMode.DEFAULT,
@@ -68,7 +70,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         value,
                         this.sharcEnabled,
-                        this.voxelTextureSurfaces,
+                        this.surfaceDetailMode,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
@@ -84,7 +86,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         value,
-                        this.voxelTextureSurfaces,
+                        this.surfaceDetailMode,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
@@ -94,8 +96,9 @@ public record PrimeSettings(
                         this.material);
     }
 
-    public PrimeSettings withVoxelTextureSurfaces(boolean value) {
-        return value == this.voxelTextureSurfaces
+    public PrimeSettings withSurfaceDetailMode(SurfaceDetailMode value) {
+        Objects.requireNonNull(value, "value");
+        return value == this.surfaceDetailMode
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
@@ -117,7 +120,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.sharcEnabled,
-                        this.voxelTextureSurfaces,
+                        this.surfaceDetailMode,
                         value,
                         this.postProcessingMode,
                         this.reconstructionQuality,
@@ -134,7 +137,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.sharcEnabled,
-                        this.voxelTextureSurfaces,
+                        this.surfaceDetailMode,
                         this.voxelTextureSurfaceStrengthSteps,
                         value,
                         this.reconstructionQuality,
@@ -151,7 +154,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.sharcEnabled,
-                        this.voxelTextureSurfaces,
+                        this.surfaceDetailMode,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         value,
@@ -312,7 +315,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 this.pathTracingEnabled,
                 this.sharcEnabled,
-                this.voxelTextureSurfaces,
+                this.surfaceDetailMode,
                 this.voxelTextureSurfaceStrengthSteps,
                 this.postProcessingMode,
                 this.reconstructionQuality,
@@ -330,7 +333,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 this.pathTracingEnabled,
                 this.sharcEnabled,
-                this.voxelTextureSurfaces,
+                this.surfaceDetailMode,
                 this.voxelTextureSurfaceStrengthSteps,
                 this.postProcessingMode,
                 this.reconstructionQuality,
@@ -344,7 +347,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 this.pathTracingEnabled,
                 this.sharcEnabled,
-                this.voxelTextureSurfaces,
+                this.surfaceDetailMode,
                 this.voxelTextureSurfaceStrengthSteps,
                 this.postProcessingMode,
                 this.reconstructionQuality,
@@ -358,7 +361,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 this.pathTracingEnabled,
                 this.sharcEnabled,
-                this.voxelTextureSurfaces,
+                this.surfaceDetailMode,
                 this.voxelTextureSurfaceStrengthSteps,
                 this.postProcessingMode,
                 this.reconstructionQuality,

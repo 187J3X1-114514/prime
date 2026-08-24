@@ -7,7 +7,7 @@ import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "policy/runtime/config.slang";
 import "model/material/defaults.slang";
-import "service/material/surface.slang";
+import "service/material/access.slang";
 import "model/material/transparent.slang";
 
 import "service/trace/hit.slang";
@@ -55,7 +55,8 @@ float3 primeSurfaceBoundaryExtinction(PrimeSurfaceRelation relation) {
         return PRIME_PURE_WATER_ABSORPTION_M_INV;
     }
     float opacity;
-    float3 baseColor = primeAtlasBaseColor(
+    float3 baseColor = primeStaticBaseColor(
+            relation.textureId,
             relation.tint,
             primeUnpackUv(relation.referenceUv),
             0.0,
@@ -116,7 +117,8 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
             barycentrics,
             hit.localPosition,
             outwardNormal);
-    float surfaceOpacity = primeEvaluateOpacity(primitive, materialUv);
+    uint textureId = primePrimitiveTextureId(section, primitive);
+    float surfaceOpacity = primeEvaluateOpacity(primitive, textureId, materialUv);
     if ((recipeControl & PRIME_RECIPE_ALPHA_CUTOUT) != 0u
             && surfaceOpacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         IgnoreHit();
@@ -130,7 +132,8 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
         extinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
     } else {
         float opacity;
-        float3 baseColor = primeAtlasBaseColor(
+        float3 baseColor = primeStaticBaseColor(
+                textureId,
                 primitive.tint,
                 primePrimitiveMaterialReferenceUv(primitive),
                 0.0,
@@ -167,5 +170,3 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
     }
     IgnoreHit();
 }
-
-

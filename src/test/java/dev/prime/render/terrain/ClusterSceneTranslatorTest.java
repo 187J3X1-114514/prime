@@ -256,7 +256,6 @@ final class ClusterSceneTranslatorTest {
                     record += CpuSectionMesh.PRIMITIVE_WORDS) {
                 int flags = PrimitivePacking.unpackControl(
                         primitives[record + 3], primitives[record + 5]);
-                assertEquals(0, flags & PrimitivePacking.CONTROL_RASTER_COMPOSITE);
                 assertEquals(
                         PrimitivePacking.NO_EMITTER_INDEX,
                         PrimitivePacking.unpackEmitterIndex(
@@ -575,15 +574,14 @@ final class ClusterSceneTranslatorTest {
     private static void setSpriteUv(
             CapturedSectionGeometry.MutableQuad quad,
             SectionMeshAccumulatorTest.TestSprite sprite) {
-        CapturedSprite captured = sprite.sprite();
-        quad.u[0] = captured.u0();
-        quad.v[0] = captured.v0();
-        quad.u[1] = captured.u1();
-        quad.v[1] = captured.v0();
-        quad.u[2] = captured.u1();
-        quad.v[2] = captured.v1();
-        quad.u[3] = captured.u0();
-        quad.v[3] = captured.v1();
+        quad.u[0] = 0.0F;
+        quad.v[0] = 0.0F;
+        quad.u[1] = 1.0F;
+        quad.v[1] = 0.0F;
+        quad.u[2] = 1.0F;
+        quad.v[2] = 1.0F;
+        quad.u[3] = 0.0F;
+        quad.v[3] = 1.0F;
     }
 
     private static CapturedSectionGeometry.Surface surface(

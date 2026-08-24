@@ -1,5 +1,6 @@
 package dev.prime.render.scene.vanilla;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,6 +17,21 @@ import net.minecraft.util.random.WeightedList;
 import org.junit.jupiter.api.Test;
 
 final class VanillaSectionCaptureTest {
+    @Test
+    void atlasEndpointRoundingIsLoweredToNormalizedLocalUv() {
+        float lower = 1537.0F / 2048.0F;
+        float upper = 1553.0F / 2048.0F;
+
+        assertEquals(0.0F, VanillaSectionCapture.localCoordinate(
+                Math.nextDown(lower), lower, upper));
+        assertEquals(1.0F, VanillaSectionCapture.localCoordinate(
+                Math.nextUp(upper), lower, upper));
+        assertEquals(0.25F, VanillaSectionCapture.localCoordinate(
+                lower + 0.25F * (upper - lower), lower, upper));
+        assertTrue(VanillaSectionCapture.localCoordinate(
+                upper + 0.25F * (upper - lower), lower, upper) > 1.0F);
+    }
+
     @Test
     void indigoAndDirectCaptureAdmitSelectedVanillaVariantsButNotCustomModels() {
         BlockStateModel deterministic = new SingleVariant(new EmptyPart());

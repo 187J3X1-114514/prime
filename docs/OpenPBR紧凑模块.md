@@ -23,14 +23,16 @@ OpenPBR 退化拓扑：
 
 - dielectric base：Lambert base 与 dielectric specular 的能量感知层叠；
 - conductor：GGX conductor 与 F82 tint；
-- subsurface：权重精确为一的厚表面或 thin-wall subsurface 与 dielectric specular 的层叠；
+- subsurface：权重精确为一的 thin-wall subsurface 与 dielectric specular 的层叠；
 - mixed subsurface：分数权重的 diffuse/subsurface 混合，再与 dielectric specular 层叠。
 
 该子集要求 base/specular weight 为一、metalness 精确为零或一，且 transmission、coat、fuzz、
 thin-film 和 diffraction 权重为零。当前材质翻译的 `diffuse_roughness` 精确为零，因此首批不携带
 通用 EON 粗糙漫反射；分数 subsurface 路径仍保留 EON 在零粗糙度下的随机数到方向映射。
 `primeCompactOpaqueSupports` 集中表达这些前置条件，并拒绝当前未实现的非零
-`diffuse_roughness`。
+`diffuse_roughness` 以及厚表面 subsurface。LabPBR 的厚材质 subsurface 输入在生产 adapter
+边界清零并退化为常规漫反射；当前参考闭包不使用 radius，继续暴露会产生无法控制的错误体内
+传输，且不符合实时性能预算。
 
 旧 adapter 曾把所有非零 subsurface 权重送入“权重精确为一”的 RoboCute specialization，导致
 分数权重被忽略。紧凑路径改为按精确端点和分数区间分派，恢复 OpenPBR 定义的
@@ -78,9 +80,9 @@ specialization，并检查所有现存 Slang 依赖可解析、无环且遵守�
 
 ## 测试
 
-`CompactOpenPbrOpaqueGpuTest` 在 Vulkan 上执行 49,152 个用例。32,768 个端点用例扫描
-dielectric、conductor、厚表面 subsurface 和 thin-wall subsurface；另有 16,384 个分数
-subsurface 用例覆盖零附近、0.25、0.5、0.75 和一附近的权重、厚/薄表面、随机数边界、掠射角、
+`CompactOpenPbrOpaqueGpuTest` 在 Vulkan 上执行 40,960 个用例。24,576 个端点用例扫描
+dielectric、conductor 和 thin-wall subsurface；另有 16,384 个分数
+subsurface 用例覆盖零附近、0.25、0.5、0.75 和一附近的权重、随机数边界、掠射角、
 IOR、各向异性和粗糙度。测试直接验证 eval 分量求和、PDF、事件、能量、有限性、非负性和
 状态不变量；分数路径还验证端点线性组合性质，不再把第二套参考实现编进同一测试单元。
 

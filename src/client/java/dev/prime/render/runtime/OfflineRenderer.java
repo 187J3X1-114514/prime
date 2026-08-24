@@ -11,7 +11,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.vulkan.AtmospherePipeline;
-import dev.prime.render.vulkan.LabPbrTextureAtlas;
+import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.OfflineRayTracingPipeline;
 import dev.prime.render.vulkan.OfflineFrameExecutor;
 import dev.prime.render.vulkan.SunShadowPipeline;
@@ -28,13 +28,13 @@ final class OfflineRenderer implements Destroyable {
     private OfflineRayTracingPipeline pipeline;
     private OfflineRenderResources resources;
     private OfflineSession session;
-    private boolean pipelineInvalid;
     private boolean destroyed;
 
     OfflineRenderer(VulkanContext context, TraceBackend backend) {
         this.context = Objects.requireNonNull(context, "context");
         this.backend = Objects.requireNonNull(backend, "backend");
         this.executor = new OfflineFrameExecutor(context);
+        this.pipeline = new OfflineRayTracingPipeline(context, backend);
     }
 
     boolean active() {
@@ -83,7 +83,6 @@ final class OfflineRenderer implements Destroyable {
     }
 
     OfflineRayTracingPipeline pipeline() {
-        this.ensurePipeline();
         return this.pipeline;
     }
 
@@ -174,8 +173,9 @@ final class OfflineRenderer implements Destroyable {
                 input.atlasView(),
                 input.atlasSampler(),
                 current.sceneTextures(),
-                input.labPbrAtlas().normalAtlas(),
-                input.labPbrAtlas().specularAtlas(),
+                input.materialTextures().normalPages(),
+                input.materialTextures().opticalPages(),
+                input.materialTextures().textureRecords(),
                 input.atmosphere());
         OfflineFramePlan framePlan = new OfflineFrameInput(
                 current.camera(),
@@ -194,7 +194,7 @@ final class OfflineRenderer implements Destroyable {
                 activePipeline,
                 input.sunShadow(),
                 input.atmosphere(),
-                input.labPbrAtlas(),
+                input.materialTextures(),
                 current.scene(),
                 framePlan,
                 images.displayOutput,
@@ -229,7 +229,7 @@ final class OfflineRenderer implements Destroyable {
             DisplaySettings.Snapshot display,
             AtmospherePipeline atmosphere,
             SunShadowPipeline sunShadow,
-            LabPbrTextureAtlas labPbrAtlas,
+            MaterialTexturePages materialTextures,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             long textureRevision) {
@@ -238,7 +238,7 @@ final class OfflineRenderer implements Destroyable {
             Objects.requireNonNull(display, "display");
             Objects.requireNonNull(atmosphere, "atmosphere");
             Objects.requireNonNull(sunShadow, "sunShadow");
-            Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
+            Objects.requireNonNull(materialTextures, "materialTextures");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(atlasSampler, "atlasSampler");
             if (textureRevision < 0L) {
@@ -250,16 +250,17 @@ final class OfflineRenderer implements Destroyable {
 
     record DiagnosticSnapshot(int width, int height, long accumulatedSamples) {}
 
-    void reloadActive() {
-        if (this.session == null) {
-            throw new IllegalStateException("Offline reload requires an active session");
-        }
+    void reload() {
         OfflineRayTracingPipeline replacementPipeline = null;
         OfflineRenderResources replacementResources = null;
         try {
             replacementPipeline = new OfflineRayTracingPipeline(this.context, this.backend);
             OfflineRenderResources current = this.resources;
             if (current != null) {
+                if (this.session == null) {
+                    throw new IllegalStateException(
+                            "Offline resources exist without a session");
+                }
                 replacementResources = OfflineRenderResources.create(
                         this.context,
                         current.displayOutput.width(),
@@ -275,31 +276,14 @@ final class OfflineRenderer implements Destroyable {
         OfflineRenderResources previousResources = this.resources;
         this.pipeline = replacementPipeline;
         this.resources = replacementResources;
-        this.pipelineInvalid = false;
-        this.session.resetAccumulation();
+        if (this.session != null) {
+            this.session.resetAccumulation();
+        }
         if (previousPipeline != null) {
             this.context.defer(previousPipeline);
         }
         if (previousResources != null) {
             this.context.defer(previousResources);
-        }
-    }
-
-    void invalidatePipeline() {
-        this.pipelineInvalid = true;
-    }
-
-    private void ensurePipeline() {
-        if (this.pipeline != null && !this.pipelineInvalid) {
-            return;
-        }
-        OfflineRayTracingPipeline replacement =
-                new OfflineRayTracingPipeline(this.context, this.backend);
-        OfflineRayTracingPipeline previous = this.pipeline;
-        this.pipeline = replacement;
-        this.pipelineInvalid = false;
-        if (previous != null) {
-            this.context.defer(previous);
         }
     }
 

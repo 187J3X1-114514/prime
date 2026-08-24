@@ -41,7 +41,7 @@ final class SpritePixelBoundaryTest {
     }
 
     @Test
-    void animatedFrameFactsDriveAtlasOpacityWithoutMinecraftObjects() {
+    void animatedFrameFactsDriveOpacityWithoutMinecraftObjects() {
         int[] pixels = new int[32 * 16];
         for (int y = 0; y < 16; y++) {
             Arrays.fill(pixels, y * 32, y * 32 + 16, 0xffff_ffff);
@@ -72,18 +72,12 @@ final class SpritePixelBoundaryTest {
     }
 
     @Test
-    void ironChainUvSliceUsesUnknownAtNonDyadicBoundaries() {
-        int atlasSize = 4096;
-        float atlasU0 = 3072.0F / atlasSize;
-        float atlasV0 = 2048.0F / atlasSize;
-        float atlasU1 = (3072.0F + 16.0F) / atlasSize;
-        float atlasV1 = (2048.0F + 16.0F) / atlasSize;
-        CapturedSprite chain = patternedSprite(
-                "iron_chain", 16, 16, atlasU0, atlasV0, atlasU1, atlasV1);
+    void ironChainLocalUvSliceUsesUnknownAtNonDyadicBoundaries() {
+        CapturedSprite chain = patternedSprite("iron_chain", 16, 16);
         OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
-        int first = uv(atlasU0, atlasV0);
-        int second = uv(atlasU0 + 3.0F / atlasSize, atlasV0);
-        int third = uv(atlasU0, atlasV1);
+        int first = uv(0.0F, 0.0F);
+        int second = uv(3.0F / 16.0F, 0.0F);
+        int third = uv(0.0F, 1.0F);
         builder.addTriangle(chain, first, second, third);
 
         OpacityMicromapData data = builder.build();
@@ -294,17 +288,16 @@ final class SpritePixelBoundaryTest {
 
     @Test
     void invalidLayoutsAndPixelFailuresRemainFailFast() {
-        ArrayPixels pixels = new ArrayPixels(new int[16 * 16], 16, 16);
-        CapturedSprite degenerate = sprite(
-                "degenerate", 0.5F, 0.0F, 0.5F, 1.0F, false, new int[] {0}, pixels);
-        OpacityMicromapData.Builder degenerateOpacity = new OpacityMicromapData.Builder();
         assertThrows(
                 IllegalArgumentException.class,
-                () -> degenerateOpacity.addTriangle(
-                        degenerate,
-                        uv(0.5F, 0.0F),
-                        uv(0.5F, 0.0F),
-                        uv(0.5F, 1.0F)));
+                () -> new CapturedSprite(
+                        new SpriteId("fixture", "zero_texture_id"),
+                        0,
+                        16,
+                        16,
+                        false,
+                        new int[] {0},
+                        null));
 
         CapturedSprite failing = sprite(
                 "failing",
@@ -474,10 +467,7 @@ final class SpritePixelBoundaryTest {
             SpritePixelView pixels) {
         return new CapturedSprite(
                 new SpriteId("fixture", path),
-                u0,
-                v0,
-                u1,
-                v1,
+                1,
                 width,
                 height,
                 animated,

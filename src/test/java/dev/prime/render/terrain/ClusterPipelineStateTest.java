@@ -13,8 +13,9 @@ final class ClusterPipelineStateTest {
         long generation = 3L;
 
         assertTrue(state.enqueue(key, generation));
-        state.beginInFlight(key, generation);
+        ClusterPipelineState.Cancellation cancellation = state.beginInFlight(key, generation);
         assertFalse(state.enqueue(key, generation));
+        assertFalse(cancellation.cancelled());
         assertTrue(state.completeToReady(key, generation));
         assertFalse(state.enqueue(key, generation));
         assertFalse(state.completeToReady(key, generation));
@@ -29,8 +30,9 @@ final class ClusterPipelineStateTest {
         long key = 23L;
 
         assertTrue(state.enqueue(key, 4L));
-        state.beginInFlight(key, 4L);
+        ClusterPipelineState.Cancellation cancellation = state.beginInFlight(key, 4L);
         assertTrue(state.enqueue(key, 5L));
+        assertTrue(cancellation.cancelled());
         state.cancelInFlight(key, 4L);
 
         assertTrue(state.isQueued(key, 5L));
@@ -50,5 +52,21 @@ final class ClusterPipelineStateTest {
         assertFalse(state.hasInFlight(key));
         assertTrue(state.enqueue(key, generation));
         assertTrue(state.isQueued(key, generation));
+    }
+
+    @Test
+    void clearingThePipelineCancelsEveryWorkerBuild() {
+        ClusterPipelineState state = new ClusterPipelineState();
+        state.enqueue(31L, 1L);
+        ClusterPipelineState.Cancellation first = state.beginInFlight(31L, 1L);
+        state.enqueue(37L, 2L);
+        ClusterPipelineState.Cancellation second = state.beginInFlight(37L, 2L);
+
+        state.clear();
+
+        assertTrue(first.cancelled());
+        assertTrue(second.cancelled());
+        assertFalse(state.hasInFlight(31L));
+        assertFalse(state.hasInFlight(37L));
     }
 }

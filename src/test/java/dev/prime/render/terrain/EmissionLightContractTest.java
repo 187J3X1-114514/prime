@@ -8,12 +8,22 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.SpriteId;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class EmissionLightContractTest {
+    private static final CapturedSprite TEXTURE = new CapturedSprite(
+            new SpriteId("prime", "emission_fixture"),
+            1,
+            16,
+            16,
+            false,
+            new int[] {0},
+            null);
     private static final int LIGHT_NODE_WORDS = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
     private static final int LIGHT_NODE_POWER_WORD =
             ShaderAbi.LIGHT_NODE_CENTROID_POWER_OFFSET / Integer.BYTES + 3;
@@ -136,7 +146,7 @@ final class EmissionLightContractTest {
                     0,
                     false,
                     15,
-                    null,
+                    TEXTURE,
                     null);
         }
 
@@ -175,7 +185,7 @@ final class EmissionLightContractTest {
                 0,
                 false,
                 15,
-                null,
+                TEXTURE,
                 null);
 
         CpuSectionLights lights = builder.build();

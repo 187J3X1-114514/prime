@@ -190,7 +190,11 @@ final class PrimeBsdfGpuTest {
 
     private static int flags(int kind, int localCase) {
         int flags = 0;
-        if (kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 6) {
+        if (kind == 0) {
+            if ((localCase & 8) != 0) {
+                flags |= MATERIAL_THIN_WALLED;
+            }
+        } else if (kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 6) {
             flags |= MATERIAL_FAMILY_DIELECTRIC;
             if (kind != 6 && (localCase & 8) != 0) {
                 flags |= MATERIAL_MEDIUM_WATER;

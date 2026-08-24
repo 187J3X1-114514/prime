@@ -24,4 +24,12 @@ public final class TerrainWorkerSettings {
         validatePercentage(percentage);
         return Math.max(1, Math.toIntExact((long) maximumThreads * percentage / 100L));
     }
+
+    /** Keeps one admitted job available for resident terrain invalidations. */
+    public static int admissionLimit(int maximumInFlight, boolean interactivePending) {
+        if (maximumInFlight <= 0) {
+            throw new IllegalArgumentException("Maximum in-flight terrain work must be positive");
+        }
+        return interactivePending ? maximumInFlight : Math.max(1, maximumInFlight - 1);
+    }
 }

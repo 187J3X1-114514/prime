@@ -9,6 +9,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -81,7 +82,7 @@ public final class PrimeConfig {
         return new RendererSettings(
                 current.pathTracingEnabled(),
                 current.sharcEnabled(),
-                current.voxelTextureSurfaces(),
+                current.surfaceDetailMode(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
                 current.reconstructionQuality(),
@@ -166,8 +167,8 @@ public final class PrimeConfig {
         }
     }
 
-    public static void setVoxelTextureSurfaces(boolean enabled) {
-        update(settings.withVoxelTextureSurfaces(enabled));
+    public static void setSurfaceDetailMode(SurfaceDetailMode mode) {
+        update(settings.withSurfaceDetailMode(mode));
     }
 
     public static void setVoxelTextureSurfaceStrengthSteps(int steps) {
@@ -239,7 +240,7 @@ public final class PrimeConfig {
         return current
                 .withPathTracingEnabled(true)
                 .withSharcEnabled(true)
-                .withVoxelTextureSurfaces(false)
+                .withSurfaceDetailMode(SurfaceDetailMode.DEFAULT)
                 .withVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS)
                 .withPostProcessingMode(PostProcessingMode.DEFAULT)
                 .withReconstructionQuality(ReconstructionQualityMode.DEFAULT)

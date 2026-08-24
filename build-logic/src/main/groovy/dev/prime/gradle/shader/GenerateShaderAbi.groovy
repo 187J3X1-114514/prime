@@ -54,7 +54,11 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| push.size != 128
 				|| nrdMotionPush.size != 144 || sharcFrame.size != 112
 				|| sunShadowQuery.size != 48
-				|| schema.sceneTextureCount != 64) {
+				|| schema.sceneTextureCount != 64
+				|| schema.materialPageCount != 16
+				|| schema.sharedDescriptors.textureRecords != 18
+				|| schema.sharedDescriptors.materialNormalPages != 19
+				|| schema.sharedDescriptors.materialOpticalPages != 49) {
 			throw new GradleException(
 					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
 		}
@@ -317,8 +321,9 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.realtimeDescriptors.nrdNoisySpecular};
     public static final int DESCRIPTOR_NRD_SPECULAR_MATERIAL = ${schema.realtimeDescriptors.nrdSpecularMaterial};
     public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
-    public static final int DESCRIPTOR_LABPBR_NORMAL_ATLAS = ${schema.sharedDescriptors.labPbrNormalAtlas};
-    public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.sharedDescriptors.labPbrSpecularAtlas};
+    public static final int DESCRIPTOR_TEXTURE_RECORDS = ${schema.sharedDescriptors.textureRecords};
+    public static final int DESCRIPTOR_MATERIAL_NORMAL_PAGES = ${schema.sharedDescriptors.materialNormalPages};
+    public static final int DESCRIPTOR_MATERIAL_OPTICAL_PAGES = ${schema.sharedDescriptors.materialOpticalPages};
     public static final int DESCRIPTOR_NRD_SUN_LIGHTING = ${schema.realtimeDescriptors.nrdSunLighting};
     public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.realtimeDescriptors.nrdSunPenumbra};
     public static final int DESCRIPTOR_NRD_DIFFUSE_DIRECTION = ${schema.realtimeDescriptors.nrdDiffuseDirection};
@@ -351,6 +356,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_9 = ${schema.sharedDescriptors.sunShadowDepth9};
     public static final int DESCRIPTOR_SUN_SHADOW_QUERY = ${schema.sharedDescriptors.sunShadowQuery};
     public static final int SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
+    public static final int MATERIAL_PAGE_COUNT = ${schema.materialPageCount};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
     public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
@@ -645,10 +651,6 @@ public ConstantBuffer<SunShadowQueryConstants> primeSunShadowQuery;
 public RaytracingAccelerationStructure primeScene;
 [[vk::binding(${schema.sharedDescriptors.blockAtlas}, 0)]]
 public Sampler2D<float4> primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
-[[vk::binding(${schema.sharedDescriptors.labPbrNormalAtlas}, 0)]]
-public Sampler2D<float4> primeLabPbrNormalAtlas;
-[[vk::binding(${schema.sharedDescriptors.labPbrSpecularAtlas}, 0)]]
-public Sampler2D<float4> primeLabPbrSpecularAtlas;
 
 [[vk::binding(${schema.sharedDescriptors.skyView}, 0)]] [[vk::image_format("rgba16f")]]
 public readonly RWTexture2D<float4> primeSkyView;

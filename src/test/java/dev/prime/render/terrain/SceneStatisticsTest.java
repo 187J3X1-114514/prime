@@ -22,7 +22,6 @@ final class SceneStatisticsTest {
                         6L,
                         7L,
                         8L,
-                        9L,
                         List.of(),
                         statistics);
 

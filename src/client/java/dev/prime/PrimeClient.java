@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
 import net.fabricmc.fabric.api.resource.v1.reloader.ResourceReloaderKeys;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
@@ -47,11 +48,11 @@ public final class PrimeClient implements ClientModInitializer {
                 CompletableFuture<Void> applied = retired
                         .thenCompose(ticket -> ticket.ready().thenApply(ignored -> ticket))
                         .thenCompose(preparationBarrier::wait)
-                        .thenAcceptAsync(ticket -> {
+                        .thenComposeAsync(ticket -> CompletableFuture.runAsync(() -> {
                             boolean reloadShaders = !this.initialReload;
                             runtime.finishResourceReload(ticket, reloadShaders);
                             this.initialReload = false;
-                        }, applyExecutor);
+                        }, Minecraft.getInstance()), applyExecutor);
                 return applied.whenComplete((ignored, failure) -> {
                     if (failure == null) {
                         return;

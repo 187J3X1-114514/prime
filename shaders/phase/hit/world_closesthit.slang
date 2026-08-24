@@ -6,6 +6,8 @@ import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "policy/runtime/config.slang";
 import "model/material/defaults.slang";
+import "service/material/access.slang";
+import "service/material/normal_mapping.slang";
 import "service/material/surface.slang";
 
 import "service/trace/hit.slang";
@@ -34,16 +36,22 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
             hit.localPosition,
             normal);
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
+    uint textureId = bakedMaterial ? 0u : primePrimitiveTextureId(section, primitive);
     float textureLodValue =
             bakedMaterial
                     ? 0.0
-                    : primeRayConeTextureLod(primitive, normal, hit.position);
+                    : primeRayConeTextureLod(section, primitive, normal, hit.position);
     float2 materialUv = bakedMaterial
             ? float2(0.0)
             : primeInterpolateUv(
                     section, primitive, barycentrics, hit.localPosition, normal);
     PrimeMaterialSample material = primeEvaluateMaterial(
-            primitive, materialUv, textureLodValue, section.instanceTint);
+            primitive, textureId, materialUv, textureLodValue, section.instanceTint);
+    material.shadingNormal = primeNormalMappedShadingNormalForView(
+            material.opticalControl,
+            normal,
+            -WorldRayDirection(),
+            material.shadingNormal);
     primePayload.t = RayTCurrent();
     // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
     // while transparent reflection and the water stack require its authored outward sign.
@@ -74,6 +82,7 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
         PrimeMaterialSample adjacent = primeEvaluateMaterialReference(
                 relation.control >> 8u,
                 relation.tint,
+                relation.textureId,
                 primeUnpackUv(relation.referenceUv));
         primePayload.adjacentBaseColor = adjacent.baseColor;
         uint adjacentFresnelCode = adjacent.opticalControl
@@ -87,5 +96,3 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
                         : 0u);
     }
 }
-
-

@@ -36,6 +36,14 @@ final class AtmosphereLutHistory {
         return this.staticPrepared;
     }
 
+    void staticSubmitted() {
+        requireNoPending();
+        if (this.staticPrepared) {
+            throw new IllegalStateException("Static atmosphere LUTs are already prepared");
+        }
+        this.staticPrepared = true;
+    }
+
     int[] beginCandidate() {
         requireNoPending();
         return this.candidateAerialKey;

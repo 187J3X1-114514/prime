@@ -9,6 +9,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.diagnostic.NrdInputView;
@@ -74,7 +75,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$updatePrimaryChainAvailability();
             list.addBig(this.prime$options.rendering().terrainWorkerPercentage());
             list.addSmall(
-                    this.prime$options.rendering().voxelTextureSurfaces(),
+                    this.prime$options.rendering().surfaceDetailMode(),
                     this.prime$options.rendering().voxelTextureSurfaceStrength());
             list.addSmall(this.prime$options.rendering().postProcessingMode(), this.prime$options.rendering().qualityMode());
             list.addHeader(PRIME$LIGHTING_HEADER);
@@ -124,13 +125,12 @@ public abstract class VideoSettingsScreenMixin {
         if (previous.pathTracingEnabled() != current.pathTracingEnabled()) {
             runtime.pathTracingChanged(current.pathTracingEnabled());
         }
-        if (previous.voxelTextureSurfaces() != current.voxelTextureSurfaces()) {
-            runtime.voxelTextureSurfacesChanged(
-                    current.voxelTextureSurfaces());
+        if (previous.surfaceDetailMode() != current.surfaceDetailMode()) {
+            runtime.surfaceDetailModeChanged();
         } else if (previous.voxelTextureSurfaceStrengthSteps()
                 != current.voxelTextureSurfaceStrengthSteps()) {
             runtime.voxelTextureSurfaceStrengthChanged(
-                    current.voxelTextureSurfaces(),
+                    current.usesGeometryDisplacement(),
                     current.voxelTextureSurfaceStrengthSteps());
         }
         this.prime$refresh(this.prime$options.rendering().pathTracingEnabled(), true);
@@ -145,7 +145,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$options.rendering().terrainWorkerPercentage(),
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);
-        this.prime$refresh(this.prime$options.rendering().voxelTextureSurfaces(), false);
+        this.prime$refresh(
+                this.prime$options.rendering().surfaceDetailMode(),
+                SurfaceDetailMode.DEFAULT);
         this.prime$refresh(
                 this.prime$options.rendering().voxelTextureSurfaceStrength(),
                 VoxelSurfaceSettings.DEFAULT_STEPS);

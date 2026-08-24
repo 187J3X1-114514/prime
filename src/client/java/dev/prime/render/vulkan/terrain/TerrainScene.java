@@ -53,7 +53,6 @@ public final class TerrainScene implements AutoCloseable {
     private int originZ;
     private long revision;
     private long resetRevision;
-    private long temporalRevision;
     private long occluderRevision;
 
     public TerrainScene(VulkanContext context, StagingArena stagingArena) {
@@ -602,8 +601,6 @@ public final class TerrainScene implements AutoCloseable {
     /** Marks every temporal consumer as unrelated to its previous world. */
     public void beginUnrelatedWorld() {
         this.resetRevision++;
-        this.temporalRevision = nextTemporalRevision(
-                this.temporalRevision, TemporalContinuity.UNRELATED_WORLD);
     }
 
     public int residentCount() {
@@ -989,8 +986,6 @@ public final class TerrainScene implements AutoCloseable {
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
         VulkanBuffer previousWorldLights = replaceWorldLights ? this.currentWorldLights : null;
         long nextRevision = this.revision + 1L;
-        long nextTemporalRevision = nextTemporalRevision(
-                this.temporalRevision, TemporalContinuity.RELATED_UPDATE);
         long nextOccluderRevision = occluderChanges.isEmpty()
                 ? this.occluderRevision
                 : this.occluderRevision + 1L;
@@ -1004,7 +999,6 @@ public final class TerrainScene implements AutoCloseable {
                         nextOriginZ,
                         nextRevision,
                         this.resetRevision,
-                        nextTemporalRevision,
                         nextOccluderRevision,
                         occluderChanges,
                         statistics);
@@ -1020,7 +1014,6 @@ public final class TerrainScene implements AutoCloseable {
                 nextOriginY,
                 nextOriginZ,
                 nextRevision,
-                nextTemporalRevision,
                 nextOccluderRevision,
                 nextView,
                 retired,
@@ -1041,7 +1034,6 @@ public final class TerrainScene implements AutoCloseable {
         this.originY = update.originY();
         this.originZ = update.originZ();
         this.revision = update.revision();
-        this.temporalRevision = update.temporalRevision();
         this.occluderRevision = update.occluderRevision();
         this.currentView = update.view();
     }
@@ -1456,18 +1448,6 @@ public final class TerrainScene implements AutoCloseable {
                 : PreparedBlas.CompactionPolicy.ENABLED;
     }
 
-    public static long nextTemporalRevision(
-            long revision, TemporalContinuity continuity) {
-        return continuity == TemporalContinuity.UNRELATED_WORLD
-                ? revision + 1L
-                : revision;
-    }
-
-    public enum TemporalContinuity {
-        RELATED_UPDATE,
-        UNRELATED_WORLD
-    }
-
     private record PreparedUpdate(
             Long2ObjectOpenHashMap<GpuCluster> resident,
             @Nullable GpuCluster dynamicResident,
@@ -1479,7 +1459,6 @@ public final class TerrainScene implements AutoCloseable {
             int originY,
             int originZ,
             long revision,
-            long temporalRevision,
             long occluderRevision,
             ResidentSceneView view,
             List<GpuCluster> retired,
@@ -1496,7 +1475,6 @@ public final class TerrainScene implements AutoCloseable {
             int originZ,
             long revision,
             long resetRevision,
-            long temporalRevision,
             long occluderRevision,
             List<TerrainOccluderChange> occluderChanges,
             SceneStatistics statistics) implements SceneRevisionView {
@@ -1513,7 +1491,6 @@ public final class TerrainScene implements AutoCloseable {
                 int originZ,
                 long revision,
                 long resetRevision,
-                long temporalRevision,
                 long occluderRevision,
                 List<TerrainOccluderChange> occluderChanges) {
             this(
@@ -1524,7 +1501,6 @@ public final class TerrainScene implements AutoCloseable {
                     originZ,
                     revision,
                     resetRevision,
-                    temporalRevision,
                     occluderRevision,
                     occluderChanges,
                     SceneStatistics.EMPTY);
@@ -1537,8 +1513,7 @@ public final class TerrainScene implements AutoCloseable {
                 int originY,
                 int originZ,
                 long revision,
-                long resetRevision,
-                long temporalRevision) {
+                long resetRevision) {
             this(
                     tlas,
                     sectionTableAddress,
@@ -1547,7 +1522,6 @@ public final class TerrainScene implements AutoCloseable {
                     originZ,
                     revision,
                     resetRevision,
-                    temporalRevision,
                     revision,
                     List.of(),
                     SceneStatistics.EMPTY);

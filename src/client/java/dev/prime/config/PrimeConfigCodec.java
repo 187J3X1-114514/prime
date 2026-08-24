@@ -8,6 +8,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryChainSettings;
 import dev.prime.render.ScatterSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -24,10 +25,9 @@ final class PrimeConfigCodec {
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
     private static final String PRIMARY_CHAIN_LIMIT_KEY = "renderer.primary_chain_limit";
     private static final String TERRAIN_WORKER_PERCENTAGE_KEY = "terrain.worker_percentage";
-    private static final String VOXEL_TEXTURE_SURFACES_KEY =
-            "experimental.voxel_texture_surfaces";
+    private static final String SURFACE_DETAIL_MODE_KEY = "material.surface_detail";
     private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
-            "experimental.voxel_texture_surface_strength";
+            "material.displacement_height";
     private static final String MODE_KEY = "post_processing.mode";
     private static final String QUALITY_KEY = "post_processing.quality";
     private static final String SUN_EV_KEY = "lighting.sun_ev";
@@ -51,7 +51,7 @@ final class PrimeConfigCodec {
             SCATTER_COUNT_KEY,
             PRIMARY_CHAIN_LIMIT_KEY,
             TERRAIN_WORKER_PERCENTAGE_KEY,
-            VOXEL_TEXTURE_SURFACES_KEY,
+            SURFACE_DETAIL_MODE_KEY,
             VOXEL_TEXTURE_SURFACE_STRENGTH_KEY,
             MODE_KEY,
             QUALITY_KEY,
@@ -101,11 +101,11 @@ final class PrimeConfigCodec {
                 defaults.terrainWorkerPercentage(),
                 PrimeConfigCodec::parseTerrainWorkerPercentage,
                 "terrain worker percentage");
-        boolean voxelSurfaces = reader.value(
-                VOXEL_TEXTURE_SURFACES_KEY,
-                defaultSettings.voxelTextureSurfaces(),
-                PrimeConfigCodec::parseBoolean,
-                "voxel-texture surface switch");
+        SurfaceDetailMode surfaceDetail = reader.value(
+                SURFACE_DETAIL_MODE_KEY,
+                defaultSettings.surfaceDetailMode(),
+                PrimeConfigCodec::parseSurfaceDetailMode,
+                "surface-detail mode");
         int voxelStrength = reader.value(
                 VOXEL_TEXTURE_SURFACE_STRENGTH_KEY,
                 defaultSettings.voxelTextureSurfaceStrengthSteps(),
@@ -190,7 +190,7 @@ final class PrimeConfigCodec {
         PrimeSettings settings = new PrimeSettings(
                 pathTracing,
                 sharc,
-                voxelSurfaces,
+                surfaceDetail,
                 voxelStrength,
                 mode,
                 quality,
@@ -223,8 +223,8 @@ final class PrimeConfigCodec {
                 + PRIMARY_CHAIN_LIMIT_KEY + "=" + data.primaryChainLimit() + "\n"
                 + TERRAIN_WORKER_PERCENTAGE_KEY + "="
                 + data.terrainWorkerPercentage() + "\n"
-                + VOXEL_TEXTURE_SURFACES_KEY + "="
-                + settings.voxelTextureSurfaces() + "\n"
+                + SURFACE_DETAIL_MODE_KEY + "="
+                + settings.surfaceDetailMode().id() + "\n"
                 + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
                 + formatVoxelSurfaceStrength(settings.voxelTextureSurfaceStrengthSteps()) + "\n"
                 + MODE_KEY + "=" + settings.postProcessingMode().id() + "\n"
@@ -251,13 +251,13 @@ final class PrimeConfigCodec {
     static void log(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 settings.pathTracingEnabled() ? "enabled" : "disabled",
                 settings.sharcEnabled() ? "enabled" : "disabled",
                 data.scatterCount(),
                 data.primaryChainLimit(),
                 data.terrainWorkerPercentage(),
-                settings.voxelTextureSurfaces() ? "enabled" : "disabled",
+                settings.surfaceDetailMode().id(),
                 formatVoxelSurfaceStrength(settings.voxelTextureSurfaceStrengthSteps()),
                 settings.postProcessingMode().id(),
                 settings.reconstructionQuality().id(),
@@ -287,6 +287,12 @@ final class PrimeConfigCodec {
             throw new IllegalArgumentException("Raw output is a session diagnostic");
         }
         return mode;
+    }
+
+    static SurfaceDetailMode parseSurfaceDetailMode(String value) {
+        return SurfaceDetailMode.findById(value)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unknown surface-detail mode"));
     }
 
     private static ReconstructionQualityMode parseQuality(String value) {

@@ -231,8 +231,9 @@
     "aerialRadiance": 7,
     "aerialTransmittance": 8,
     "transmissionGgxEnergy": 17,
-    "labPbrNormalAtlas": 18,
-    "labPbrSpecularAtlas": 19,
+    "textureRecords": 18,
+    "materialNormalPages": 19,
+    "materialOpticalPages": 49,
     "starmap": 34,
     "sunShadowDepth0": 38,
     "sunShadowDepth1": 39,
@@ -279,6 +280,7 @@
     "wavefrontQueue": 2
   },
   "sceneTextureCount": 64,
+  "materialPageCount": 16,
   "realtimeWavefrontContract": {
     "pathRecordSize": 112,
     "pathSlotsPerPixel": 2,

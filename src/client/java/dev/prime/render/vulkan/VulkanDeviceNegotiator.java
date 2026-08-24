@@ -471,8 +471,9 @@ public final class VulkanDeviceNegotiator {
             int perStageSampledImageLimit,
             int descriptorSetSamplerLimit,
             int descriptorSetSampledImageLimit) {
-        // TraceBackend exposes its four fixed combined samplers to every RT stage.
-        int required = dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT + 4;
+        int required = dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT
+                + 2 * dev.prime.render.shader.ShaderAbi.MATERIAL_PAGE_COUNT
+                + 2;
         return Integer.compareUnsigned(perStageSamplerLimit, required) >= 0
                 && Integer.compareUnsigned(perStageSampledImageLimit, required) >= 0
                 && Integer.compareUnsigned(descriptorSetSamplerLimit, required) >= 0

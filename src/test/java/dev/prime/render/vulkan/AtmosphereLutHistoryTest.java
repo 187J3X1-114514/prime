@@ -52,6 +52,18 @@ final class AtmosphereLutHistoryTest {
     }
 
     @Test
+    void bootstrapStaticSubmissionLeavesDynamicTablesInvalid() {
+        AtmosphereLutHistory history = new AtmosphereLutHistory(4);
+
+        history.staticSubmitted();
+        Arrays.fill(history.beginCandidate(), 1);
+
+        assertEquals(
+                AtmosphereLutHistory.SKY | AtmosphereLutHistory.AERIAL,
+                history.prepareCandidate(2, 3));
+    }
+
+    @Test
     void overlappingCandidatesAreRejected() {
         AtmosphereLutHistory history = new AtmosphereLutHistory(1);
         history.beginCandidate()[0] = 1;

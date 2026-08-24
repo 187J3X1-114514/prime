@@ -7,5 +7,4 @@ public interface SceneRevisionView {
     int originZ();
     long revision();
     long resetRevision();
-    long temporalRevision();
 }

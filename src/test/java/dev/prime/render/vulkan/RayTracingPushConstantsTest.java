@@ -104,7 +104,7 @@ final class RayTracingPushConstantsTest {
                 -32.75);
         TerrainScene.ResidentSceneView scene =
                 new TerrainScene.ResidentSceneView(
-                        3L, 0x1020_3040_5060_7080L, 96, 48, -48, 4L, 5L, 6L);
+                        3L, 0x1020_3040_5060_7080L, 96, 48, -48, 4L, 5L);
         LightingSettings.Snapshot lighting =
                 new LightingSettings.Snapshot(4, -8, 12, 7L);
         MaterialSettings.Snapshot material =

@@ -10,6 +10,7 @@ import dev.prime.render.terrain.SectionCluster;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.FabricTextureAtlas;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 import net.minecraft.client.Minecraft;
@@ -98,16 +99,20 @@ public final class VanillaClusterCompiler implements AutoCloseable {
     public CpuClusterMesh compile(
             Capture capture,
             LabPbrMaterialSet materials,
-            ClusterTranslationSettings settings) {
+            ClusterTranslationSettings settings,
+            BooleanSupplier cancelled) {
+        Objects.requireNonNull(cancelled, "cancelled");
         Stage stage = Stage.SETUP;
         int sectionX = 0;
         int sectionY = 0;
         int sectionZ = 0;
         try {
-            VanillaSpriteResolver spriteResolver = new VanillaSpriteResolver();
+            throwIfCancelled(cancelled);
+            VanillaSpriteResolver spriteResolver = new VanillaSpriteResolver(materials);
             CapturedCluster.Builder captured = new CapturedCluster.Builder(
                     capture.clusterX, capture.clusterY, capture.clusterZ);
             for (VanillaSectionSnapshot snapshot : capture.snapshots) {
+                throwIfCancelled(cancelled);
                 stage = Stage.SECTION_COMPILATION;
                 sectionX = snapshot.sectionX();
                 sectionY = snapshot.sectionY();
@@ -122,11 +127,20 @@ public final class VanillaClusterCompiler implements AutoCloseable {
                         spriteResolver);
                 captured.add(sectionX, sectionY, sectionZ, section);
             }
+            throwIfCancelled(cancelled);
             stage = Stage.CLUSTER_TRANSLATION;
             return ClusterSceneTranslator.translate(captured.build(), materials, settings);
+        } catch (CompilationCancelledException exception) {
+            throw exception;
         } catch (Throwable throwable) {
             throw new CompilationException(
                     throwable, stage, sectionX, sectionY, sectionZ);
+        }
+    }
+
+    private static void throwIfCancelled(BooleanSupplier cancelled) {
+        if (cancelled.getAsBoolean()) {
+            throw new CompilationCancelledException();
         }
     }
 
@@ -211,6 +225,15 @@ public final class VanillaClusterCompiler implements AutoCloseable {
         SETUP,
         SECTION_COMPILATION,
         CLUSTER_TRANSLATION
+    }
+
+    /** Expected control flow when a newer cluster generation supersedes this build. */
+    public static final class CompilationCancelledException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        private CompilationCancelledException() {
+            super("Terrain cluster build superseded");
+        }
     }
 
     public static final class CompilationException extends RuntimeException {

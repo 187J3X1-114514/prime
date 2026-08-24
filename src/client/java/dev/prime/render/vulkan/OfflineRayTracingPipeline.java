@@ -98,16 +98,18 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures,
-            VulkanImage labPbrNormalAtlas,
-            VulkanImage labPbrSpecularAtlas,
+            List<VulkanImage> materialNormalPages,
+            List<VulkanImage> materialOpticalPages,
+            VulkanBuffer textureRecords,
             AtmospherePipeline atmosphere) {
         this.backend.ensureSceneDescriptors(
                 tlas,
                 atlasView,
                 atlasSampler,
                 sceneTextures,
-                labPbrNormalAtlas,
-                labPbrSpecularAtlas,
+                materialNormalPages,
+                materialOpticalPages,
+                textureRecords,
                 atmosphere);
         int width = runningMean.width();
         int height = runningMean.height();
@@ -156,20 +158,6 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         if (replaces && previousWavefront != null) {
             this.context.defer(previousWavefront);
         }
-    }
-
-    public long prepareFrame(
-            VkCommandBuffer commandBuffer,
-            VulkanImageInitializationBatch initialization) {
-        return this.backend.prepareFrame(commandBuffer, initialization);
-    }
-
-    public void submitted(long token) {
-        this.backend.submitted(token);
-    }
-
-    public void abandon(long token) {
-        this.backend.abandon(token);
     }
 
     /** Releases descriptor bindings and wavefront backing after the device has become idle. */

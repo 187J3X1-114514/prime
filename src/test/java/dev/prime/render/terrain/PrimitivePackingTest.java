@@ -44,24 +44,24 @@ final class PrimitivePackingTest {
     }
 
     @Test
-    void atlasUvPreservesAThreeTexelChainSliceOnA4096Atlas() {
-        int atlasSize = 4096;
-        float first = 3072.0F / atlasSize;
-        float second = 3075.0F / atlasSize;
+    void localUvPreservesAThreeTexelChainSlice() {
+        int textureSize = 16;
+        float first = 0.0F;
+        float second = 3.0F / textureSize;
         int packedFirst = PrimitivePacking.packUv(first, 0.0F);
         int packedSecond = PrimitivePacking.packUv(second, 1.0F);
 
         float decodedFirst = PrimitivePacking.unpackUv(packedFirst, false);
         float decodedSecond = PrimitivePacking.unpackUv(packedSecond, false);
 
-        assertEquals(3.0F, (decodedSecond - decodedFirst) * atlasSize);
+        assertEquals(3.0F, (decodedSecond - decodedFirst) * textureSize);
         assertEquals(0.0F, PrimitivePacking.unpackUv(packedFirst, true));
         assertEquals(1.0F, PrimitivePacking.unpackUv(packedSecond, true));
         assertEquals(
-                4.0F,
+                3.0F,
                 (Float.float16ToFloat(Float.floatToFloat16(second))
                                 - Float.float16ToFloat(Float.floatToFloat16(first)))
-                        * atlasSize);
+                        * textureSize);
     }
 
     @Test
@@ -78,7 +78,7 @@ final class PrimitivePackingTest {
                 MediumHint.GLASS,
                 MaterialDetail.NORMAL_TEXTURE.bit() | MaterialDetail.OPTICAL_TEXTURE.bit(),
                 BuiltinMaterialClass.GLAZED_CERAMIC);
-        PrimitiveControl value = new PrimitiveControl(recipe, true, true, true, false);
+        PrimitiveControl value = new PrimitiveControl(recipe, true, true, true);
         int control = PrimitivePacking.encode(value);
 
         assertEquals(value, PrimitivePacking.decode(control));
@@ -104,21 +104,14 @@ final class PrimitivePackingTest {
             valid++;
             assertEquals(control, PrimitivePacking.encode(decoded));
             int tint = PrimitivePacking.packTintControl(0x00a0_6040, control);
-            int physical;
-            if (decoded.rasterComposite()) {
-                physical = PrimitivePacking.packRasterCompositeControl(control, 0x0012_3456);
-                assertEquals(PrimitivePacking.NO_EMITTER_INDEX,
-                        PrimitivePacking.unpackEmitterIndex(physical));
-            } else {
-                physical = PrimitivePacking.packControlEmitter(
-                        control, PrimitivePacking.MAX_EMITTER_INDEX);
-                assertEquals(
-                        PrimitivePacking.MAX_EMITTER_INDEX,
-                        PrimitivePacking.unpackEmitterIndex(physical));
-                int dynamic = PrimitivePacking.packDynamicControl(control, 63, true);
-                assertEquals(control, PrimitivePacking.unpackControl(tint, dynamic));
-                assertEquals(63, PrimitivePacking.unpackDynamicTextureIndex(dynamic));
-            }
+            int physical = PrimitivePacking.packControlEmitter(
+                    control, PrimitivePacking.MAX_EMITTER_INDEX);
+            assertEquals(
+                    PrimitivePacking.MAX_EMITTER_INDEX,
+                    PrimitivePacking.unpackEmitterIndex(physical));
+            int dynamic = PrimitivePacking.packDynamicControl(control, 63, true);
+            assertEquals(control, PrimitivePacking.unpackControl(tint, dynamic));
+            assertEquals(63, PrimitivePacking.unpackDynamicTextureIndex(dynamic));
             assertEquals(control, PrimitivePacking.unpackControl(tint, physical));
         }
         assertTrue(valid > 0);
@@ -136,7 +129,7 @@ final class PrimitivePackingTest {
                 PrimitivePacking.packTint(0x80402010), flags);
         assertEquals(0x00102040, tint & 0x00ff_ffff);
         for (int emitter : new int[] {
-            PrimitivePacking.NO_EMITTER_INDEX, 0, 1, 1024, PrimitivePacking.MAX_EMITTER_INDEX
+            0, 1, 1024, PrimitivePacking.MAX_EMITTER_INDEX
         }) {
             int packed = PrimitivePacking.packControlEmitter(flags, emitter);
             assertEquals(flags, PrimitivePacking.unpackControl(tint, packed));
@@ -145,6 +138,12 @@ final class PrimitivePackingTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimitivePacking.packControlEmitter(flags, PrimitivePacking.MAX_EMITTER_INDEX + 1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packControlEmitter(flags, PrimitivePacking.NO_EMITTER_INDEX));
+        int textured = PrimitivePacking.packControlTexture(flags, PrimitivePacking.MAX_TEXTURE_ID);
+        assertEquals(PrimitivePacking.MAX_TEXTURE_ID, PrimitivePacking.unpackTextureId(textured));
+        assertEquals(PrimitivePacking.NO_EMITTER_INDEX, PrimitivePacking.unpackEmitterIndex(textured));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimitivePacking.packControlEmitter(13 << 11, 0));
@@ -179,24 +178,6 @@ final class PrimitivePackingTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimitivePacking.packDynamicControl(flags, 0, false, true));
-    }
-
-    @Test
-    void rasterCompositeOwnsTheStaticPayloadWithoutBecomingAnEmitter() {
-        int flags = PrimitivePacking.CONTROL_RASTER_COMPOSITE
-                | PrimitivePacking.CONTROL_OPTICAL_TEXTURE;
-        int tint = PrimitivePacking.packTintControl(
-                PrimitivePacking.packTint(-1), flags);
-        int packed = PrimitivePacking.packRasterCompositeControl(
-                flags, PrimitivePacking.packTint(0xff40_a060));
-
-        assertEquals(flags, PrimitivePacking.unpackControl(tint, packed));
-        assertEquals(
-                PrimitivePacking.NO_EMITTER_INDEX,
-                PrimitivePacking.unpackEmitterIndex(packed));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimitivePacking.packDynamicControl(flags, 1, false));
     }
 
     @Test

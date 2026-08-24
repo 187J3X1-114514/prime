@@ -95,14 +95,6 @@ final class EmissionDistribution {
         float triangleV1 = key.v1();
         float triangleU2 = key.u2();
         float triangleV2 = key.v2();
-        float spriteU0 = sprite.u0();
-        float spriteV0 = sprite.v0();
-        float spriteUSpan = sprite.u1() - spriteU0;
-        float spriteVSpan = sprite.v1() - spriteV0;
-        if (!(Math.abs(spriteUSpan) > 1.0E-12F)
-                || !(Math.abs(spriteVSpan) > 1.0E-12F)) {
-            throw new IllegalArgumentException("Emission sprite atlas span is degenerate");
-        }
         float[] tint = workspace.tint;
         fillLinearTint(key.tintArgb, tint);
         float[] barycentric = workspace.barycentric;
@@ -111,12 +103,10 @@ final class EmissionDistribution {
             float total = 0.0F;
             for (int sample = 0; sample < STRATIFIED_SAMPLE_COUNT; sample++) {
                 cell.samplePoint(sample, barycentric);
-                float atlasU = interpolate(
-                        triangleU0, triangleU1, triangleU2, barycentric);
-                float atlasV = interpolate(
-                        triangleV0, triangleV1, triangleV2, barycentric);
-                float localU = clampUnit((atlasU - spriteU0) / spriteUSpan);
-                float localV = clampUnit((atlasV - spriteV0) / spriteVSpan);
+                float localU = clampUnit(interpolate(
+                        triangleU0, triangleU1, triangleU2, barycentric));
+                float localV = clampUnit(interpolate(
+                        triangleV0, triangleV1, triangleV2, barycentric));
                 int pixelX = Math.min((int) (localU * contentWidth), contentWidth - 1);
                 int pixelY = Math.min((int) (localV * contentHeight), contentHeight - 1);
                 float maximum = 0.0F;

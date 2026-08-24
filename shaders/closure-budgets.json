@@ -22,8 +22,8 @@
       "maxBytes": 33521
     },
     "entry/hit/shadow.anyhit.slang": {
-      "maxFiles": 16,
-      "maxBytes": 82351
+      "maxFiles": 14,
+      "maxBytes": 63854
     },
     "entry/hit/shadow.closesthit.slang": {
       "maxFiles": 3,
@@ -34,44 +34,44 @@
       "maxBytes": 823
     },
     "entry/hit/world.anyhit.slang": {
-      "maxFiles": 15,
-      "maxBytes": 78112
+      "maxFiles": 11,
+      "maxBytes": 52167
     },
     "entry/hit/world.closesthit.slang": {
-      "maxFiles": 15,
-      "maxBytes": 79262
+      "maxFiles": 19,
+      "maxBytes": 90059
     },
     "entry/hit/world.miss.slang": {
       "maxFiles": 4,
       "maxBytes": 10925
     },
     "entry/lighting/sharc_integrated_update.compute.slang": {
-      "maxFiles": 21,
-      "maxBytes": 160834
+      "maxFiles": 16,
+      "maxBytes": 130736
     },
     "entry/lighting/sharc_resolve.compute.slang": {
-      "maxFiles": 20,
-      "maxBytes": 145311
+      "maxFiles": 14,
+      "maxBytes": 107871
     },
     "entry/lighting/sun_shadow.raygeneration.slang": {
       "maxFiles": 6,
-      "maxBytes": 16912
+      "maxBytes": 16766
     },
     "entry/offline/area.raygeneration.slang": {
-      "maxFiles": 118,
-      "maxBytes": 463015
+      "maxFiles": 121,
+      "maxBytes": 469957
     },
     "entry/offline/head.raygeneration.slang": {
-      "maxFiles": 120,
-      "maxBytes": 468755
+      "maxFiles": 123,
+      "maxBytes": 475697
     },
     "entry/offline/resolve.raygeneration.slang": {
       "maxFiles": 18,
-      "maxBytes": 91000
+      "maxBytes": 90854
     },
     "entry/offline/step.raygeneration.slang": {
-      "maxFiles": 119,
-      "maxBytes": 466019
+      "maxFiles": 122,
+      "maxBytes": 472961
     },
     "entry/post/auto_exposure_histogram.compute.slang": {
       "maxFiles": 3,
@@ -118,76 +118,76 @@
       "maxBytes": 5647
     },
     "entry/realtime/head.raygeneration.slang": {
-      "maxFiles": 49,
-      "maxBytes": 211781
+      "maxFiles": 52,
+      "maxBytes": 217536
     },
     "entry/realtime/landing_advance.raygeneration.slang": {
-      "maxFiles": 144,
-      "maxBytes": 605065
+      "maxFiles": 147,
+      "maxBytes": 612007
     },
     "entry/realtime/landing_classify.raygeneration.slang": {
-      "maxFiles": 80,
-      "maxBytes": 325057
+      "maxFiles": 83,
+      "maxBytes": 330917
     },
     "entry/realtime/landing_primary_light.raygeneration.slang": {
-      "maxFiles": 110,
-      "maxBytes": 462603
+      "maxFiles": 113,
+      "maxBytes": 468894
     },
     "entry/realtime/landing_secondary.raygeneration.slang": {
-      "maxFiles": 149,
-      "maxBytes": 625715
+      "maxFiles": 152,
+      "maxBytes": 632657
     },
     "entry/realtime/primary_chain.raygeneration.slang": {
-      "maxFiles": 93,
-      "maxBytes": 342709
+      "maxFiles": 96,
+      "maxBytes": 349115
     },
     "entry/realtime/primary_direct.raygeneration.slang": {
-      "maxFiles": 108,
-      "maxBytes": 457031
+      "maxFiles": 111,
+      "maxBytes": 463322
     },
     "entry/realtime/primary_split.raygeneration.slang": {
-      "maxFiles": 136,
-      "maxBytes": 573849
+      "maxFiles": 139,
+      "maxBytes": 580791
     },
     "entry/realtime/resolve.raygeneration.slang": {
       "maxFiles": 23,
-      "maxBytes": 98193
+      "maxBytes": 98047
     },
     "entry/realtime/sharc/steady_area.raygeneration.slang": {
-      "maxFiles": 153,
-      "maxBytes": 698757
+      "maxFiles": 156,
+      "maxBytes": 705699
     },
     "entry/realtime/sharc/steady_classify.raygeneration.slang": {
-      "maxFiles": 153,
-      "maxBytes": 698746
+      "maxFiles": 156,
+      "maxBytes": 705688
     },
     "entry/realtime/sharc/steady_none.raygeneration.slang": {
-      "maxFiles": 153,
-      "maxBytes": 698781
+      "maxFiles": 156,
+      "maxBytes": 705723
     },
     "entry/realtime/sharc/steady_sun.raygeneration.slang": {
-      "maxFiles": 153,
-      "maxBytes": 698747
+      "maxFiles": 156,
+      "maxBytes": 705689
     },
     "entry/realtime/steady_area.raygeneration.slang": {
-      "maxFiles": 144,
-      "maxBytes": 604625
+      "maxFiles": 147,
+      "maxBytes": 611567
     },
     "entry/realtime/steady_classify.raygeneration.slang": {
-      "maxFiles": 144,
-      "maxBytes": 604500
+      "maxFiles": 147,
+      "maxBytes": 611442
     },
     "entry/realtime/steady_none.raygeneration.slang": {
-      "maxFiles": 144,
-      "maxBytes": 604649
+      "maxFiles": 147,
+      "maxBytes": 611591
     },
     "entry/realtime/steady_sun.raygeneration.slang": {
-      "maxFiles": 144,
-      "maxBytes": 604615
+      "maxFiles": 147,
+      "maxBytes": 611557
     },
     "entry/realtime/transparent_resolve.raygeneration.slang": {
       "maxFiles": 32,
-      "maxBytes": 139467
+      "maxBytes": 139321
     }
   }
 }

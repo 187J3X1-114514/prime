@@ -87,11 +87,7 @@ public final class PrimeRuntime {
             this.lifecycle.disable(minecraft, this.terrain);
             return;
         }
-        if ((minecraft.level == null || minecraft.player == null)
-                && this.lifecycle.renderer() != null) {
-            this.lifecycle.suspend(minecraft, this.terrain);
-        }
-        this.lifecycle.tryInitialize(minecraft, this.terrain);
+        this.lifecycle.tryInitialize(minecraft, this.terrain, settings);
         this.lifecycle.setFailureReason(this.diagnostics.finalizeUnavailableReason(
                 this.lifecycle.failureReason(), this.lifecycle.state()));
         this.diagnostics.showFailureOnce(
@@ -105,7 +101,9 @@ public final class PrimeRuntime {
         }
         try {
             ClientLevel currentWorld = minecraft.level;
-            this.terrain.acquire(minecraft);
+            if (currentWorld != null && minecraft.player != null) {
+                this.terrain.acquire(minecraft);
+            }
             SessionControls frameControls = this.session.controls();
             boolean screenshotRequested = activeRenderer.beginFrame(
                     minecraft, frameControls, settings);
@@ -204,7 +202,7 @@ public final class PrimeRuntime {
         }
     }
 
-    public void voxelTextureSurfacesChanged(boolean enabled) {
+    public void surfaceDetailModeChanged() {
         this.invalidateAll();
     }
 
@@ -310,7 +308,8 @@ public final class PrimeRuntime {
     /** Applies only the renderer epoch captured by {@link #beginResourceReload()}. */
     public void finishResourceReload(
             RendererLifecycle.ResourceReload reload, boolean reloadShaders) {
-        if (this.lifecycle.finishResourceReload(reload, reloadShaders)) {
+        if (this.lifecycle.finishResourceReload(
+                reload, Minecraft.getInstance(), reloadShaders)) {
             this.requestScreenshot(false);
         }
     }

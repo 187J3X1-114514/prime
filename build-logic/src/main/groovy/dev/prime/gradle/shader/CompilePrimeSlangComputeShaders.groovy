@@ -197,19 +197,19 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			// unreachable mode code repeatedly. The map is backed by stripped-SPIR-V comparisons;
 			// update it only when a mode becomes reachable from the corresponding entry point.
 			def wavefrontVariantPlan = [
-					'realtime_wavefront_head':
+					'realtime_wavefront_camera_trace':
 							[compile: ['', '_ser'], alias: [:]],
-					'realtime_wavefront_primary_direct':
+					'realtime_wavefront_visible_direct':
 							[compile: [''], alias: ['_ser': '']],
-					'realtime_wavefront_resolve':
+					'realtime_wavefront_noisy_output_resolve':
 							[compile: [''], alias: ['_ser': '']],
-					'offline_wavefront_head':
+					'offline_wavefront_camera_surface_step':
 							[compile: ['', '_ser'], alias: [:]],
-					'offline_wavefront_step':
+					'offline_wavefront_path_surface_step':
 							[compile: ['', '_ser'], alias: [:]],
-					'offline_wavefront_area':
+					'offline_wavefront_area_shadow':
 							[compile: ['', '_ser'], alias: [:]],
-					'offline_wavefront_resolve':
+					'offline_wavefront_sample_resolve':
 							[compile: [''], alias: ['_ser': '']]
 			][stem]
 			def variants = wavefrontVariantPlan == null

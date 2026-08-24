@@ -24,14 +24,14 @@ import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
 import "policy/transport/light_family.slang";
 
-public bool primePrepareTransparentAreaSample(
+public bool primePrepareRealtimeAreaSample(
         inout PrimeIntegratorContext context,
         PathState path,
         PrimeOpenPbrVolumeStack volumeStack,
         SurfaceInteraction surface,
-        PrimeTransparentLightEvent event,
+        PrimeRealtimeLightEvent event,
         out float3 preparedThroughput,
-        inout PrimeTransparentAreaSampleInput lightData) {
+        inout PrimeRealtimeAreaSampleInput lightData) {
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         preparedThroughput = path.throughput;
         return false;
@@ -43,7 +43,7 @@ public bool primePrepareTransparentAreaSample(
     lightData.receiverNormal =
             primeAreaLightReceiverNormal(surface, -path.rayDirection);
     lightData.treeSample =
-            event.type == PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY
+            event.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL
             ? primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
@@ -59,9 +59,9 @@ public bool primePrepareTransparentAreaSample(
     return true;
 }
 
-public AreaLightSample primeExecuteTransparentAreaSample(
+public AreaLightSample primeExecuteRealtimeAreaSample(
         inout PrimeIntegratorContext context,
-        PrimeTransparentAreaSampleInput lightData) {
+        PrimeRealtimeAreaSampleInput lightData) {
     AreaLightSample area = primeSampleAreaLight(
             lightData.position,
             lightData.receiverNormal,
@@ -70,16 +70,16 @@ public AreaLightSample primeExecuteTransparentAreaSample(
     return area;
 }
 
-public PrimeFusedWavefrontLightResult primeShadeTransparentSunLightEvent<SharcTraining>(
+public PrimeRealtimeLightResult primeShadeRealtimeSunLightEvent<SharcTraining>(
         SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
-        PrimeTransparentLightEvent event)
+        PrimeRealtimeLightEvent event)
     where SharcTraining : IPrimeWavefrontSharcTraining
 {
-    PrimeFusedWavefrontLightResult result;
+    PrimeRealtimeLightResult result;
     result.storedSunProbability = event.storedSunProbability;
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
@@ -123,19 +123,19 @@ public PrimeFusedWavefrontLightResult primeShadeTransparentSunLightEvent<SharcTr
     return result;
 }
 
-public PrimeFusedWavefrontLightResult primeShadeTransparentAreaLightEvent<SharcTraining>(
+public PrimeRealtimeLightResult primeShadeRealtimeAreaLightEvent<SharcTraining>(
         SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
-        PrimeTransparentLightEvent event,
+        PrimeRealtimeLightEvent event,
         bool preparedArea,
         float3 preparedThroughput,
         AreaLightSample area)
     where SharcTraining : IPrimeWavefrontSharcTraining
 {
-    PrimeFusedWavefrontLightResult result;
+    PrimeRealtimeLightResult result;
     result.storedSunProbability = event.storedSunProbability;
     if (!preparedArea) {
         return result;
@@ -154,7 +154,7 @@ public PrimeFusedWavefrontLightResult primeShadeTransparentAreaLightEvent<SharcT
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = float4(0.0);
 
-    if (event.type == PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY) {
+    if (event.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL) {
         PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
                 context,
                 integrator,

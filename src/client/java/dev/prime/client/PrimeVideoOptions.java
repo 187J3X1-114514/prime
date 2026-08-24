@@ -8,7 +8,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PrimaryChainSettings;
+import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
@@ -49,7 +49,7 @@ public final class PrimeVideoOptions {
                         pathTracingEnabled(),
                         sharcEnabled(sharcChanged),
                         scatterCount(),
-                        primaryChainLimit(),
+                        deltaWalkLimit(),
                         terrainWorkerPercentage(),
                         surfaceDetailMode(),
                         voxelTextureSurfaceStrength(),
@@ -115,18 +115,18 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setScatterCount);
     }
 
-    private static OptionInstance<Integer> primaryChainLimit() {
+    private static OptionInstance<Integer> deltaWalkLimit() {
         return new OptionInstance<>(
-                "prime.options.primary_chain_limit",
+                "prime.options.delta_walk_limit",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.primary_chain_limit.tooltip")),
+                        "prime.options.delta_walk_limit.tooltip")),
                 (caption, limit) -> Options.genericValueLabel(
                         caption, Component.literal(Integer.toString(limit))),
                 new OptionInstance.IntRange(
-                        PrimaryChainSettings.MINIMUM_LIMIT,
-                        PrimaryChainSettings.MAXIMUM_LIMIT),
-                PrimeConfig.primaryChainLimit(),
-                PrimeConfig::setPrimaryChainLimit);
+                        DeltaWalkSettings.MINIMUM_LIMIT,
+                        DeltaWalkSettings.MAXIMUM_LIMIT),
+                PrimeConfig.deltaWalkLimit(),
+                PrimeConfig::setDeltaWalkLimit);
     }
 
     private static OptionInstance<Integer> terrainWorkerPercentage() {
@@ -571,7 +571,7 @@ public final class PrimeVideoOptions {
             OptionInstance<Boolean> pathTracingEnabled,
             OptionInstance<Boolean> sharcEnabled,
             OptionInstance<Integer> scatterCount,
-            OptionInstance<Integer> primaryChainLimit,
+            OptionInstance<Integer> deltaWalkLimit,
             OptionInstance<Integer> terrainWorkerPercentage,
             OptionInstance<SurfaceDetailMode> surfaceDetailMode,
             OptionInstance<Integer> voxelTextureSurfaceStrength,

@@ -18,22 +18,22 @@ import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
 import "policy/transport/light_family.slang";
 
-public struct PrimeFusedWavefrontLightResult {
+public struct PrimeRealtimeLightResult {
     public uint storedSunProbability;
 };
 
-public struct PrimeTransparentLightEvent {
+public struct PrimeRealtimeLightEvent {
     public uint type;
     public uint storedSunProbability;
 };
 
-public PrimeTransparentLightEvent primeClassifyTransparentLightEvent(
+public PrimeRealtimeLightEvent primeClassifyRealtimeLightEvent(
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
         uint control) {
-    PrimeTransparentLightEvent event;
-    event.type = PRIME_TRANSPARENT_LIGHT_EVENT_NONE;
+    PrimeRealtimeLightEvent event;
+    event.type = PRIME_REALTIME_LIGHT_EVENT_NONE;
     event.storedSunProbability = 0u;
     if (surface.hitKind != PRIME_HIT_SURFACE) {
         return event;
@@ -53,7 +53,7 @@ public PrimeTransparentLightEvent primeClassifyTransparentLightEvent(
     bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     if (guideEnabled && !hasGuide) {
         if (!primeClosureIsDiscreteOnly(closureTraits)) {
-            event.type = PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY;
+            event.type = PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL;
         }
         return event;
     }
@@ -71,12 +71,12 @@ public PrimeTransparentLightEvent primeClassifyTransparentLightEvent(
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     event.type = primeSecondarySamplesSunLight(
             preparedSample, sunProbability)
-            ? PRIME_TRANSPARENT_LIGHT_EVENT_SUN
-            : PRIME_TRANSPARENT_LIGHT_EVENT_AREA;
+            ? PRIME_REALTIME_LIGHT_EVENT_SUN
+            : PRIME_REALTIME_LIGHT_EVENT_AREA;
     return event;
 }
 
-public bool primeTransparentLightEventSamplesArea(PrimeTransparentLightEvent event) {
-    return event.type == PRIME_TRANSPARENT_LIGHT_EVENT_PRIMARY
-            || event.type == PRIME_TRANSPARENT_LIGHT_EVENT_AREA;
+public bool primeRealtimeLightEventSamplesArea(PrimeRealtimeLightEvent event) {
+    return event.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL
+            || event.type == PRIME_REALTIME_LIGHT_EVENT_AREA;
 }

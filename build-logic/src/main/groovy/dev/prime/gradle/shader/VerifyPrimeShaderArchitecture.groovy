@@ -358,11 +358,11 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8)
                     .length
         }
-        def primaryChain = productionEntries.find {
-            shaderRelative(it) == 'entry/realtime/primary_chain.raygeneration.slang'
+        def deltaWalk = productionEntries.find {
+            shaderRelative(it) == 'entry/realtime/delta_walk.raygeneration.slang'
         }
-        if (primaryChain == null) {
-            throw new GradleException('Primary-chain production entry is missing')
+        if (deltaWalk == null) {
+            throw new GradleException('Delta-walk production entry is missing')
         }
         def primaryForbiddenPrefixes = [
                 'bsdf/compact/foliage/',
@@ -383,7 +383,7 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
                 'service/bsdf/dispatch/guided_sample.slang',
                 'service/bsdf/dispatch/guide_albedo.slang'
         ] as Set
-        def primaryViolations = closures[pathKey(primaryChain)].collect {
+        def primaryViolations = closures[pathKey(deltaWalk)].collect {
             shaderRelative(new File(it))
         }.findAll { relative ->
             relative != null && (primaryForbiddenFiles.contains(relative)
@@ -391,7 +391,7 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
         }.sort()
         if (!primaryViolations.empty) {
             throw new GradleException(
-                    "Primary-chain reaches non-discrete BSDF/NEE code: ${primaryViolations}")
+                    "Delta-walk reaches non-discrete BSDF/NEE code: ${primaryViolations}")
         }
         def budget = new JsonSlurper().parse(closureBudget.get().asFile)
         if (budget.schema != 1) {
@@ -433,8 +433,8 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
                 shaderRoot, 'contract/realtime/resolved.slang'))
         productionEntries.findAll {
             def relative = shaderRelative(it)
-            relative != 'entry/realtime/resolve.raygeneration.slang'
-                    && relative != 'entry/realtime/transparent_resolve.raygeneration.slang'
+            relative != 'entry/realtime/noisy_output_resolve.raygeneration.slang'
+                    && relative != 'entry/realtime/branch_resolve.raygeneration.slang'
         }.each { entry ->
             if (closures[pathKey(entry)].contains(resolvedContract)) {
                 throw new GradleException(

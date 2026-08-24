@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.HdrOutput;
-import dev.prime.render.PrimaryChainSettings;
+import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
@@ -45,7 +45,7 @@ final class PrimeConfigTest {
     @Test
     void restoreDefaultsIncludesStandaloneSchedulingSettings() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
-        PrimeConfig.setPrimaryChainLimit(PrimaryChainSettings.MAXIMUM_LIMIT);
+        PrimeConfig.setDeltaWalkLimit(DeltaWalkSettings.MAXIMUM_LIMIT);
         PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
         PrimeConfig.setHdrEnabled(true);
         PrimeConfig.setReferenceWhiteNits(400);
@@ -56,10 +56,10 @@ final class PrimeConfigTest {
         assertEquals(
                 ScatterSettings.DEFAULT_COUNT,
                 PrimeConfig.rendererSettings().scatterCount());
-        assertEquals(PrimaryChainSettings.DEFAULT_LIMIT, PrimeConfig.primaryChainLimit());
+        assertEquals(DeltaWalkSettings.DEFAULT_LIMIT, PrimeConfig.deltaWalkLimit());
         assertEquals(
-                PrimaryChainSettings.DEFAULT_LIMIT,
-                PrimeConfig.rendererSettings().primaryChainLimit());
+                DeltaWalkSettings.DEFAULT_LIMIT,
+                PrimeConfig.rendererSettings().deltaWalkLimit());
         assertEquals(
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 PrimeConfig.terrainWorkerPercentage());
@@ -337,19 +337,19 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void primaryChainLimitAcceptsOnlyItsRuntimeRange() {
-        assertEquals(1, PrimeConfigCodec.parsePrimaryChainLimit("1"));
-        assertEquals(8, PrimeConfigCodec.parsePrimaryChainLimit("8"));
-        assertEquals(64, PrimeConfigCodec.parsePrimaryChainLimit("64"));
+    void deltaWalkLimitAcceptsOnlyItsRuntimeRange() {
+        assertEquals(1, PrimeConfigCodec.parseDeltaWalkLimit("1"));
+        assertEquals(8, PrimeConfigCodec.parseDeltaWalkLimit("8"));
+        assertEquals(64, PrimeConfigCodec.parseDeltaWalkLimit("64"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parsePrimaryChainLimit("0"));
+                () -> PrimeConfigCodec.parseDeltaWalkLimit("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parsePrimaryChainLimit("65"));
+                () -> PrimeConfigCodec.parseDeltaWalkLimit("65"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parsePrimaryChainLimit("8.0"));
+                () -> PrimeConfigCodec.parseDeltaWalkLimit("8.0"));
     }
 
     @Test

@@ -57,19 +57,19 @@
       "maxFiles": 6,
       "maxBytes": 16766
     },
-    "entry/offline/area.raygeneration.slang": {
+    "entry/offline/area_shadow.raygeneration.slang": {
       "maxFiles": 121,
       "maxBytes": 469957
     },
-    "entry/offline/head.raygeneration.slang": {
+    "entry/offline/camera_surface_step.raygeneration.slang": {
       "maxFiles": 123,
       "maxBytes": 475697
     },
-    "entry/offline/resolve.raygeneration.slang": {
+    "entry/offline/sample_resolve.raygeneration.slang": {
       "maxFiles": 18,
-      "maxBytes": 90854
+      "maxBytes": 90875
     },
-    "entry/offline/step.raygeneration.slang": {
+    "entry/offline/path_surface_step.raygeneration.slang": {
       "maxFiles": 122,
       "maxBytes": 472961
     },
@@ -117,41 +117,41 @@
       "maxFiles": 3,
       "maxBytes": 5647
     },
-    "entry/realtime/head.raygeneration.slang": {
+    "entry/realtime/camera_trace.raygeneration.slang": {
       "maxFiles": 52,
-      "maxBytes": 217536
+      "maxBytes": 217584
     },
-    "entry/realtime/landing_advance.raygeneration.slang": {
-      "maxFiles": 147,
-      "maxBytes": 612007
+    "entry/realtime/landing_guide_advance.raygeneration.slang": {
+      "maxFiles": 148,
+      "maxBytes": 612139
     },
-    "entry/realtime/landing_classify.raygeneration.slang": {
+    "entry/realtime/landing_light_classify.raygeneration.slang": {
       "maxFiles": 83,
       "maxBytes": 330917
     },
-    "entry/realtime/landing_primary_light.raygeneration.slang": {
+    "entry/realtime/landing_guide_dual_light.raygeneration.slang": {
       "maxFiles": 113,
       "maxBytes": 468894
     },
-    "entry/realtime/landing_secondary.raygeneration.slang": {
-      "maxFiles": 152,
-      "maxBytes": 632657
+    "entry/realtime/landing_sampled_light_advance.raygeneration.slang": {
+      "maxFiles": 153,
+      "maxBytes": 632686
     },
-    "entry/realtime/primary_chain.raygeneration.slang": {
+    "entry/realtime/delta_walk.raygeneration.slang": {
       "maxFiles": 96,
       "maxBytes": 349115
     },
-    "entry/realtime/primary_direct.raygeneration.slang": {
+    "entry/realtime/visible_direct.raygeneration.slang": {
       "maxFiles": 111,
       "maxBytes": 463322
     },
-    "entry/realtime/primary_split.raygeneration.slang": {
-      "maxFiles": 139,
-      "maxBytes": 580791
+    "entry/realtime/surface_split.raygeneration.slang": {
+      "maxFiles": 140,
+      "maxBytes": 580935
     },
-    "entry/realtime/resolve.raygeneration.slang": {
+    "entry/realtime/noisy_output_resolve.raygeneration.slang": {
       "maxFiles": 23,
-      "maxBytes": 98047
+      "maxBytes": 98112
     },
     "entry/realtime/sharc/bridge_query.raygeneration.slang": {
       "maxFiles": 65,
@@ -161,55 +161,55 @@
       "maxFiles": 35,
       "maxBytes": 128180
     },
-    "entry/realtime/sharc/training_camera.raygeneration.slang": {
+    "entry/realtime/sharc/training_camera_delta_walk.raygeneration.slang": {
       "maxFiles": 86,
-      "maxBytes": 274948
+      "maxBytes": 275019
     },
-    "entry/realtime/sharc/training_landing.raygeneration.slang": {
-      "maxFiles": 102,
-      "maxBytes": 367790
+    "entry/realtime/sharc/training_landing_advance.raygeneration.slang": {
+      "maxFiles": 103,
+      "maxBytes": 368090
     },
-    "entry/realtime/sharc/training_classify.raygeneration.slang": {
+    "entry/realtime/sharc/training_light_classify.raygeneration.slang": {
       "maxFiles": 84,
       "maxBytes": 332259
     },
-    "entry/realtime/sharc/training_none.raygeneration.slang": {
+    "entry/realtime/sharc/training_light_none.raygeneration.slang": {
       "maxFiles": 21,
-      "maxBytes": 69066
+      "maxBytes": 69097
     },
-    "entry/realtime/sharc/training_sun.raygeneration.slang": {
+    "entry/realtime/sharc/training_light_sun.raygeneration.slang": {
       "maxFiles": 106,
       "maxBytes": 447620
     },
-    "entry/realtime/sharc/training_area.raygeneration.slang": {
+    "entry/realtime/sharc/training_light_area.raygeneration.slang": {
       "maxFiles": 107,
       "maxBytes": 448596
     },
-    "entry/realtime/sharc/training_walk.raygeneration.slang": {
+    "entry/realtime/sharc/training_path_walk.raygeneration.slang": {
       "maxFiles": 118,
       "maxBytes": 468090
     },
-    "entry/realtime/sharc/training_reduce.raygeneration.slang": {
+    "entry/realtime/sharc/training_anchor_reduce.raygeneration.slang": {
       "maxFiles": 65,
       "maxBytes": 360031
     },
-    "entry/realtime/steady_area.raygeneration.slang": {
+    "entry/realtime/steady_area_shade_advance.raygeneration.slang": {
       "maxFiles": 147,
       "maxBytes": 611567
     },
-    "entry/realtime/steady_classify.raygeneration.slang": {
+    "entry/realtime/steady_trace_classify.raygeneration.slang": {
       "maxFiles": 147,
       "maxBytes": 611442
     },
-    "entry/realtime/steady_none.raygeneration.slang": {
+    "entry/realtime/steady_no_light_advance.raygeneration.slang": {
       "maxFiles": 147,
       "maxBytes": 611591
     },
-    "entry/realtime/steady_sun.raygeneration.slang": {
+    "entry/realtime/steady_sun_shade_advance.raygeneration.slang": {
       "maxFiles": 147,
       "maxBytes": 611557
     },
-    "entry/realtime/transparent_resolve.raygeneration.slang": {
+    "entry/realtime/branch_resolve.raygeneration.slang": {
       "maxFiles": 32,
       "maxBytes": 139321
     }

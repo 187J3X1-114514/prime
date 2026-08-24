@@ -6,7 +6,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PrimaryChainSettings;
+import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.post.PostProcessingMode;
@@ -23,7 +23,8 @@ final class PrimeConfigCodec {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String SHARC_ENABLED_KEY = "renderer.sharc";
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
-    private static final String PRIMARY_CHAIN_LIMIT_KEY = "renderer.primary_chain_limit";
+    // Keep the legacy persisted key so existing configurations retain this value.
+    private static final String DELTA_WALK_LIMIT_KEY = "renderer.primary_chain_limit";
     private static final String TERRAIN_WORKER_PERCENTAGE_KEY = "terrain.worker_percentage";
     private static final String SURFACE_DETAIL_MODE_KEY = "material.surface_detail";
     private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
@@ -49,7 +50,7 @@ final class PrimeConfigCodec {
             PATH_TRACING_ENABLED_KEY,
             SHARC_ENABLED_KEY,
             SCATTER_COUNT_KEY,
-            PRIMARY_CHAIN_LIMIT_KEY,
+            DELTA_WALK_LIMIT_KEY,
             TERRAIN_WORKER_PERCENTAGE_KEY,
             SURFACE_DETAIL_MODE_KEY,
             VOXEL_TEXTURE_SURFACE_STRENGTH_KEY,
@@ -91,11 +92,11 @@ final class PrimeConfigCodec {
                 defaults.scatterCount(),
                 PrimeConfigCodec::parseScatterCount,
                 "scatter count");
-        int primaryChainLimit = reader.value(
-                PRIMARY_CHAIN_LIMIT_KEY,
-                defaults.primaryChainLimit(),
-                PrimeConfigCodec::parsePrimaryChainLimit,
-                "primary delta-chain limit");
+        int deltaWalkLimit = reader.value(
+                DELTA_WALK_LIMIT_KEY,
+                defaults.deltaWalkLimit(),
+                PrimeConfigCodec::parseDeltaWalkLimit,
+                "delta-walk limit");
         int terrainWorkers = reader.value(
                 TERRAIN_WORKER_PERCENTAGE_KEY,
                 defaults.terrainWorkerPercentage(),
@@ -208,7 +209,7 @@ final class PrimeConfigCodec {
                 new PrimeConfigData(
                         settings,
                         scatterCount,
-                        primaryChainLimit,
+                        deltaWalkLimit,
                         terrainWorkers,
                         hdr,
                         referenceWhite),
@@ -220,7 +221,7 @@ final class PrimeConfigCodec {
         return PATH_TRACING_ENABLED_KEY + "=" + settings.pathTracingEnabled() + "\n"
                 + SHARC_ENABLED_KEY + "=" + settings.sharcEnabled() + "\n"
                 + SCATTER_COUNT_KEY + "=" + data.scatterCount() + "\n"
-                + PRIMARY_CHAIN_LIMIT_KEY + "=" + data.primaryChainLimit() + "\n"
+                + DELTA_WALK_LIMIT_KEY + "=" + data.deltaWalkLimit() + "\n"
                 + TERRAIN_WORKER_PERCENTAGE_KEY + "="
                 + data.terrainWorkerPercentage() + "\n"
                 + SURFACE_DETAIL_MODE_KEY + "="
@@ -255,7 +256,7 @@ final class PrimeConfigCodec {
                 settings.pathTracingEnabled() ? "enabled" : "disabled",
                 settings.sharcEnabled() ? "enabled" : "disabled",
                 data.scatterCount(),
-                data.primaryChainLimit(),
+                data.deltaWalkLimit(),
                 data.terrainWorkerPercentage(),
                 settings.surfaceDetailMode().id(),
                 formatVoxelSurfaceStrength(settings.voxelTextureSurfaceStrengthSteps()),
@@ -319,12 +320,12 @@ final class PrimeConfigCodec {
         }
     }
 
-    static int parsePrimaryChainLimit(String value) {
+    static int parseDeltaWalkLimit(String value) {
         try {
-            return PrimaryChainSettings.validateLimit(Integer.parseInt(value));
+            return DeltaWalkSettings.validateLimit(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(
-                    "Primary delta-chain limit must be an integer", exception);
+                    "Delta-walk limit must be an integer", exception);
         }
     }
 

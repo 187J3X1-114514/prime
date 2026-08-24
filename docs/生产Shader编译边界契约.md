@@ -100,7 +100,7 @@ module/path、允许层级、禁止边、环、SHARC include 白名单、manifes
 resolved-state 边界，并在报告中列出 fanout 与源修改的 artifact 失效集合。预算变化必须与真实
 依赖变化一同审查，不能用提高全局上限掩盖无关闭包增长。
 
-primary-chain 只导入 opaque/dielectric 的专用离散状态、能量与采样叶。架构门禁明确拒绝该
+delta-walk 只导入 opaque/dielectric 的专用离散状态、能量与采样叶。架构门禁明确拒绝该
 entry 到达 foliage、NEE、通用 operation dispatcher、有限立体角 microfacet 分布以及一般
 evaluate/sample 模块；通用采样器的 delta 分支反向复用同一离散实现，避免数学与随机映射分叉。
 

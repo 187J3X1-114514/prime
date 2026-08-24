@@ -8,10 +8,11 @@ import "state/realtime/contract.slang";
 import "state/realtime/light.slang";
 import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
+import "state/realtime/steady_transition.slang";
 import "state/realtime/transport.slang";
-import "transport/realtime/primary_chain_guide.slang";
+import "transport/realtime/delta_walk_guide.slang";
 
-public void primePublishPrimaryLanding(
+public void primePublishLandingContinuation(
         uint recordIndex, bool transparent, bool continuation) {
     if (continuation) {
         PrimeWavefrontTransportRecord record =
@@ -26,9 +27,9 @@ public void primePublishPrimaryLanding(
                 && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u
                 && !primeWavefrontDirectionalGuide(control);
         if (transparent && invalidGuide) {
-            primeInvalidatePrimaryChainGuide(recordIndex, record);
+            primeInvalidateDeltaWalkGuide(recordIndex, record);
         }
-        record = primeWavefrontSteadyState(record);
+        record = primeEnterSteadyRecord(record);
         primeStoreWavefrontTransportRecord(recordIndex, record);
     }
     primeAppendWavefrontContinuation(
@@ -37,4 +38,3 @@ public void primePublishPrimaryLanding(
             recordIndex,
             continuation);
 }
-

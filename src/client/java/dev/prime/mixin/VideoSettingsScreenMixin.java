@@ -7,7 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PrimaryChainSettings;
+import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
 import dev.prime.client.PrimeRuntime;
@@ -59,7 +59,7 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$options = PrimeVideoOptions.create(
-                    ignored -> this.prime$updatePrimaryChainAvailability(),
+                    ignored -> this.prime$updateDeltaWalkAvailability(),
                     this::prime$refreshDiagnosticOptions);
             list.addHeader(PRIME$HEADER);
             list.addBig(Button.builder(
@@ -71,8 +71,8 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$options.rendering().screenshotMode());
             list.addBig(this.prime$options.rendering().sharcEnabled());
             list.addBig(this.prime$options.rendering().scatterCount());
-            list.addBig(this.prime$options.rendering().primaryChainLimit());
-            this.prime$updatePrimaryChainAvailability();
+            list.addBig(this.prime$options.rendering().deltaWalkLimit());
+            this.prime$updateDeltaWalkAvailability();
             list.addBig(this.prime$options.rendering().terrainWorkerPercentage());
             list.addSmall(
                     this.prime$options.rendering().surfaceDetailMode(),
@@ -139,9 +139,9 @@ public abstract class VideoSettingsScreenMixin {
                 this.prime$options.rendering().scatterCount(),
                 ScatterSettings.DEFAULT_COUNT);
         this.prime$refresh(
-                this.prime$options.rendering().primaryChainLimit(),
-                PrimaryChainSettings.DEFAULT_LIMIT);
-        this.prime$updatePrimaryChainAvailability();
+                this.prime$options.rendering().deltaWalkLimit(),
+                DeltaWalkSettings.DEFAULT_LIMIT);
+        this.prime$updateDeltaWalkAvailability();
         this.prime$refresh(
                 this.prime$options.rendering().terrainWorkerPercentage(),
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);
@@ -227,7 +227,7 @@ public abstract class VideoSettingsScreenMixin {
     }
 
     @Unique
-    private void prime$updatePrimaryChainAvailability() {
+    private void prime$updateDeltaWalkAvailability() {
         if (this.prime$options == null) {
             return;
         }
@@ -235,7 +235,7 @@ public abstract class VideoSettingsScreenMixin {
         if (list == null) {
             return;
         }
-        AbstractWidget widget = list.findOption(this.prime$options.rendering().primaryChainLimit());
+        AbstractWidget widget = list.findOption(this.prime$options.rendering().deltaWalkLimit());
         if (widget != null) {
             widget.active = !PrimeConfig.settings().sharcEnabled();
         }

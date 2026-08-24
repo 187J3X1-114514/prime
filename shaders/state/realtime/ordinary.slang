@@ -108,25 +108,6 @@ path,
     return record;
 }
 
-public PrimeWavefrontTransportRecord primeWavefrontWithBounce(
-        PrimeWavefrontTransportRecord record, uint bounce) {
-    record.sourceAndPathControl.w =
-            (record.sourceAndPathControl.w & ~PRIME_WAVEFRONT_BYTE_MASK)
-            | min(bounce, PRIME_WAVEFRONT_BYTE_MASK);
-    return record;
-}
-
-public PrimeWavefrontTransportRecord primeWavefrontSteadyState(
-        PrimeWavefrontTransportRecord record) {
-    record = primeWavefrontWithBounce(record, 0u);
-    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    control &= ~(PRIME_WAVEFRONT_BYTE_MASK
-            << PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT);
-    record.rayDirectionAndDenoiserControl.w = asfloat(control);
-    record = primeWavefrontWithQueuedPsrControl(record, 0u);
-    return primeWavefrontWithGuideProbeFallback(record, false);
-}
-
 public PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         PathState path,
         PrimeOpenPbrVolumeStack volumeStack,

@@ -19,7 +19,7 @@ public record RendererSettings(
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
         int scatterCount,
-        int primaryChainLimit,
+        int deltaWalkLimit,
         int terrainWorkerPercentage,
         long revision) {
     public RendererSettings(
@@ -39,7 +39,7 @@ public record RendererSettings(
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
-                PrimaryChainSettings.DEFAULT_LIMIT,
+                DeltaWalkSettings.DEFAULT_LIMIT,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -62,7 +62,7 @@ public record RendererSettings(
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
-                PrimaryChainSettings.DEFAULT_LIMIT,
+                DeltaWalkSettings.DEFAULT_LIMIT,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -86,7 +86,7 @@ public record RendererSettings(
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
-                PrimaryChainSettings.DEFAULT_LIMIT,
+                DeltaWalkSettings.DEFAULT_LIMIT,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -102,7 +102,7 @@ public record RendererSettings(
         surfaceDetailMode = Objects.requireNonNull(surfaceDetailMode, "surfaceDetailMode");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
         ScatterSettings.validateCount(scatterCount);
-        PrimaryChainSettings.validateLimit(primaryChainLimit);
+        DeltaWalkSettings.validateLimit(deltaWalkLimit);
         TerrainWorkerSettings.validatePercentage(terrainWorkerPercentage);
         if (revision < 0L) {
             throw new IllegalArgumentException("Renderer settings revision must not be negative");

@@ -6,7 +6,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PrimaryChainSettings;
+import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
@@ -23,7 +23,7 @@ public final class PrimeConfig {
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
     private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
-    private static int primaryChainLimit = PrimaryChainSettings.DEFAULT_LIMIT;
+    private static int deltaWalkLimit = DeltaWalkSettings.DEFAULT_LIMIT;
     private static int terrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private static boolean hdrEnabled;
     private static int referenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
@@ -58,7 +58,7 @@ public final class PrimeConfig {
     private static void applyLoaded(PrimeConfigData loaded, boolean rewriteNeeded) {
         settings = loaded.settings();
         scatterCount = loaded.scatterCount();
-        primaryChainLimit = loaded.primaryChainLimit();
+        deltaWalkLimit = loaded.deltaWalkLimit();
         terrainWorkerPercentage = loaded.terrainWorkerPercentage();
         hdrEnabled = loaded.hdrEnabled();
         HdrOutput.setRequested(hdrEnabled);
@@ -91,7 +91,7 @@ public final class PrimeConfig {
                 current.material(),
                 current.display(),
                 scatterCount,
-                primaryChainLimit,
+                deltaWalkLimit,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -117,14 +117,14 @@ public final class PrimeConfig {
         }
     }
 
-    public static int primaryChainLimit() {
-        return primaryChainLimit;
+    public static int deltaWalkLimit() {
+        return deltaWalkLimit;
     }
 
-    public static void setPrimaryChainLimit(int limit) {
-        int replacement = PrimaryChainSettings.validateLimit(limit);
-        if (replacement != primaryChainLimit) {
-            primaryChainLimit = replacement;
+    public static void setDeltaWalkLimit(int limit) {
+        int replacement = DeltaWalkSettings.validateLimit(limit);
+        if (replacement != deltaWalkLimit) {
+            deltaWalkLimit = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
@@ -230,7 +230,7 @@ public final class PrimeConfig {
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
         setScatterCount(ScatterSettings.DEFAULT_COUNT);
-        setPrimaryChainLimit(PrimaryChainSettings.DEFAULT_LIMIT);
+        setDeltaWalkLimit(DeltaWalkSettings.DEFAULT_LIMIT);
         setTerrainWorkerPercentage(TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         setHdrEnabled(false);
         setReferenceWhiteNits(HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
@@ -280,7 +280,7 @@ public final class PrimeConfig {
         return new PrimeConfigData(
                 settings,
                 scatterCount,
-                primaryChainLimit,
+                deltaWalkLimit,
                 terrainWorkerPercentage,
                 hdrEnabled,
                 referenceWhiteNits);

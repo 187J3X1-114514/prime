@@ -13,7 +13,7 @@ public record RealtimeRenderSettings(
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
         int scatterCount,
-        int primaryChainLimit) {
+        int deltaWalkLimit) {
     public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
@@ -21,7 +21,7 @@ public record RealtimeRenderSettings(
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
         ScatterSettings.validateCount(scatterCount);
-        PrimaryChainSettings.validateLimit(primaryChainLimit);
+        DeltaWalkSettings.validateLimit(deltaWalkLimit);
     }
 
     public static RealtimeRenderSettings capture(RendererSettings settings) {
@@ -34,6 +34,6 @@ public record RealtimeRenderSettings(
                 settings.material(),
                 settings.display(),
                 settings.scatterCount(),
-                settings.primaryChainLimit());
+                settings.deltaWalkLimit());
     }
 }

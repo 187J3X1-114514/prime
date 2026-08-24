@@ -23,7 +23,7 @@ public record RealtimeFrameInput(
         ReconstructionQualityMode quality,
         TransparentGuideMode transparentGuideMode,
         int scatterCount,
-        int primaryChainLimit,
+        int deltaWalkLimit,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
@@ -54,7 +54,7 @@ public record RealtimeFrameInput(
                 camera, frameTimeNanos, sceneRevision, residentSceneRevision,
                 textureRevision, width, height, displayWidth, displayHeight, astronomy,
                 cameraInWater, postProcessingMode, quality, transparentGuideMode,
-                scatterCount, PrimaryChainSettings.DEFAULT_LIMIT, lighting, material,
+                scatterCount, DeltaWalkSettings.DEFAULT_LIMIT, lighting, material,
                 shInput, display, forceReset);
     }
 
@@ -71,7 +71,7 @@ public record RealtimeFrameInput(
                 cameraInWater,
                 transparentGuideMode);
         ScatterSettings.validateCount(scatterCount);
-        PrimaryChainSettings.validateLimit(primaryChainLimit);
+        DeltaWalkSettings.validateLimit(deltaWalkLimit);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -130,7 +130,7 @@ public record RealtimeFrameInput(
                 this.astronomy,
                 packedRayCone,
                 this.scatterCount,
-                this.primaryChainLimit,
+                this.deltaWalkLimit,
                 sampleIndex,
                 sampleEpoch,
                 jitterPhase,

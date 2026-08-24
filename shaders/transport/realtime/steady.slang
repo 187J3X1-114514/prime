@@ -51,13 +51,13 @@ public void primeQueueSteadyEvent(
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface) {
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    PrimeTransparentLightEvent lightEvent =
-            primeClassifyTransparentLightEvent(
+    PrimeRealtimeLightEvent lightEvent =
+            primeClassifyRealtimeLightEvent(
                     recordIndex, record, surface, control);
     uint eventType = PRIME_STEADY_EVENT_NONE;
-    if (lightEvent.type == PRIME_TRANSPARENT_LIGHT_EVENT_SUN) {
+    if (lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_SUN) {
         eventType = PRIME_STEADY_EVENT_SUN;
-    } else if (lightEvent.type == PRIME_TRANSPARENT_LIGHT_EVENT_AREA) {
+    } else if (lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_AREA) {
         eventType = PRIME_STEADY_EVENT_AREA;
     }
     primeStoreWavefrontSurface(recordIndex, surface);
@@ -162,16 +162,16 @@ public uint primeShadeSteadyEvent<SharcTraining>(
         uint storedSunProbability)
     where SharcTraining : IPrimeWavefrontSharcTraining
 {
-    PrimeTransparentLightEvent lightEvent;
+    PrimeRealtimeLightEvent lightEvent;
     lightEvent.type = eventType == PRIME_STEADY_EVENT_SUN
-            ? PRIME_TRANSPARENT_LIGHT_EVENT_SUN
+            ? PRIME_REALTIME_LIGHT_EVENT_SUN
             : eventType == PRIME_STEADY_EVENT_AREA
-                    ? PRIME_TRANSPARENT_LIGHT_EVENT_AREA
-                    : PRIME_TRANSPARENT_LIGHT_EVENT_NONE;
+                    ? PRIME_REALTIME_LIGHT_EVENT_AREA
+                    : PRIME_REALTIME_LIGHT_EVENT_NONE;
     lightEvent.storedSunProbability = storedSunProbability;
     if (eventType == PRIME_STEADY_EVENT_SUN) {
-        PrimeFusedWavefrontLightResult light =
-                primeShadeTransparentSunLightEvent(
+        PrimeRealtimeLightResult light =
+                primeShadeRealtimeSunLightEvent(
                         sharcTraining,
                         context, recordIndex, record, surface, lightEvent);
         return light.storedSunProbability;
@@ -195,8 +195,8 @@ public uint primeShadeSteadyEvent<SharcTraining>(
     PathState path = primeWavefrontPath(
             primeWavefrontPixel(recordIndex), record);
     float3 preparedThroughput = float3(0.0);
-    PrimeTransparentAreaSampleInput lightData = {};
-    bool preparedArea = primePrepareTransparentAreaSample(
+    PrimeRealtimeAreaSampleInput lightData = {};
+    bool preparedArea = primePrepareRealtimeAreaSample(
             context,
             path,
             primeWavefrontVolumeStack(record),
@@ -206,10 +206,10 @@ public uint primeShadeSteadyEvent<SharcTraining>(
             lightData);
     AreaLightSample area = {};
     if (preparedArea) {
-        area = primeExecuteTransparentAreaSample(context, lightData);
+        area = primeExecuteRealtimeAreaSample(context, lightData);
     }
-    PrimeFusedWavefrontLightResult light =
-            primeShadeTransparentAreaLightEvent(
+    PrimeRealtimeLightResult light =
+            primeShadeRealtimeAreaLightEvent(
                     sharcTraining,
                     context,
                     recordIndex,

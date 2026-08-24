@@ -17,7 +17,7 @@ public record IntegratorFrameInput(
         AstronomyState astronomy,
         int packedRayCone,
         int scatterCount,
-        int primaryChainLimit,
+        int deltaWalkLimit,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -45,7 +45,7 @@ public record IntegratorFrameInput(
             boolean shInput) {
         this(
                 camera, width, height, astronomy, packedRayCone, scatterCount,
-                PrimaryChainSettings.DEFAULT_LIMIT, sampleIndex, sampleEpoch, jitterPhase,
+                DeltaWalkSettings.DEFAULT_LIMIT, sampleIndex, sampleEpoch, jitterPhase,
                 cameraInWater, postProcessingMode, transparentGuideMode, lighting, material,
                 shInput);
     }
@@ -93,7 +93,7 @@ public record IntegratorFrameInput(
                 cameraInWater,
                 transparentGuideMode);
         ScatterSettings.validateCount(scatterCount);
-        PrimaryChainSettings.validateLimit(primaryChainLimit);
+        DeltaWalkSettings.validateLimit(deltaWalkLimit);
         IntegratorSettings.packMaterialLightingControl(
                 lighting.sunQuarterSteps(),
                 lighting.starQuarterSteps(),

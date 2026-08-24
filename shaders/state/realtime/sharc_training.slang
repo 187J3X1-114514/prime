@@ -32,7 +32,7 @@ public uint2 primeSharcTrainingPixelFromIndex(uint trainingIndex) {
             + primeSharcTrainingCameraPhase(primeSharcFrame.updatePhase);
 }
 
-public uint primeSharcTrainingWalkDepth() {
+public uint primeSharcTrainingPathWalkDepth() {
     return min(
             PRIME_SHARC_TRAINING_WALK_CHUNK,
             primeWavefrontPixelCount() / primeSharcTrainingPathCount());

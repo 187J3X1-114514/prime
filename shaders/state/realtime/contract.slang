@@ -137,7 +137,7 @@ public uint primeWavefrontQueueWord(uint queue, uint entry) {
     return indexWords + 8u * pixelCount + entry;
 }
 
-public uint primePrimaryChainLimit() {
+public uint primeDeltaWalkLimit() {
     return primeWavefrontQueue[
             primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_TRACE_QUEUE_0) + 3u]
             & 0xffu;

@@ -21,7 +21,7 @@ import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
-import dev.prime.render.vulkan.RealtimeRayTracingPipeline.SharcRayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeSharcRayTracingPipeline;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
@@ -297,7 +297,7 @@ final class RealtimeRenderer implements Destroyable {
                 selection.quality(),
                 selection.transparentGuideMode(),
                 settings.scatterCount(),
-                settings.primaryChainLimit(),
+                settings.deltaWalkLimit(),
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
@@ -460,7 +460,7 @@ final class RealtimeRenderer implements Destroyable {
 
     private void selectPipeline(boolean sharcRequested) {
         boolean useSharc = sharcRequested && this.context.capabilities().sharcSupported();
-        if (useSharc == (this.pipeline instanceof SharcRayTracingPipeline)) {
+        if (useSharc == (this.pipeline instanceof RealtimeSharcRayTracingPipeline)) {
             return;
         }
         RealtimeIntegratorPipeline replacement = this.createPipeline(sharcRequested);
@@ -472,7 +472,7 @@ final class RealtimeRenderer implements Destroyable {
 
     private RealtimeIntegratorPipeline createPipeline(boolean sharcRequested) {
         if (sharcRequested && this.context.capabilities().sharcSupported()) {
-            return new SharcRayTracingPipeline(this.context, this.backend);
+            return new RealtimeSharcRayTracingPipeline(this.context, this.backend);
         }
         return new RealtimeRayTracingPipeline(this.context, this.backend);
     }

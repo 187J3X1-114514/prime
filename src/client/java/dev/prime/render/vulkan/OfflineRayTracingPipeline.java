@@ -26,8 +26,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Offline-only full-path pipeline with a single 176-byte slot per pixel. */
 public final class OfflineRayTracingPipeline implements Destroyable {
-    static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
-    static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
+    static final int RAYGEN_GROUP_COUNT = OfflineGroups.GROUP_COUNT;
+    static final int RAYGEN_MODULE_COUNT = OfflineGroups.MODULE_COUNT;
     static int dispatchCount(int scatterCount) {
         return 2 * Math.max(scatterCount - 1, 0) + 3;
     }
@@ -72,7 +72,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             traceProgram = TraceProgram.create(
                     context,
                     layout,
-                    WavefrontGroups.schedule(suffix),
+                    OfflineGroups.schedule(suffix),
                     "Prime offline ray tracing pipeline",
                     "Prime offline shader binding table");
             this.descriptorSetLayout = setLayout;
@@ -188,12 +188,17 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             this.bind(commandBuffer, stack, RayTracingPushConstants.encode(stack, input, scene));
             long commandOffset = queueOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
-            this.trace(commandBuffer, stack, width, height, WavefrontGroups.HEAD);
+            this.trace(
+                    commandBuffer,
+                    stack,
+                    width,
+                    height,
+                    OfflineGroups.CAMERA_SURFACE_STEP);
             this.wavefrontBarrier(commandBuffer, stack);
             this.traceIndirect(
                     commandBuffer,
                     stack,
-                    WavefrontGroups.area(0),
+                    OfflineGroups.areaShadow(0),
                     commandOffset,
                     0);
             this.wavefrontBarrier(commandBuffer, stack);
@@ -202,7 +207,12 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                 this.recordRound(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
-            this.trace(commandBuffer, stack, width, height, WavefrontGroups.RESOLVE);
+            this.trace(
+                    commandBuffer,
+                    stack,
+                    width,
+                    height,
+                    OfflineGroups.SAMPLE_RESOLVE);
         }
     }
 
@@ -214,14 +224,14 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         this.traceIndirect(
                 commandBuffer,
                 stack,
-                WavefrontGroups.step(sourceQueue),
+                OfflineGroups.pathSurfaceStep(sourceQueue),
                 commandOffset,
                 sourceQueue);
         this.wavefrontBarrier(commandBuffer, stack);
         this.traceIndirect(
                 commandBuffer,
                 stack,
-                WavefrontGroups.area(sourceQueue),
+                OfflineGroups.areaShadow(sourceQueue),
                 commandOffset,
                 sourceQueue);
         this.wavefrontBarrier(commandBuffer, stack);
@@ -302,11 +312,11 @@ public final class OfflineRayTracingPipeline implements Destroyable {
     }
 
     static int raygenModule(int group) {
-        return WavefrontGroups.module(group);
+        return OfflineGroups.module(group);
     }
 
     static int raygenControl(int group) {
-        return WavefrontGroups.control(group);
+        return OfflineGroups.control(group);
     }
 
     static long queueOffset(int width, int height) {

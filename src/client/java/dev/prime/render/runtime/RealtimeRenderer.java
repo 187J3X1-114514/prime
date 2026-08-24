@@ -21,6 +21,7 @@ import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeRayTracingPipeline.SharcRayTracingPipeline;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
@@ -58,7 +59,7 @@ final class RealtimeRenderer implements Destroyable {
         this.backend = Objects.requireNonNull(backend, "backend");
         this.ngxContext = ngxContext;
         this.reconstructionRegistry = new ReconstructionBackendRegistry(context, ngxContext);
-        this.pipeline = this.createPipeline();
+        this.pipeline = this.createPipeline(false);
         this.executor = new RealtimeFrameExecutor(context);
         this.exposureDiagnostics = new DisplayExposureDiagnostics(context);
     }
@@ -224,6 +225,9 @@ final class RealtimeRenderer implements Destroyable {
 
         RealtimeRenderSettings settings = input.settings();
         boolean sharcChanged = this.sharcRequested != settings.sharcEnabled();
+        if (sharcChanged) {
+            this.selectPipeline(settings.sharcEnabled());
+        }
         this.sharcRequested = settings.sharcEnabled();
         PostProcessingMode requestedMode = input.controls().rawOutput()
                 ? PostProcessingMode.DISABLED
@@ -432,7 +436,7 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeIntegratorPipeline replacementPipeline = null;
         VulkanReconstructionResources replacementResources = null;
         try {
-            replacementPipeline = this.createPipeline();
+            replacementPipeline = this.createPipeline(this.sharcRequested);
             VulkanReconstructionResources current = this.resources;
             if (current != null) {
                 replacementResources = this.reconstructionRegistry.createResources(
@@ -454,7 +458,22 @@ final class RealtimeRenderer implements Destroyable {
         }
     }
 
-    private RealtimeIntegratorPipeline createPipeline() {
+    private void selectPipeline(boolean sharcRequested) {
+        boolean useSharc = sharcRequested && this.context.capabilities().sharcSupported();
+        if (useSharc == (this.pipeline instanceof SharcRayTracingPipeline)) {
+            return;
+        }
+        RealtimeIntegratorPipeline replacement = this.createPipeline(sharcRequested);
+        RealtimeIntegratorPipeline previous = this.pipeline;
+        this.pipeline = replacement;
+        this.sampleState = this.sampleState.invalidated();
+        this.context.defer(previous);
+    }
+
+    private RealtimeIntegratorPipeline createPipeline(boolean sharcRequested) {
+        if (sharcRequested && this.context.capabilities().sharcSupported()) {
+            return new SharcRayTracingPipeline(this.context, this.backend);
+        }
         return new RealtimeRayTracingPipeline(this.context, this.backend);
     }
 

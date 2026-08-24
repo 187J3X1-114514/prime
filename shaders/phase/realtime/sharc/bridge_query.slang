@@ -1,11 +1,10 @@
 #language slang 2026
-module "phase/realtime/sharc/steady_none.slang";
+module "phase/realtime/sharc/bridge_query.slang";
 
 import "prime_realtime_abi.slang";
 import "service/trace/context.slang";
 import "state/realtime/queue.slang";
-import "transport/realtime/steady.slang";
-import "policy/realtime/sharc_query.slang";
+import "transport/realtime/sharc_bridge.slang";
 
 public void primePhase()
 {
@@ -14,10 +13,5 @@ public void primePhase()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1);
     }
-    primeWavefrontSteadyConsume(
-            PrimeIntegratedSharcTraining(),
-            context,
-            PRIME_STEADY_EVENT_NONE,
-            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1,
-            launchIndex);
+    primeWavefrontSharcBridgeQuery(context, launchIndex);
 }

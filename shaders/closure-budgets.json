@@ -47,11 +47,11 @@
     },
     "entry/lighting/sharc_integrated_update.compute.slang": {
       "maxFiles": 16,
-      "maxBytes": 130736
+      "maxBytes": 128874
     },
     "entry/lighting/sharc_resolve.compute.slang": {
       "maxFiles": 14,
-      "maxBytes": 107871
+      "maxBytes": 106345
     },
     "entry/lighting/sun_shadow.raygeneration.slang": {
       "maxFiles": 6,
@@ -153,21 +153,45 @@
       "maxFiles": 23,
       "maxBytes": 98047
     },
-    "entry/realtime/sharc/steady_area.raygeneration.slang": {
-      "maxFiles": 156,
-      "maxBytes": 705699
+    "entry/realtime/sharc/bridge_query.raygeneration.slang": {
+      "maxFiles": 65,
+      "maxBytes": 346892
     },
-    "entry/realtime/sharc/steady_classify.raygeneration.slang": {
-      "maxFiles": 156,
-      "maxBytes": 705688
+    "entry/realtime/sharc/bridge_trace.raygeneration.slang": {
+      "maxFiles": 35,
+      "maxBytes": 128180
     },
-    "entry/realtime/sharc/steady_none.raygeneration.slang": {
-      "maxFiles": 156,
-      "maxBytes": 705723
+    "entry/realtime/sharc/training_camera.raygeneration.slang": {
+      "maxFiles": 86,
+      "maxBytes": 274948
     },
-    "entry/realtime/sharc/steady_sun.raygeneration.slang": {
-      "maxFiles": 156,
-      "maxBytes": 705689
+    "entry/realtime/sharc/training_landing.raygeneration.slang": {
+      "maxFiles": 102,
+      "maxBytes": 367695
+    },
+    "entry/realtime/sharc/training_classify.raygeneration.slang": {
+      "maxFiles": 84,
+      "maxBytes": 332259
+    },
+    "entry/realtime/sharc/training_none.raygeneration.slang": {
+      "maxFiles": 21,
+      "maxBytes": 69066
+    },
+    "entry/realtime/sharc/training_sun.raygeneration.slang": {
+      "maxFiles": 106,
+      "maxBytes": 447620
+    },
+    "entry/realtime/sharc/training_area.raygeneration.slang": {
+      "maxFiles": 107,
+      "maxBytes": 448596
+    },
+    "entry/realtime/sharc/training_walk.raygeneration.slang": {
+      "maxFiles": 118,
+      "maxBytes": 468090
+    },
+    "entry/realtime/sharc/training_reduce.raygeneration.slang": {
+      "maxFiles": 65,
+      "maxBytes": 359524
     },
     "entry/realtime/steady_area.raygeneration.slang": {
       "maxFiles": 147,

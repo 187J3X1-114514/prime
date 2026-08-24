@@ -70,8 +70,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 backend,
                 RealtimeWavefrontGroups.standardSchedule(
                         context.capabilities().wavefrontShaderSuffix()),
-                RealtimeWavefrontGroups.sharcSchedule(
-                        context.capabilities().wavefrontShaderSuffix()),
+                null,
                 dispatchCount(dev.prime.render.ScatterSettings.DEFAULT_COUNT),
                 "Prime realtime ray tracing pipeline",
                 "Prime realtime shader binding table");
@@ -218,6 +217,265 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         }
     }
 
+    /** SHARC-only renderer with sparse training followed by one cache-only bridge. */
+    public static final class SharcRayTracingPipeline
+            extends RealtimeRayTracingPipelineSupport {
+        static final int RAYGEN_GROUP_COUNT = SharcWavefrontGroups.QUERY_GROUP_COUNT;
+        static final int RAYGEN_MODULE_COUNT = SharcWavefrontGroups.QUERY_MODULE_COUNT;
+        static final int TRAINING_RAYGEN_GROUP_COUNT =
+                SharcWavefrontGroups.TRAIN_GROUP_COUNT;
+        static final int TRAINING_RAYGEN_MODULE_COUNT =
+                SharcWavefrontGroups.TRAIN_MODULE_COUNT;
+        static final int TRAINING_WALK_CHUNK = 8;
+
+        static int queryDispatchCount() {
+            return 12;
+        }
+
+        static int trainingDispatchCount(int scatterCount) {
+            return 6 * chunkCount(scatterCount, TRAINING_WALK_CHUNK) + 2;
+        }
+
+        static int trainingDispatchCount(
+                int scatterCount, int width, int height) {
+            return 6 * chunkCount(
+                    scatterCount, trainingWalkDepth(width, height)) + 2;
+        }
+
+        static int trainingWalkDepth(int width, int height) {
+            long pixelCount = Math.multiplyExact((long) width, height);
+            long trainingPathCount = Math.multiplyExact(
+                    (long) RealtimeSharc.trainingWidth(width),
+                    RealtimeSharc.trainingHeight(height));
+            return (int) Math.min(
+                    TRAINING_WALK_CHUNK, pixelCount / trainingPathCount);
+        }
+
+        private static int chunkCount(int scatterCount, int chunkDepth) {
+            if (scatterCount < 0) {
+                throw new IllegalArgumentException("Scatter count must not be negative");
+            }
+            return scatterCount == 0
+                    ? 0
+                    : Math.floorDiv(scatterCount - 1, chunkDepth) + 1;
+        }
+
+        static int dispatchCount(int scatterCount) {
+            return trainingDispatchCount(scatterCount) + queryDispatchCount() + 2;
+        }
+
+        public SharcRayTracingPipeline(VulkanContext context, TraceBackend backend) {
+            super(
+                    context,
+                    backend,
+                    SharcWavefrontGroups.querySchedule(
+                            context.capabilities().wavefrontShaderSuffix()),
+                    SharcWavefrontGroups.trainingSchedule(
+                            context.capabilities().wavefrontShaderSuffix()),
+                    dispatchCount(dev.prime.render.ScatterSettings.DEFAULT_COUNT),
+                    "Prime SHARC ray tracing pipeline",
+                    "Prime SHARC shader binding table");
+        }
+
+        @Override
+        protected int recordSharcTraining(
+                VkCommandBuffer commandBuffer,
+                MemoryStack stack,
+                TraceProgram trainingProgram,
+                IntegratorFrameInput input,
+                long commandOffset,
+                int trainingWidth,
+                int trainingHeight) {
+            this.traceDirect(
+                    commandBuffer,
+                    stack,
+                    trainingProgram,
+                    trainingWidth,
+                    trainingHeight,
+                    SharcWavefrontGroups.HEAD);
+            this.queueBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    trainingProgram,
+                    SharcWavefrontGroups.TRAIN_LANDING,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+            this.queueBarrier(commandBuffer, stack);
+            int chunkCount = chunkCount(
+                    input.scatterCount(),
+                    trainingWalkDepth(input.width(), input.height()));
+            for (int chunk = 0; chunk < chunkCount; chunk++) {
+                int parity = chunk & 1;
+                int sourceQueue = parity == 0
+                        ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
+                        : ShaderAbi.WAVEFRONT_TRACE_QUEUE_1;
+                this.traceQueued(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        SharcWavefrontGroups.TRAIN_WALK + parity,
+                        commandOffset,
+                        sourceQueue);
+                this.queueBarrier(commandBuffer, stack);
+                this.traceQueued(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        SharcWavefrontGroups.TRAIN_CLASSIFY,
+                        commandOffset,
+                        ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+                this.queueBarrier(commandBuffer, stack);
+                this.traceQueued(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        SharcWavefrontGroups.TRAIN_NONE,
+                        commandOffset,
+                        ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0);
+                this.traceQueued(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        SharcWavefrontGroups.TRAIN_SUN,
+                        commandOffset,
+                        ShaderAbi.WAVEFRONT_AREA_QUEUE);
+                this.traceQueued(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        SharcWavefrontGroups.TRAIN_AREA,
+                        commandOffset,
+                        ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
+                this.queueBarrier(commandBuffer, stack);
+                this.traceDirect(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        trainingWidth,
+                        trainingHeight,
+                        SharcWavefrontGroups.TRAIN_REDUCE);
+                if (chunk + 1 < chunkCount) {
+                    this.sharcTrainingBarrier(commandBuffer, stack);
+                }
+            }
+            return trainingDispatchCount(
+                    input.scatterCount(), input.width(), input.height());
+        }
+
+        @Override
+        protected int recordTransport(
+                VkCommandBuffer commandBuffer,
+                MemoryStack stack,
+                TraceProgram activeProgram,
+                IntegratorFrameInput input,
+                long commandOffset) {
+            this.traceDirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    input.width(),
+                    input.height(),
+                    SharcWavefrontGroups.HEAD);
+            this.recordPrimary(commandBuffer, stack, activeProgram, commandOffset);
+            this.nextStepBarrier(commandBuffer, stack, false);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    SharcWavefrontGroups.BRIDGE_TRACE,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0);
+            this.queueBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    SharcWavefrontGroups.BRIDGE_QUERY,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1);
+            this.resolveInputBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    SharcWavefrontGroups.TRANSPARENT_RESOLVE,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
+            this.traceDirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    input.width(),
+                    input.height(),
+                    SharcWavefrontGroups.RESOLVE);
+            return queryDispatchCount();
+        }
+
+        private void recordPrimary(
+                VkCommandBuffer commandBuffer,
+                MemoryStack stack,
+                TraceProgram program,
+                long commandOffset) {
+            this.primaryDirectInputBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY_DIRECT,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
+            this.primaryInputBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+            this.nextStepBarrier(commandBuffer, stack, false);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY_CHAIN,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+            this.queueBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY_LANDING_CLASSIFY,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
+            this.nextStepBarrier(commandBuffer, stack, false);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY_LANDING_SECONDARY,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
+            this.queueBarrier(commandBuffer, stack);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY_LANDING_PRIMARY,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+            this.nextStepBarrier(commandBuffer, stack, false);
+            this.traceQueued(
+                    commandBuffer,
+                    stack,
+                    program,
+                    SharcWavefrontGroups.PRIMARY_LANDING_ADVANCE,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        }
+    }
+
 }
 
 /** Shared Vulkan resources for independently scheduled realtime renderers. */
@@ -238,7 +496,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
 
     private final VulkanContext context;
     private final TraceBackend backend;
-    private final RaygenSchedule sharcSchedule;
+    private final RaygenSchedule sharcTrainingSchedule;
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
@@ -254,14 +512,13 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             VulkanContext context,
             TraceBackend backend,
             RaygenSchedule schedule,
-            RaygenSchedule sharcSchedule,
+            RaygenSchedule sharcTrainingSchedule,
             int defaultPassCount,
             String pipelineLabel,
             String shaderBindingTableLabel) {
         this.context = context;
         this.backend = java.util.Objects.requireNonNull(backend, "backend");
-        this.sharcSchedule = java.util.Objects.requireNonNull(
-                sharcSchedule, "sharcSchedule");
+        this.sharcTrainingSchedule = sharcTrainingSchedule;
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
@@ -339,14 +596,16 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 width,
                 height,
                 this.context.capabilities().maxRayDispatchInvocationCount());
-        boolean sharcEffective = sharcRequested && this.context.capabilities().sharcSupported();
+        boolean sharcEffective = sharcRequested
+                && this.sharcTrainingSchedule != null
+                && this.context.capabilities().sharcSupported();
         if (sharcEffective && this.sharc == null) {
             this.sharc = new RealtimeSharc(
                     this.context,
                     this.pipelineLayout,
                     this.backend.bindings().descriptorSetLayout(),
                     this.descriptorSetLayout,
-                    this.sharcSchedule);
+                    this.sharcTrainingSchedule);
         } else if (!sharcEffective && this.sharc != null) {
             RealtimeSharc previous = this.sharc;
             this.sharc = null;
@@ -492,28 +751,51 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer pushConstants = RayTracingPushConstants.encode(stack, input, scene);
-            TraceProgram activeProgram = this.program;
-            if (this.sharc != null) {
-                activeProgram = this.sharc.queryProgram();
-            }
-            this.bind(commandBuffer, stack, pushConstants, activeProgram);
             long commandOffset = queueCommandOffset(width, height);
-            this.initializeQueues(
-                    commandBuffer, stack, commandOffset, input.primaryChainLimit());
-            int dispatchCount = this.recordTransport(
-                    commandBuffer, stack, activeProgram, input, commandOffset);
-            this.lastRecordedPassCount = dispatchCount;
             if (this.sharc != null) {
+                TraceProgram trainingProgram = this.sharc.trainingProgram();
+                this.bind(commandBuffer, stack, pushConstants, trainingProgram);
+                this.initializeQueues(
+                        commandBuffer, stack, commandOffset, input.primaryChainLimit());
+                int trainingDispatchCount = this.recordSharcTraining(
+                        commandBuffer,
+                        stack,
+                        trainingProgram,
+                        input,
+                        commandOffset,
+                        RealtimeSharc.trainingWidth(width),
+                        RealtimeSharc.trainingHeight(height));
                 this.sharc.recordIntegratedUpdateAndResolve(
                         commandBuffer,
                         this.bindings.descriptorSet,
                         width,
                         height);
+                this.resolveInputBarrier(commandBuffer, stack);
+                this.bind(commandBuffer, stack, pushConstants, this.program);
+                this.initializeQueues(
+                        commandBuffer, stack, commandOffset, input.primaryChainLimit());
+                int dispatchCount = this.recordTransport(
+                        commandBuffer, stack, this.program, input, commandOffset);
+                this.lastRecordedPassCount = trainingDispatchCount + dispatchCount + 2;
+                return;
             }
-            this.lastRecordedPassCount = this.sharc == null
-                    ? dispatchCount
-                    : dispatchCount + 2;
+            this.bind(commandBuffer, stack, pushConstants, this.program);
+            this.initializeQueues(
+                    commandBuffer, stack, commandOffset, input.primaryChainLimit());
+            this.lastRecordedPassCount = this.recordTransport(
+                    commandBuffer, stack, this.program, input, commandOffset);
         }
+    }
+
+    protected int recordSharcTraining(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            TraceProgram trainingProgram,
+            IntegratorFrameInput input,
+            long commandOffset,
+            int trainingWidth,
+            int trainingHeight) {
+        throw new IllegalStateException("This realtime renderer has no SHARC training schedule");
     }
 
     protected abstract int recordTransport(
@@ -626,6 +908,27 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 stack,
                 this.bindings.nextStepInputImages,
                 synchronizeSharcTraining);
+    }
+
+    protected final void sharcTrainingBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
+        if (this.sharc == null) {
+            throw new IllegalStateException("SHARC training barrier without SHARC state");
+        }
+        long rayTracingStage =
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+        VulkanSync.resourceBarrier(
+                commandBuffer,
+                stack,
+                this.wavefront,
+                this.sharc.trainingBuffer(),
+                new long[0],
+                rayTracingStage,
+                VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                rayTracingStage | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT
+                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
+                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
     }
 
     protected final void resolveInputBarrier(

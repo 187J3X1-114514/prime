@@ -138,6 +138,10 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
                         'service/sharc/training_records.h'],
                 'policy/realtime/sharc_query.slang': [
                         'service/sharc/vendor_bridge.h',
+                        'service/sharc/eligibility.h'],
+                'policy/realtime/sharc_training.slang': [
+                        'service/sharc/vendor_bridge.h',
+                        'service/sharc/eligibility.h',
                         'service/sharc/training_records.h'],
                 'service/sharc/vendor_bridge.h': [
                         'service/sharc/training_core.h', 'SharcCommon.h'],

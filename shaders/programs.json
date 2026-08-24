@@ -143,6 +143,146 @@
       "stage": "compute",
       "resource": "sun_shadow_hierarchy.comp.spv"
     },
+    "realtime_sharc_bridge_trace": {
+      "source": "shaders/entry/realtime/sharc/bridge_trace.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_bridge_trace.rgen.spv"
+    },
+    "realtime_sharc_bridge_trace_ser": {
+      "source": "shaders/entry/realtime/sharc/bridge_trace.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_bridge_trace_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_bridge_query": {
+      "source": "shaders/entry/realtime/sharc/bridge_query.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_bridge_query.rgen.spv"
+    },
+    "realtime_sharc_bridge_query_ser": {
+      "source": "shaders/entry/realtime/sharc/bridge_query.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_bridge_query_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_camera": {
+      "source": "shaders/entry/realtime/sharc/training_camera.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_camera.rgen.spv"
+    },
+    "realtime_sharc_training_camera_ser": {
+      "source": "shaders/entry/realtime/sharc/training_camera.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_camera_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_landing": {
+      "source": "shaders/entry/realtime/sharc/training_landing.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_landing.rgen.spv"
+    },
+    "realtime_sharc_training_landing_ser": {
+      "source": "shaders/entry/realtime/sharc/training_landing.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_landing_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_classify": {
+      "source": "shaders/entry/realtime/sharc/training_classify.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_classify.rgen.spv"
+    },
+    "realtime_sharc_training_classify_ser": {
+      "source": "shaders/entry/realtime/sharc/training_classify.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_classify_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_none": {
+      "source": "shaders/entry/realtime/sharc/training_none.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_none.rgen.spv"
+    },
+    "realtime_sharc_training_none_ser": {
+      "source": "shaders/entry/realtime/sharc/training_none.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_none_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_sun": {
+      "source": "shaders/entry/realtime/sharc/training_sun.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_sun.rgen.spv"
+    },
+    "realtime_sharc_training_sun_ser": {
+      "source": "shaders/entry/realtime/sharc/training_sun.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_sun_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_area": {
+      "source": "shaders/entry/realtime/sharc/training_area.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_area.rgen.spv"
+    },
+    "realtime_sharc_training_area_ser": {
+      "source": "shaders/entry/realtime/sharc/training_area.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_area_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_walk": {
+      "source": "shaders/entry/realtime/sharc/training_walk.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_walk.rgen.spv"
+    },
+    "realtime_sharc_training_walk_ser": {
+      "source": "shaders/entry/realtime/sharc/training_walk.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_walk_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_sharc_training_reduce": {
+      "source": "shaders/entry/realtime/sharc/training_reduce.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_reduce.rgen.spv"
+    },
+    "realtime_sharc_training_reduce_ser": {
+      "source": "shaders/entry/realtime/sharc/training_reduce.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_sharc_training_reduce_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
     "realtime_wavefront_head": {
       "source": "shaders/entry/realtime/head.raygeneration.slang",
       "stage": "raygeneration",
@@ -236,62 +376,6 @@
       "source": "shaders/entry/realtime/resolve.raygeneration.slang",
       "stage": "raygeneration",
       "resource": "realtime_wavefront_resolve.rgen.spv"
-    },
-    "realtime_wavefront_sharc_steady_area": {
-      "source": "shaders/entry/realtime/sharc/steady_area.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_area.rgen.spv"
-    },
-    "realtime_wavefront_sharc_steady_area_ser": {
-      "source": "shaders/entry/realtime/sharc/steady_area.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_area_ser.rgen.spv",
-      "definitions": [
-        "-DPRIME_ENABLE_SER=1",
-        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
-      ]
-    },
-    "realtime_wavefront_sharc_steady_classify": {
-      "source": "shaders/entry/realtime/sharc/steady_classify.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_classify.rgen.spv"
-    },
-    "realtime_wavefront_sharc_steady_classify_ser": {
-      "source": "shaders/entry/realtime/sharc/steady_classify.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_classify_ser.rgen.spv",
-      "definitions": [
-        "-DPRIME_ENABLE_SER=1",
-        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
-      ]
-    },
-    "realtime_wavefront_sharc_steady_none": {
-      "source": "shaders/entry/realtime/sharc/steady_none.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_none.rgen.spv"
-    },
-    "realtime_wavefront_sharc_steady_none_ser": {
-      "source": "shaders/entry/realtime/sharc/steady_none.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_none_ser.rgen.spv",
-      "definitions": [
-        "-DPRIME_ENABLE_SER=1",
-        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
-      ]
-    },
-    "realtime_wavefront_sharc_steady_sun": {
-      "source": "shaders/entry/realtime/sharc/steady_sun.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_sun.rgen.spv"
-    },
-    "realtime_wavefront_sharc_steady_sun_ser": {
-      "source": "shaders/entry/realtime/sharc/steady_sun.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_sharc_steady_sun_ser.rgen.spv",
-      "definitions": [
-        "-DPRIME_ENABLE_SER=1",
-        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
-      ]
     },
     "realtime_wavefront_steady_area": {
       "source": "shaders/entry/realtime/steady_area.raygeneration.slang",
@@ -561,7 +645,7 @@
         }
       ]
     },
-    "realtime.sharc.scalar": {
+    "sharc.query.scalar": {
       "modules": [
         "realtime_wavefront_head",
         "realtime_wavefront_primary_direct",
@@ -571,73 +655,27 @@
         "realtime_wavefront_primary_landing_primary",
         "realtime_wavefront_primary_landing_secondary",
         "realtime_wavefront_primary_landing_advance",
-        "realtime_wavefront_sharc_steady_classify",
-        "realtime_wavefront_sharc_steady_none",
-        "realtime_wavefront_sharc_steady_sun",
-        "realtime_wavefront_sharc_steady_area",
+        "realtime_sharc_bridge_trace",
+        "realtime_sharc_bridge_query",
         "realtime_wavefront_two_stage_transparent_resolve",
         "realtime_wavefront_resolve"
       ],
       "groups": [
-        {
-          "module": 0,
-          "control": 0
-        },
-        {
-          "module": 1,
-          "control": 0
-        },
-        {
-          "module": 2,
-          "control": 0
-        },
-        {
-          "module": 3,
-          "control": 0
-        },
-        {
-          "module": 4,
-          "control": 0
-        },
-        {
-          "module": 5,
-          "control": 0
-        },
-        {
-          "module": 6,
-          "control": 0
-        },
-        {
-          "module": 7,
-          "control": 0
-        },
-        {
-          "module": 8,
-          "control": 0
-        },
-        {
-          "module": 9,
-          "control": 0
-        },
-        {
-          "module": 10,
-          "control": 0
-        },
-        {
-          "module": 11,
-          "control": 0
-        },
-        {
-          "module": 12,
-          "control": 0
-        },
-        {
-          "module": 13,
-          "control": 0
-        }
+        { "module": 0, "control": 0 },
+        { "module": 1, "control": 0 },
+        { "module": 2, "control": 0 },
+        { "module": 3, "control": 0 },
+        { "module": 4, "control": 0 },
+        { "module": 5, "control": 0 },
+        { "module": 6, "control": 0 },
+        { "module": 7, "control": 0 },
+        { "module": 8, "control": 0 },
+        { "module": 9, "control": 0 },
+        { "module": 10, "control": 0 },
+        { "module": 11, "control": 0 }
       ]
     },
-    "realtime.sharc.ser": {
+    "sharc.query.ser": {
       "modules": [
         "realtime_wavefront_head_ser",
         "realtime_wavefront_primary_direct",
@@ -647,70 +685,70 @@
         "realtime_wavefront_primary_landing_primary_ser",
         "realtime_wavefront_primary_landing_secondary_ser",
         "realtime_wavefront_primary_landing_advance_ser",
-        "realtime_wavefront_sharc_steady_classify_ser",
-        "realtime_wavefront_sharc_steady_none_ser",
-        "realtime_wavefront_sharc_steady_sun_ser",
-        "realtime_wavefront_sharc_steady_area_ser",
+        "realtime_sharc_bridge_trace_ser",
+        "realtime_sharc_bridge_query_ser",
         "realtime_wavefront_two_stage_transparent_resolve_ser",
         "realtime_wavefront_resolve"
       ],
       "groups": [
-        {
-          "module": 0,
-          "control": 0
-        },
-        {
-          "module": 1,
-          "control": 0
-        },
-        {
-          "module": 2,
-          "control": 0
-        },
-        {
-          "module": 3,
-          "control": 0
-        },
-        {
-          "module": 4,
-          "control": 0
-        },
-        {
-          "module": 5,
-          "control": 0
-        },
-        {
-          "module": 6,
-          "control": 0
-        },
-        {
-          "module": 7,
-          "control": 0
-        },
-        {
-          "module": 8,
-          "control": 0
-        },
-        {
-          "module": 9,
-          "control": 0
-        },
-        {
-          "module": 10,
-          "control": 0
-        },
-        {
-          "module": 11,
-          "control": 0
-        },
-        {
-          "module": 12,
-          "control": 0
-        },
-        {
-          "module": 13,
-          "control": 0
-        }
+        { "module": 0, "control": 0 },
+        { "module": 1, "control": 0 },
+        { "module": 2, "control": 0 },
+        { "module": 3, "control": 0 },
+        { "module": 4, "control": 0 },
+        { "module": 5, "control": 0 },
+        { "module": 6, "control": 0 },
+        { "module": 7, "control": 0 },
+        { "module": 8, "control": 0 },
+        { "module": 9, "control": 0 },
+        { "module": 10, "control": 0 },
+        { "module": 11, "control": 0 }
+      ]
+    },
+    "sharc.training.scalar": {
+      "modules": [
+        "realtime_sharc_training_camera",
+        "realtime_sharc_training_landing",
+        "realtime_sharc_training_walk",
+        "realtime_sharc_training_classify",
+        "realtime_sharc_training_none",
+        "realtime_sharc_training_sun",
+        "realtime_sharc_training_area",
+        "realtime_sharc_training_reduce"
+      ],
+      "groups": [
+        { "module": 0, "control": 0 },
+        { "module": 1, "control": 0 },
+        { "module": 2, "control": 0 },
+        { "module": 2, "control": 1 },
+        { "module": 3, "control": 0 },
+        { "module": 4, "control": 0 },
+        { "module": 5, "control": 0 },
+        { "module": 6, "control": 0 },
+        { "module": 7, "control": 0 }
+      ]
+    },
+    "sharc.training.ser": {
+      "modules": [
+        "realtime_sharc_training_camera_ser",
+        "realtime_sharc_training_landing_ser",
+        "realtime_sharc_training_walk_ser",
+        "realtime_sharc_training_classify_ser",
+        "realtime_sharc_training_none_ser",
+        "realtime_sharc_training_sun_ser",
+        "realtime_sharc_training_area_ser",
+        "realtime_sharc_training_reduce_ser"
+      ],
+      "groups": [
+        { "module": 0, "control": 0 },
+        { "module": 1, "control": 0 },
+        { "module": 2, "control": 0 },
+        { "module": 2, "control": 1 },
+        { "module": 3, "control": 0 },
+        { "module": 4, "control": 0 },
+        { "module": 5, "control": 0 },
+        { "module": 6, "control": 0 },
+        { "module": 7, "control": 0 }
       ]
     },
     "offline.scalar": {

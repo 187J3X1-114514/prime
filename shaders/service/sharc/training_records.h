@@ -262,13 +262,6 @@ uint primeSharcTrainingAppendAnchor(
     return primeSharcTrainingWithPendingAnchor(control, anchor);
 }
 
-// Selected training paths bypass every cache query until transport completes.
-bool primeSharcTrainingBypassesCache(PathState path) {
-    bool selected = primeSharcTrainingPixel(path.pixel);
-    uint control = selected ? primeSharcTrainingControl(path.pixel) : 0u;
-    return primeSharcTrainingBypassesCacheValue(selected, control);
-}
-
 void primeBeginSharcTraining(
         PathState path,
         SurfaceInteraction surface,

@@ -39,7 +39,6 @@ import "model/material/translation.slang";
 #include "SharcCommon.h"
 #undef out
 
-#if SHARC_UPDATE || SHARC_QUERY
 float primeSharcLuminance(float3 value) {
     return dot(value, float3(0.2627, 0.6780, 0.0593));
 }
@@ -64,7 +63,6 @@ float3 primeSharcMaterialDemodulation(SurfaceInteraction surface) {
     return max(diffuseAlbedo, float3(0.05))
             + max(specularF0, float3(0.02)) * averageSpecular;
 }
-#endif
 
 SharcParameters primeSharcParameters() {
     SharcParameters parameters;
@@ -102,7 +100,6 @@ SharcHitData primeSharcHitData(
 }
 #endif
 
-#if SHARC_QUERY
 float primeSharcVoxelSize(float3 position, float3 geometricNormal) {
     float voxelSize;
     HashGridComputeSpatialHashWithVoxelSize(
@@ -112,6 +109,5 @@ float primeSharcVoxelSize(float3 position, float3 geometricNormal) {
             voxelSize);
     return voxelSize;
 }
-#endif
 
 #endif

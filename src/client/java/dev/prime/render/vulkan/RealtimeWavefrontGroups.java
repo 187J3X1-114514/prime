@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-/** Shared two-stage group topology with execution-mode-specific steady modules. */
+/** Realtime renderer topology without SHARC resources. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
     static final int PRIMARY_DIRECT = 1;
@@ -29,10 +29,6 @@ final class RealtimeWavefrontGroups {
 
     static RaygenSchedule standardSchedule(String suffix) {
         return GeneratedShaderPrograms.schedule("realtime.standard." + mode(suffix));
-    }
-
-    static RaygenSchedule sharcSchedule(String suffix) {
-        return GeneratedShaderPrograms.schedule("realtime.sharc." + mode(suffix));
     }
 
     private static String mode(String suffix) {

@@ -39,7 +39,7 @@ final class RealtimeSharc implements Destroyable {
             GeneratedShaderPrograms.resource("sharc_resolve");
 
     private final VulkanContext context;
-    private final TraceProgram queryProgram;
+    private final TraceProgram trainingProgram;
     private final long resolvePipelineLayout;
     private final long integratedUpdatePipeline;
     private final long resolvePipeline;
@@ -58,13 +58,13 @@ final class RealtimeSharc implements Destroyable {
             long rayTracingPipelineLayout,
             long sharedSetLayout,
             long integratorSetLayout,
-            RaygenSchedule querySchedule) {
+            RaygenSchedule trainingSchedule) {
         this.context = Objects.requireNonNull(context, "context");
         VulkanBuffer hash = null;
         VulkanBuffer accumulationBuffer = null;
         VulkanBuffer resolvedBuffer = null;
         VulkanBuffer constants = null;
-        TraceProgram query = null;
+        TraceProgram training = null;
         long computeLayout = 0L;
         long integratedUpdate = 0L;
         long computePipeline = 0L;
@@ -79,12 +79,12 @@ final class RealtimeSharc implements Destroyable {
                             | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     false,
                     "Prime SHARC frame constants");
-            query = TraceProgram.create(
+            training = TraceProgram.create(
                     context,
                     rayTracingPipelineLayout,
-                    Objects.requireNonNull(querySchedule, "querySchedule"),
-                    "Prime SHARC query pipeline",
-                    "Prime SHARC query shader binding table");
+                    Objects.requireNonNull(trainingSchedule, "trainingSchedule"),
+                    "Prime SHARC training pipeline",
+                    "Prime SHARC training shader binding table");
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 LongBuffer pointer = stack.mallocLong(1);
                 VulkanContext.check(
@@ -115,7 +115,7 @@ final class RealtimeSharc implements Destroyable {
             this.accumulation = accumulationBuffer;
             this.resolved = resolvedBuffer;
             this.frameConstants = constants;
-            this.queryProgram = query;
+            this.trainingProgram = training;
             this.resolvePipelineLayout = computeLayout;
             this.integratedUpdatePipeline = integratedUpdate;
             this.resolvePipeline = computePipeline;
@@ -129,7 +129,7 @@ final class RealtimeSharc implements Destroyable {
             if (computeLayout != 0L) {
                 VK12.vkDestroyPipelineLayout(context.vkDevice(), computeLayout, null);
             }
-            if (query != null) query.destroy();
+            if (training != null) training.destroy();
             if (constants != null) constants.destroy();
             if (resolvedBuffer != null) resolvedBuffer.destroy();
             if (accumulationBuffer != null) accumulationBuffer.destroy();
@@ -183,8 +183,8 @@ final class RealtimeSharc implements Destroyable {
         return this.trainingRecords;
     }
 
-    TraceProgram queryProgram() {
-        return this.queryProgram;
+    TraceProgram trainingProgram() {
+        return this.trainingProgram;
     }
 
     long resourceBytes() {
@@ -220,14 +220,14 @@ final class RealtimeSharc implements Destroyable {
         return Math.multiplyExact(paths, TRAINING_RECORD_BYTES);
     }
 
-    private static int trainingWidth(int width) {
+    static int trainingWidth(int width) {
         if (width <= 0) {
             throw new IllegalArgumentException("SHARC width must be positive");
         }
         return Math.floorDiv(width - 1, TRAINING_GRID_SIZE) + 1;
     }
 
-    private static int trainingHeight(int height) {
+    static int trainingHeight(int height) {
         if (height <= 0) {
             throw new IllegalArgumentException("SHARC height must be positive");
         }
@@ -534,7 +534,7 @@ final class RealtimeSharc implements Destroyable {
                 this.context.vkDevice(), this.integratedUpdatePipeline, null);
         VK12.vkDestroyPipelineLayout(
                 this.context.vkDevice(), this.resolvePipelineLayout, null);
-        this.queryProgram.destroy();
+        this.trainingProgram.destroy();
     }
 
     record Prepared(Accepted candidate) {

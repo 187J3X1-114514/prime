@@ -66,21 +66,12 @@ final class TextureVoxelSurfaceTest {
 
     @Test
     void crossingOneClusterInvalidatesOnlyTheEnteringAndLeavingSlabs() {
-        int changed = 0;
-        for (int z = -8; z <= 12; z += SectionCluster.SECTION_SIZE) {
-            for (int y = -8; y <= 12; y += SectionCluster.SECTION_SIZE) {
-                for (int x = -8; x <= 12; x += SectionCluster.SECTION_SIZE) {
-                    if (VoxelSurfaceCoverage.changes(
-                            x, y, z, 0, 0, 0, 4, 0, 0)) {
-                        changed++;
-                    }
-                }
-            }
-        }
-
-        assertEquals(18, changed);
-        assertFalse(VoxelSurfaceCoverage.changes(
-                0, 0, 0, 0, 0, 0, 4, 0, 0));
+        assertEquals(
+                18,
+                VoxelSurfaceCoverage.changedKeys(0, 0, 0, 4, 0, 0).length);
+        assertEquals(
+                0,
+                VoxelSurfaceCoverage.changedKeys(0, 0, 0, 0, 0, 0).length);
     }
 
     @Test

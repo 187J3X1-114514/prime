@@ -404,36 +404,24 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
 
     public long prepareFrame(
             VkCommandBuffer commandBuffer,
-            VulkanImageInitializationBatch initialization,
             RealtimeFramePlan plan,
             TerrainScene.ResidentSceneView scene,
             long textureRevision) {
         if (this.pendingFrame != null) {
             throw new IllegalStateException("Realtime pipeline already has a pending frame");
         }
-        long backendToken = this.backend.prepareFrame(commandBuffer, initialization);
-        RealtimeSharc.Prepared prepared = null;
-        try {
-            if (this.sharc != null) {
-                prepared = this.sharc.prepare(
-                        commandBuffer,
-                        plan.integrator(),
-                        scene,
-                        textureRevision,
-                        plan.reconstructionReset());
-            }
-        } catch (RuntimeException exception) {
-            if (backendToken != 0L) {
-                this.backend.abandon(backendToken);
-            }
-            throw exception;
-        }
         if (this.sharc == null) {
-            return backendToken;
+            return 0L;
         }
+        RealtimeSharc.Prepared prepared = this.sharc.prepare(
+                commandBuffer,
+                plan.integrator(),
+                scene,
+                textureRevision,
+                plan.reconstructionReset());
         long token = this.nextFrameToken++;
         if (token == 0L) token = this.nextFrameToken++;
-        this.pendingFrame = new PendingFrame(token, backendToken, this.sharc, prepared);
+        this.pendingFrame = new PendingFrame(token, this.sharc, prepared);
         return token;
     }
 
@@ -445,14 +433,15 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
     public void submitted(long token) {
         PendingFrame pending = this.pendingFrame;
         if (pending == null) {
-            this.backend.submitted(token);
+            if (token != 0L) {
+                throw new IllegalStateException("Realtime pipeline has no pending frame");
+            }
             return;
         }
         if (pending.token != token) {
             throw new IllegalStateException("Realtime pipeline frame token mismatch");
         }
         this.pendingFrame = null;
-        this.backend.submitted(pending.backendToken);
         if (pending.owner != null) {
             pending.owner.submitted(pending.sharcFrame);
         }
@@ -461,16 +450,15 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
     public void abandon(long token) {
         PendingFrame pending = this.pendingFrame;
         if (pending == null) {
-            this.backend.abandon(token);
+            if (token != 0L) {
+                throw new IllegalStateException("Realtime pipeline has no pending frame");
+            }
             return;
         }
         if (pending.token != token) {
             throw new IllegalStateException("Realtime pipeline frame token mismatch");
         }
         this.pendingFrame = null;
-        if (pending.backendToken != 0L) {
-            this.backend.abandon(pending.backendToken);
-        }
     }
 
     /** Releases descriptor bindings and wavefront backing after the device has become idle. */
@@ -1051,7 +1039,6 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
 
     private record PendingFrame(
             long token,
-            long backendToken,
             RealtimeSharc owner,
             RealtimeSharc.Prepared sharcFrame) {
     }

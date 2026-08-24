@@ -31,4 +31,15 @@ final class TerrainWorkerSettingsTest {
                 IllegalArgumentException.class,
                 () -> TerrainWorkerSettings.workerLimit(16, 101));
     }
+
+    @Test
+    void backgroundStreamingReservesOneInteractiveAdmission() {
+        assertEquals(14, TerrainWorkerSettings.admissionLimit(15, false));
+        assertEquals(15, TerrainWorkerSettings.admissionLimit(15, true));
+        assertEquals(1, TerrainWorkerSettings.admissionLimit(1, false));
+        assertEquals(1, TerrainWorkerSettings.admissionLimit(1, true));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TerrainWorkerSettings.admissionLimit(0, false));
+    }
 }

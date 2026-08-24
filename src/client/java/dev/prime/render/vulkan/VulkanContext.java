@@ -150,6 +150,12 @@ public final class VulkanContext implements AutoCloseable {
         this.sharedPrograms.invalidate();
     }
 
+    /** Creates every size-independent presentation program before extent/frame resources use it. */
+    public void prewarmSharedPrograms() {
+        requireOpen();
+        this.sharedPrograms.prewarm();
+    }
+
     public void createComputePipeline(
             VkComputePipelineCreateInfo.Buffer createInfo,
             LongBuffer pipelinePointer,

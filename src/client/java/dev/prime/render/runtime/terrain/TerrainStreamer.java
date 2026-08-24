@@ -48,7 +48,7 @@ public final class TerrainStreamer implements AutoCloseable {
     // correspondingly sized transient page instead of being rejected by a content policy.
     private static final long TARGET_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 64;
-    private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
+    private static final int MAX_EXTERNAL_DIRTY_CLUSTERS = 16_384;
     private final TerrainScene scene;
     private final VanillaClusterCompiler clusterCompiler;
     private final boolean opacityMicromapSupported;
@@ -62,12 +62,11 @@ public final class TerrainStreamer implements AutoCloseable {
     // never reset across worlds, so the fixed queue remains a proof-backed bound during churn.
     private final ArrayBlockingQueue<CompletedCluster> completed;
     private final ResourceEpochCoordinator resourceEpoch = new ResourceEpochCoordinator();
-    private final BoundedDirtySections externalDirty =
-            new BoundedDirtySections(MAX_EXTERNAL_DIRTY_SECTIONS);
+    private final BoundedDirtyClusters externalDirty =
+            new BoundedDirtyClusters(MAX_EXTERNAL_DIRTY_CLUSTERS);
     private final LongOpenHashSet desired = new LongOpenHashSet();
     private final LongOpenHashSet empty = new LongOpenHashSet();
     private final LongOpenHashSet pendingEvictions = new LongOpenHashSet();
-    private final LongOpenHashSet dirtyClusters = new LongOpenHashSet();
     private final ClusterGenerationTracker generations = new ClusterGenerationTracker();
     private final ClusterPipelineState pipelineState = new ClusterPipelineState();
     private final PriorityQueue<ClusterRequest> requests = new PriorityQueue<>(Comparator
@@ -208,16 +207,17 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     public void setLabPbrMaterials(LabPbrMaterialSet materials) {
-        if (!this.labPbrMaterials.equals(materials)) {
-            this.labPbrMaterials = materials;
-            this.translatedLabPbrMaterials = this.surfaceDetailMode.usesResourceNormals()
-                    ? materials
-                    : materials.withoutNormalTextures();
-            // TextureId is generation-local. Existing mesh records cannot be rendered against a
-            // replacement catalog, even while their normal rebuild is still pending.
-            this.discardResidentMaterialGeneration = true;
+        LabPbrMaterialSet translated = this.surfaceDetailMode.usesResourceNormals()
+                ? materials
+                : materials.withoutNormalTextures();
+        if (!this.translatedLabPbrMaterials.translationEquivalent(
+                translated, this.surfaceDetailMode)) {
+            this.discardResidentMaterialGeneration |=
+                    this.translatedLabPbrMaterials.invalidatesResidentTextureLookups(translated);
             this.invalidateAll();
         }
+        this.labPbrMaterials = materials;
+        this.translatedLabPbrMaterials = translated;
     }
 
     public void setSurfaceDetailMode(SurfaceDetailMode mode, int strengthSteps) {
@@ -344,20 +344,13 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void drainInvalidations() {
-        BoundedDirtySections.Batch batch = this.externalDirty.drain();
+        BoundedDirtyClusters.Batch batch = this.externalDirty.drain();
         if (batch.fullInvalidation()) {
             this.empty.clear();
             this.rebuildRequestQueue(0);
             return;
         }
-        this.dirtyClusters.clear();
-        for (long sectionKey : batch.keys()) {
-            long clusterKey = SectionCluster.keyForSection(sectionKey);
-            if (this.desired.contains(clusterKey)) {
-                this.dirtyClusters.add(clusterKey);
-            }
-        }
-        for (long clusterKey : this.dirtyClusters) {
+        for (long clusterKey : batch.keys()) {
             if (!this.desired.contains(clusterKey)) {
                 continue;
             }
@@ -365,7 +358,6 @@ public final class TerrainStreamer implements AutoCloseable {
             long nextGeneration = this.generations.advance(clusterKey);
             this.enqueue(clusterKey, 0, nextGeneration);
         }
-        this.dirtyClusters.clear();
     }
 
     private void rebuildRequestQueue(int priority) {
@@ -415,8 +407,12 @@ public final class TerrainStreamer implements AutoCloseable {
         int workerLimit = TerrainWorkerSettings.workerLimit(
                 this.maximumWorkerThreads, this.workerPercentage);
         int maximumInFlight = Math.min(this.inFlightCapacity, workerLimit);
+        int admittedPriority = this.requests.isEmpty()
+                ? Integer.MAX_VALUE : this.requests.peek().priority();
+        int admissionLimit = TerrainWorkerSettings.admissionLimit(
+                maximumInFlight, admittedPriority == 0);
         int outstanding = this.workerJobs + this.readyForUpload.size();
-        int dispatchBudget = Math.max(0, maximumInFlight - outstanding);
+        int dispatchBudget = Math.max(0, admissionLimit - outstanding);
         if (dispatchBudget == 0 || this.requests.isEmpty()) {
             return;
         }
@@ -431,6 +427,10 @@ public final class TerrainStreamer implements AutoCloseable {
                 && examined < MAX_UNLOADED_PROBES_PER_FRAME
                 && !this.requests.isEmpty()) {
             ClusterRequest request = this.requests.poll();
+            if (request.priority() != admittedPriority) {
+                this.requests.add(request);
+                break;
+            }
             examined++;
             if (!this.pipelineState.isQueued(request.key(), request.generation())) {
                 continue;
@@ -494,7 +494,7 @@ public final class TerrainStreamer implements AutoCloseable {
                             new WorkerSuccess(CpuClusterMesh.empty()));
                     if (this.pipelineState.completeToReady(
                             result.key(), result.generation())) {
-                        this.readyForUpload.addLast(result);
+                        this.addReady(result);
                     }
                 } else {
                     this.empty.add(request.key());
@@ -502,7 +502,8 @@ public final class TerrainStreamer implements AutoCloseable {
                 accepted++;
                 continue;
             }
-            this.pipelineState.beginInFlight(request.key(), request.generation());
+            ClusterPipelineState.Cancellation cancellation = this.pipelineState.beginInFlight(
+                    request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
             try {
                 this.workers.execute(() -> {
@@ -518,8 +519,13 @@ public final class TerrainStreamer implements AutoCloseable {
                     } else {
                         try (workerLease) {
                             CpuClusterMesh mesh = TerrainStreamer.this.clusterCompiler.compile(
-                                    capture, materialSnapshot, translationSettings);
+                                    capture,
+                                    materialSnapshot,
+                                    translationSettings,
+                                    cancellation::cancelled);
                             workerResult = new WorkerSuccess(mesh);
+                        } catch (VanillaClusterCompiler.CompilationCancelledException ignored) {
+                            workerResult = WorkerCancelled.INSTANCE;
                         } catch (VanillaClusterCompiler.CompilationException exception) {
                             workerResult = new WorkerFailure(
                                     exception.getCause(),
@@ -603,8 +609,16 @@ public final class TerrainStreamer implements AutoCloseable {
                 }
             }
             if (this.pipelineState.completeToReady(result.key(), result.generation())) {
-                this.readyForUpload.addLast(result);
+                this.addReady(result);
             }
+        }
+    }
+
+    private void addReady(CompletedCluster result) {
+        if (result.priority() == 0) {
+            this.readyForUpload.addFirst(result);
+        } else {
+            this.readyForUpload.addLast(result);
         }
     }
 
@@ -682,7 +696,6 @@ public final class TerrainStreamer implements AutoCloseable {
         this.empty.clear();
         this.pendingEvictions.clear();
         this.discardResidentMaterialGeneration = false;
-        this.dirtyClusters.clear();
         this.generations.resetWorld();
         this.pipelineState.clear();
         this.requests.clear();
@@ -701,21 +714,15 @@ public final class TerrainStreamer implements AutoCloseable {
             int newSectionX,
             int newSectionY,
             int newSectionZ) {
-        for (long key : this.desired) {
-            int clusterX = SectionPos.x(key);
-            int clusterY = SectionPos.y(key);
-            int clusterZ = SectionPos.z(key);
-            if (VoxelSurfaceCoverage.changes(
-                    clusterX,
-                    clusterY,
-                    clusterZ,
-                    oldSectionX,
-                    oldSectionY,
-                    oldSectionZ,
-                    newSectionX,
-                    newSectionY,
-                    newSectionZ)) {
-                this.externalDirty.add(key);
+        for (long key : VoxelSurfaceCoverage.changedKeys(
+                oldSectionX,
+                oldSectionY,
+                oldSectionZ,
+                newSectionX,
+                newSectionY,
+                newSectionZ)) {
+            if (this.desired.contains(key)) {
+                this.externalDirty.addCluster(key);
             }
         }
     }

@@ -82,7 +82,8 @@ public final class RendererLifecycle {
         }
     }
 
-    public void tryInitialize(Minecraft minecraft, TerrainOwnership terrain) {
+    public void tryInitialize(
+            Minecraft minecraft, TerrainOwnership terrain, RendererSettings settings) {
         if (this.renderer != null
                 || this.retiringRenderer != null
                 || this.shuttingDown
@@ -98,17 +99,22 @@ public final class RendererLifecycle {
             terrain.restore(minecraft, true);
             return;
         }
+        VulkanRenderer createdRenderer = null;
         try {
             if (this.context == null) {
                 this.context = new VulkanContext(device, capabilities);
                 HdrPresentation.attach(this.context);
             }
-            if (minecraft.level == null || minecraft.player == null) {
+            if (!VulkanRenderer.bootstrapResourcesReady(minecraft)) {
                 this.states.rendererReady();
                 return;
             }
-            terrain.acquire(minecraft);
-            this.renderer = new VulkanRenderer(this.context);
+            if (minecraft.level != null && minecraft.player != null) {
+                terrain.acquire(minecraft);
+            }
+            createdRenderer = new VulkanRenderer(this.context);
+            createdRenderer.bootstrap(minecraft, settings);
+            this.renderer = createdRenderer;
             this.failureReason = "";
             this.states.rendererReady();
         } catch (RuntimeException exception) {
@@ -116,6 +122,7 @@ public final class RendererLifecycle {
                     exception, "Vulkan initialization");
             this.states.fail();
             terrain.restore(minecraft, true);
+            ResourceCleanup.close(createdRenderer, exception);
             VulkanContext failedContext = this.context;
             this.context = null;
             HdrPresentation.detach(failedContext);
@@ -181,25 +188,6 @@ public final class RendererLifecycle {
         }
     }
 
-    public void suspend(Minecraft minecraft, TerrainOwnership terrain) {
-        VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer == null) {
-            return;
-        }
-        this.renderer = null;
-        this.world = null;
-        try {
-            activeRenderer.close();
-        } catch (RuntimeException exception) {
-            this.retiringRenderer = activeRenderer;
-            fail(exception);
-            return;
-        }
-        terrain.restore(minecraft, false);
-        this.states.rendererReady();
-        this.states.worldAbsent();
-    }
-
     /** Any failure after host acceptance retires the renderer before another frame can reuse it. */
     public void fail(Throwable failure) {
         this.failureReason = RuntimeFailureSummary.describe(failure);
@@ -224,12 +212,14 @@ public final class RendererLifecycle {
                         activeRenderer, activeRenderer.beginResourceReload());
     }
 
-    public boolean finishResourceReload(ResourceReload reload, boolean reloadShaders) {
+    public boolean finishResourceReload(
+            ResourceReload reload, Minecraft minecraft, boolean reloadShaders) {
         java.util.Objects.requireNonNull(reload, "reload");
         if (reload.renderer == null) {
             return false;
         }
-        reload.renderer.finishResourceReload(reload.rendererReload, reloadShaders);
+        reload.renderer.finishResourceReload(
+                reload.rendererReload, minecraft, reloadShaders);
         return reloadShaders && this.renderer == reload.renderer;
     }
 

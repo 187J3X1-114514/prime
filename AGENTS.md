@@ -85,9 +85,13 @@ GPU 路径必须以提交给 BLAS 的 f32 顶点、硬件重心坐标和精确�
 生产纹理必须遵守[纹理翻译架构](docs/纹理翻译架构.md)。Minecraft atlas、独立纹理对象、
 LabPBR 文件 I/O 和 Minecraft 动画对象只能存在于资源捕获边界；Vulkan 页面构建器只可借用
 捕获后的不可变 source 生成规范页面。terrain、light、OMM、descriptor/sampling 路径和生产
-shader 只消费 generation 固定的 `TextureId`、sprite-local UV 与规范通道或派生数据。
+shader 只消费 renderer 生命周期稳定的 `TextureId`、sprite-local UV 与规范通道或派生数据。
+
+`TextureId` 按 `SpriteId` 单调分配且不得因资源 reload 重编号或复用；新 generation 发布前必须
+上传完整 catalog。大资源包可以优化 packing、mip、上传和临时数据，但不得按可见性、引用或
+加载顺序主动裁剪、驱逐或延迟合法纹理。
 
 禁止恢复与原版 atlas 等尺寸的 normal/optical 镜像、按最大纹理尺寸分配 array layer、每纹理
-一个 VkImage/descriptor 或无用途的永久 source 像素副本。物理存储必须按实际矩形分页；若以后
-引入按 cluster 部分常驻，pending texture 不得以临时 fallback 发布。`PrimitiveRecord` 保持
-32 bytes，纹理查表必须窄加载且不得把无关通道引入生产 shader 闭包或路径状态。
+一个 VkImage/descriptor 或无用途的永久 source 像素副本。物理存储必须按实际矩形分页；
+`PrimitiveRecord` 保持 32 bytes，纹理查表必须窄加载且不得把无关通道引入生产 shader 闭包或
+路径状态。

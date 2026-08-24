@@ -78,7 +78,6 @@ public final class RealtimeFrameExecutor {
                     encoder.allocateAndBeginTransientCommandBuffer();
             pipelineFrame = pipeline.prepareFrame(
                     commandBuffer,
-                    this.imageInitialization,
                     plan,
                     scene,
                     textureRevision);
@@ -94,7 +93,7 @@ public final class RealtimeFrameExecutor {
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.prepareSceneTexturesForTrace(
                     commandBuffer, sceneTextures);
-            materialFrame = materialTextures.prepare(commandBuffer);
+            materialFrame = materialTextures.prepareAnimations(commandBuffer);
             // Atmosphere preparation traces the sun cache through the shared RT descriptor set.
             // Every image named by that set must have its declared layout before this call.
             atmosphereFrame = atmosphere.prepare(

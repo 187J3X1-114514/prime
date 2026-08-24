@@ -48,7 +48,6 @@ final class RealtimeRenderer implements Destroyable {
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private MaterialSettings.Snapshot materialSettings;
     private boolean sharcRequested;
-    private boolean pipelineInvalid;
     private boolean destroyed;
 
     RealtimeRenderer(
@@ -65,7 +64,6 @@ final class RealtimeRenderer implements Destroyable {
     }
 
     RealtimeIntegratorPipeline pipeline() {
-        this.ensurePipeline();
         return this.pipeline;
     }
 
@@ -143,8 +141,7 @@ final class RealtimeRenderer implements Destroyable {
             boolean sharcRequested) {
         VulkanReconstructionResources current = this.resources;
         boolean resourcesMatch = current != null && current.matches(selection);
-        boolean replacePipeline = this.pipelineInvalid;
-        if (resourcesMatch && !replacePipeline) {
+        if (resourcesMatch) {
             this.pipeline.ensureDescriptors(
                     tlas,
                     current.stableRadiance(),
@@ -160,27 +157,15 @@ final class RealtimeRenderer implements Destroyable {
             return false;
         }
         VulkanReconstructionResources replacementResources = null;
-        RealtimeIntegratorPipeline replacementPipeline = null;
         try {
-            if (!resourcesMatch) {
-                replacementResources =
-                        this.reconstructionRegistry.createResources(atmosphere, selection);
-                this.requireRayDispatchCapacity(
-                        replacementResources.selection().extent().width(),
-                        replacementResources.selection().extent().height());
-            }
-            if (replacePipeline) {
-                replacementPipeline = this.createPipeline();
-            }
-            VulkanReconstructionResources targetResources = resourcesMatch
-                    ? current
-                    : replacementResources;
-            RealtimeIntegratorPipeline targetPipeline = replacePipeline
-                    ? replacementPipeline
-                    : this.pipeline;
-            targetPipeline.ensureDescriptors(
+            replacementResources =
+                    this.reconstructionRegistry.createResources(atmosphere, selection);
+            this.requireRayDispatchCapacity(
+                    replacementResources.selection().extent().width(),
+                    replacementResources.selection().extent().height());
+            this.pipeline.ensureDescriptors(
                     tlas,
-                    targetResources.stableRadiance(),
+                    replacementResources.stableRadiance(),
                     atlasView,
                     atlasSampler,
                     sceneTextures,
@@ -188,34 +173,36 @@ final class RealtimeRenderer implements Destroyable {
                     materialTextures.opticalPages(),
                     materialTextures.textureRecords(),
                     atmosphere,
-                    targetResources.processor().rawFrame(),
+                    replacementResources.processor().rawFrame(),
                     sharcRequested);
         } catch (RuntimeException exception) {
-            ResourceCleanup.destroy(replacementPipeline, exception);
             ResourceCleanup.destroy(replacementResources, exception);
-            if (replacePipeline) {
-                PrimeInfo.LOGGER.error(
-                        "Prime could not reload the realtime integrator; keeping the current pipeline",
-                        exception);
-            }
             throw exception;
         }
-        if (!resourcesMatch) {
-            this.resources = replacementResources;
-            this.sampleState = this.sampleState.invalidated();
-            if (current != null) {
-                this.context.defer(current);
-            }
+        this.resources = replacementResources;
+        this.sampleState = this.sampleState.invalidated();
+        if (current != null) {
+            this.context.defer(current);
         }
-        if (replacePipeline) {
-            RealtimeIntegratorPipeline previous = this.pipeline;
-            this.pipeline = replacementPipeline;
-            this.pipelineInvalid = false;
-            this.sampleState = this.sampleState.invalidated();
-            this.resources.requestReset();
-            this.context.defer(previous);
+        return true;
+    }
+
+    void prewarmResources(
+            AtmospherePipeline atmosphere,
+            PostProcessingMode mode,
+            ReconstructionQualityMode quality,
+            int displayWidth,
+            int displayHeight) {
+        if (this.resources != null) {
+            throw new IllegalStateException("Realtime resources are already prepared");
         }
-        return !resourcesMatch || replacePipeline;
+        ResolvedReconstruction selection = this.reconstructionRegistry.resolve(
+                mode, quality, displayWidth, displayHeight);
+        this.requireRayDispatchCapacity(
+                selection.extent().width(), selection.extent().height());
+        this.resources = this.reconstructionRegistry.createResources(
+                atmosphere, selection);
+        this.sampleState = this.sampleState.invalidated();
     }
 
     void render(RenderInput input) {
@@ -293,7 +280,7 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeFrameInput frameInput = new RealtimeFrameInput(
                 input.camera(),
                 System.nanoTime(),
-                input.scene().temporalRevision(),
+                input.scene().resetRevision(),
                 input.scene().revision(),
                 input.textureRevision(),
                 renderWidth,
@@ -441,7 +428,7 @@ final class RealtimeRenderer implements Destroyable {
         this.sampleState = this.sampleState.invalidated();
     }
 
-    void reloadActive(AtmospherePipeline atmosphere) {
+    void reload(AtmospherePipeline atmosphere) {
         RealtimeIntegratorPipeline replacementPipeline = null;
         VulkanReconstructionResources replacementResources = null;
         try {
@@ -460,27 +447,11 @@ final class RealtimeRenderer implements Destroyable {
         VulkanReconstructionResources previousResources = this.resources;
         this.pipeline = replacementPipeline;
         this.resources = replacementResources;
-        this.pipelineInvalid = false;
         this.sampleState = this.sampleState.invalidated();
         this.context.defer(previousPipeline);
         if (previousResources != null) {
             this.context.defer(previousResources);
         }
-    }
-
-    void invalidatePipeline() {
-        this.pipelineInvalid = true;
-    }
-
-    private void ensurePipeline() {
-        if (!this.pipelineInvalid) {
-            return;
-        }
-        RealtimeIntegratorPipeline replacement = this.createPipeline();
-        RealtimeIntegratorPipeline previous = this.pipeline;
-        this.pipeline = replacement;
-        this.pipelineInvalid = false;
-        this.context.defer(previous);
     }
 
     private RealtimeIntegratorPipeline createPipeline() {

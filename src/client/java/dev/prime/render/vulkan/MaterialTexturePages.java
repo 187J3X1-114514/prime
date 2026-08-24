@@ -93,15 +93,30 @@ public final class MaterialTexturePages implements AutoCloseable {
         return requireResources().textureRecords;
     }
 
-    /** Records the initial upload and any base-animation frame changes. */
-    public FrameToken prepare(VkCommandBuffer commandBuffer) {
+    /** Records the complete generation upload before it can be consumed by a frame. */
+    public FrameToken prepareInitial(VkCommandBuffer commandBuffer) {
+        if (requireResources().prepared) {
+            return null;
+        }
+        return this.prepare(commandBuffer, true);
+    }
+
+    /** Records only real animation changes; static generation work is forbidden in frame use. */
+    public FrameToken prepareAnimations(VkCommandBuffer commandBuffer) {
+        if (!requireResources().prepared) {
+            throw new IllegalStateException(
+                    "Material texture generation was not uploaded during bootstrap");
+        }
+        return this.prepare(commandBuffer, false);
+    }
+
+    private FrameToken prepare(VkCommandBuffer commandBuffer, boolean initialUpload) {
         if (this.pending != null) {
             throw new IllegalStateException(
                     "Previous LabPBR upload has not been submitted or abandoned");
         }
         Resources current = requireResources();
         this.animationCopies.clear();
-        boolean initialUpload = !current.prepared;
         if (initialUpload) {
             recordInitialUpload(commandBuffer, current);
         }

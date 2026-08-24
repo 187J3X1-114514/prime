@@ -27,6 +27,12 @@ final class VulkanSharedPrograms implements AutoCloseable {
         this.context = context;
     }
 
+    void prewarm() {
+        acquireDisplayTransform().release();
+        acquireAutoExposure().release();
+        acquireHdrPresent().release();
+    }
+
     SharedComputeProgram acquireDisplayTransform() {
         requireOpen();
         if (this.displayTransform == null) {

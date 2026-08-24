@@ -118,6 +118,7 @@ public final class AtmospherePipeline implements Destroyable {
     private long nextFrameToken;
     private long pendingFrameToken;
     private int pendingChanges;
+    private boolean staticPreparationPending;
     private boolean destroyed;
 
     public AtmospherePipeline(VulkanContext context) {
@@ -319,6 +320,50 @@ public final class AtmospherePipeline implements Destroyable {
         return this.sunShadowQuery;
     }
 
+    /** Records camera-independent LUT generation before the renderer becomes frame-ready. */
+    public boolean prepareStatic(VkCommandBuffer commandBuffer) {
+        if (this.history.staticPrepared()) {
+            return false;
+        }
+        if (this.staticPreparationPending || this.pendingFrameToken != 0L) {
+            throw new IllegalStateException("Atmosphere preparation is already pending");
+        }
+        transitionAllToGeneral(commandBuffer);
+        dispatch(commandBuffer, this.transmittancePipeline, 32, 8, 1, null);
+        computeWriteBarrier(
+                commandBuffer,
+                this.transmittanceImages,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                        | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+        // Split the two spectral groups along dispatch Z to keep the one-time invocation below
+        // Windows GPU-timeout risk while preserving the reference's 256 directions × 128 steps.
+        dispatch(commandBuffer, this.multiScatteringPipeline, 8, 8, 2, null);
+        computeWriteBarrier(
+                commandBuffer,
+                this.multiScatteringImages,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        this.staticPreparationPending = true;
+        return true;
+    }
+
+    public void submittedStatic() {
+        if (!this.staticPreparationPending) {
+            throw new IllegalStateException("No static atmosphere preparation is pending");
+        }
+        for (VulkanImage image : this.initialImages) {
+            image.markInitialized();
+        }
+        this.history.staticSubmitted();
+        this.staticPreparationPending = false;
+    }
+
+    public void abandonStatic() {
+        if (!this.staticPreparationPending) {
+            throw new IllegalStateException("No static atmosphere preparation is pending");
+        }
+        this.staticPreparationPending = false;
+    }
+
     public long prepare(
             VkCommandBuffer commandBuffer,
             SunShadowPipeline pipeline,
@@ -334,10 +379,8 @@ public final class AtmospherePipeline implements Destroyable {
         int changes;
         try {
             if (!this.history.staticPrepared()) {
-                // The shared RT pipeline descriptor set also names these images. They must be in
-                // their declared GENERAL layout before the sun-cache raygen dispatch is recorded,
-                // even though that raygen stage does not read their contents.
-                transitionAllToGeneral(commandBuffer);
+                throw new IllegalStateException(
+                        "Static atmosphere LUTs were not prepared during bootstrap");
             }
             shadowPrepared = this.sunShadow.prepare(
                     commandBuffer,
@@ -372,7 +415,6 @@ public final class AtmospherePipeline implements Destroyable {
             }
             return 0L;
         }
-        boolean prepareStatic = (changes & AtmosphereLutHistory.STATIC) != 0;
         // Sky-view azimuth is defined relative to the sun's horizontal projection, so rotating
         // that projection around world Y changes only the lookup orientation, not the table data.
         boolean prepareSky = (changes & AtmosphereLutHistory.SKY) != 0;
@@ -381,26 +423,12 @@ public final class AtmospherePipeline implements Destroyable {
         this.pendingFrameToken = token;
         this.pendingChanges = changes;
         try {
-            if (prepareStatic) {
-                dispatch(commandBuffer, this.transmittancePipeline, 32, 8, 1, null);
-                computeWriteBarrier(commandBuffer, this.transmittanceImages, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                        | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
-                // Split the two spectral groups along dispatch Z. This preserves the reference's
-                // 256 directions × 128 steps while avoiding one twice-as-long shader invocation,
-                // which matters for Windows GPU timeout resilience during the one-time precompute.
-                dispatch(commandBuffer, this.multiScatteringPipeline, 8, 8, 2, null);
-                computeWriteBarrier(
-                        commandBuffer,
-                        this.multiScatteringImages,
-                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-            } else {
-                VulkanImage[] overwritten = prepareSky && prepareAerial
-                        ? this.dynamicImages
-                        : prepareSky
-                                ? this.skyImage
-                                : this.aerialImages;
-                shaderReadToComputeWriteBarrier(commandBuffer, overwritten);
-            }
+            VulkanImage[] overwritten = prepareSky && prepareAerial
+                    ? this.dynamicImages
+                    : prepareSky
+                            ? this.skyImage
+                            : this.aerialImages;
+            shaderReadToComputeWriteBarrier(commandBuffer, overwritten);
 
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 ByteBuffer pushConstants = createPushConstants(
@@ -413,10 +441,8 @@ public final class AtmospherePipeline implements Destroyable {
                 int epipoleXBits = pushConstants.getInt(72);
                 int epipoleYBits = pushConstants.getInt(76);
                 if (shadowPrepared) {
-                    if (!prepareStatic) {
-                        shaderReadToComputeWriteBarrier(
-                                commandBuffer, this.sunShadowHierarchies);
-                    }
+                    shaderReadToComputeWriteBarrier(
+                            commandBuffer, this.sunShadowHierarchies);
                     // Epipolar profiles consume only the resolved leaf layer. Building the
                     // nine parent levels left over from per-ray traversal is pure overhead.
                     pushConstants.putInt(72, 0);
@@ -485,11 +511,6 @@ public final class AtmospherePipeline implements Destroyable {
             return;
         }
         requirePendingToken(token);
-        if ((this.pendingChanges & AtmosphereLutHistory.STATIC) != 0) {
-            for (VulkanImage image : this.initialImages) {
-                image.markInitialized();
-            }
-        }
         this.history.commit();
         this.sunShadow.submitted();
         this.pendingFrameToken = 0L;

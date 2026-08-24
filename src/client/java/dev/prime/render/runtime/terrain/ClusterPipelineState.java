@@ -1,6 +1,7 @@
 package dev.prime.render.runtime.terrain;
 
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 /**
  * Render-thread-owned generation state across the terrain request pipeline.
@@ -13,10 +14,14 @@ final class ClusterPipelineState {
     private static final long ABSENT = Long.MIN_VALUE;
 
     private final Long2LongOpenHashMap queued = new Long2LongOpenHashMap();
-    private final Long2LongOpenHashMap inFlight = new Long2LongOpenHashMap();
+    private final Long2ObjectOpenHashMap<InFlight> inFlight = new Long2ObjectOpenHashMap<>();
     private final Long2LongOpenHashMap ready = new Long2LongOpenHashMap();
 
     boolean enqueue(long key, long generation) {
+        InFlight active = this.inFlight.get(key);
+        if (active != null && active.generation() != generation) {
+            active.cancellation().cancel();
+        }
         if (isQueued(key, generation)
                 || isInFlight(key, generation)
                 || isReady(key, generation)) {
@@ -45,19 +50,24 @@ final class ClusterPipelineState {
     }
 
     boolean isInFlight(long key, long generation) {
-        return this.inFlight.getOrDefault(key, ABSENT) == generation;
+        InFlight active = this.inFlight.get(key);
+        return active != null && active.generation() == generation;
     }
 
-    void beginInFlight(long key, long generation) {
+    Cancellation beginInFlight(long key, long generation) {
         if (hasInFlight(key) || isReady(key, generation)) {
             throw new IllegalStateException("Cluster generation entered two pipeline stages");
         }
         cancelQueued(key, generation);
-        this.inFlight.put(key, generation);
+        Cancellation cancellation = new Cancellation();
+        this.inFlight.put(key, new InFlight(generation, cancellation));
+        return cancellation;
     }
 
     void cancelInFlight(long key, long generation) {
-        if (isInFlight(key, generation)) {
+        InFlight active = this.inFlight.get(key);
+        if (active != null && active.generation() == generation) {
+            active.cancellation().cancel();
             this.inFlight.remove(key);
         }
     }
@@ -83,8 +93,27 @@ final class ClusterPipelineState {
     }
 
     void clear() {
+        for (InFlight active : this.inFlight.values()) {
+            active.cancellation().cancel();
+        }
         this.queued.clear();
         this.inFlight.clear();
         this.ready.clear();
+    }
+
+    /** Render-thread cancellation published to exactly one worker-owned build. */
+    static final class Cancellation {
+        private volatile boolean cancelled;
+
+        boolean cancelled() {
+            return this.cancelled;
+        }
+
+        private void cancel() {
+            this.cancelled = true;
+        }
+    }
+
+    private record InFlight(long generation, Cancellation cancellation) {
     }
 }

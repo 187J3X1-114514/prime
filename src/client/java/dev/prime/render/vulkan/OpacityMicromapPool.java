@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.WeakHashMap;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
 /** Render-thread-owned pool for immutable opacity-micromap block sets. */
@@ -16,8 +15,6 @@ public final class OpacityMicromapPool implements AutoCloseable {
     private final VulkanContext context;
     private final ArrayList<Entry> entries = new ArrayList<>();
     private final Map<Block, ArrayList<Entry>> entriesByBlock = new HashMap<>();
-    private final Map<OpacityMicromapData, PreparedContent> preparedBySource =
-            new WeakHashMap<>();
     private boolean closed;
 
     public OpacityMicromapPool(VulkanContext context) {
@@ -39,8 +36,7 @@ public final class OpacityMicromapPool implements AutoCloseable {
             return null;
         }
         source.requireValidTriangleIndices();
-        PreparedContent prepared = this.preparedBySource.computeIfAbsent(
-                source, PreparedContent::from);
+        PreparedContent prepared = PreparedContent.from(source);
         Entry entry = null;
         int[] blockRemap = null;
         ArrayList<Entry> candidates = null;
@@ -139,7 +135,6 @@ public final class OpacityMicromapPool implements AutoCloseable {
             throw new IllegalStateException(
                     "Opacity micromap pool closed with live references");
         }
-        this.preparedBySource.clear();
     }
 
     int entryCount() {

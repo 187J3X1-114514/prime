@@ -26,7 +26,6 @@ public interface RealtimeIntegratorPipeline extends Destroyable {
 
     long prepareFrame(
             VkCommandBuffer commandBuffer,
-            VulkanImageInitializationBatch initialization,
             RealtimeFramePlan plan,
             TerrainScene.ResidentSceneView scene,
             long textureRevision);

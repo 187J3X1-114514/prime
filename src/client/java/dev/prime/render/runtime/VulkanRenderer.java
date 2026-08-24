@@ -22,6 +22,7 @@ import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.VulkanShaderModules;
 import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
@@ -36,6 +37,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.data.AtlasIds;
 import net.minecraft.tags.FluidTags;
 import org.joml.Matrix4fc;
+import org.lwjgl.vulkan.VK12;
+import org.lwjgl.vulkan.VkCommandBuffer;
 
 public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
@@ -57,8 +60,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private FrameCamera camera;
     private AstronomyState astronomyState;
     private OfflineSession pendingOfflineSession;
-    // Resource-reload apply can publish this request off the render thread; all GPU mutation is
-    // still consumed and owned by beginFrame on the render thread.
+    // Manual reload requests may arrive between frames; mutation remains render-thread owned.
     private volatile boolean shaderReloadRequested;
     private String shaderFingerprint;
     private SessionControls frameControls = SessionControls.defaults();
@@ -78,6 +80,7 @@ public final class VulkanRenderer implements AutoCloseable {
         MaterialTexturePages newMaterialTextures = null;
         DlssRrNative.Context newNgxContext = null;
         try {
+            newContext.prewarmSharedPrograms();
             newStagingArena = new StagingArena(newContext);
             newAtmosphere = new AtmospherePipeline(newContext);
             newTraceBackend = new TraceBackend(newContext);
@@ -111,6 +114,38 @@ public final class VulkanRenderer implements AutoCloseable {
             ResourceCleanup.close(newStagingArena, exception);
             throw exception;
         }
+    }
+
+    public static boolean bootstrapResourcesReady(Minecraft minecraft) {
+        try {
+            TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
+            return VanillaLabPbrAtlas.hasStitchedSprites(atlas)
+                    && atlas.getTextureView() instanceof VulkanGpuTextureView
+                    && atlas.getSampler() instanceof VulkanGpuSampler;
+        } catch (IllegalStateException ignored) {
+            return false;
+        }
+    }
+
+    /** Completes resource-dependent CPU translation and immutable GPU uploads before frame use. */
+    public void bootstrap(Minecraft minecraft, RendererSettings settings) {
+        if (!this.synchronizeLabPbr(minecraft)) {
+            throw new IllegalStateException(
+                    "Prime block textures are not ready for renderer bootstrap");
+        }
+        this.submitBootstrapResources(this.atmosphere, true, true);
+        int width = minecraft.getWindow().getWidth();
+        int height = minecraft.getWindow().getHeight();
+        if (width <= 0 || height <= 0) {
+            throw new IllegalStateException(
+                    "Prime display extent is unavailable during renderer bootstrap");
+        }
+        this.realtimeRenderer.prewarmResources(
+                this.atmosphere,
+                settings.postProcessingMode(),
+                settings.reconstructionQuality(),
+                width,
+                height);
     }
 
     public boolean beginFrame(
@@ -153,14 +188,14 @@ public final class VulkanRenderer implements AutoCloseable {
         return screenshotRequested;
     }
 
-    private void synchronizeLabPbr(Minecraft minecraft) {
+    private boolean synchronizeLabPbr(Minecraft minecraft) {
         TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
         // Atlas objects exist before their GPU texture is uploaded. getTextureView() deliberately
         // throws during that short interval, which is normal startup state rather than a renderer
         // failure. The stitch map becomes non-empty in the same upload that creates the view.
         if (!VanillaLabPbrAtlas.hasStitchedSprites(atlas)) {
             this.blockAtlasFrame = null;
-            return;
+            return false;
         }
         if (!(atlas.getTextureView() instanceof VulkanGpuTextureView atlasView)
                 || !(atlas.getSampler() instanceof VulkanGpuSampler atlasSampler)) {
@@ -184,6 +219,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasSampler,
                 sourceGeneration,
                 this.blockAtlasTextureRevision);
+        return true;
     }
 
     public void captureCamera(
@@ -634,19 +670,24 @@ public final class VulkanRenderer implements AutoCloseable {
         return new ResourceReload(this, this.terrain.beginResourceReload());
     }
 
-    public void finishResourceReload(ResourceReload reload, boolean reloadShaders) {
+    public void finishResourceReload(
+            ResourceReload reload, Minecraft minecraft, boolean reloadShaders) {
         TerrainStreamer.ResourceReload terrainReload = this.requireReload(reload);
-        this.terrain.finishResourceReload(terrainReload);
         if (!this.acceptsResourceReloadEffects) {
+            this.terrain.finishResourceReload(terrainReload);
             return;
         }
         this.labPbrSource.requestReload();
-        // Minecraft's initial resource load completes after Prime has already constructed all
-        // pipelines from packaged SPIR-V. Later explicit reloads replace them before rendering.
+        if (!this.synchronizeLabPbr(minecraft)) {
+            throw new IllegalStateException(
+                    "Prime block textures are unavailable after resource reload");
+        }
+        this.submitBootstrapResources(this.atmosphere, true, true);
         if (reloadShaders) {
             this.requestShaderReload();
+            this.reloadPipelineIfRequested();
         }
-        this.invalidateAll();
+        this.terrain.finishResourceReload(terrainReload);
     }
 
     public void abortResourceReload(ResourceReload reload) {
@@ -701,20 +742,25 @@ public final class VulkanRenderer implements AutoCloseable {
         boolean offlineActive = this.screenshotActive();
         AtmospherePipeline replacementAtmosphere = null;
         SunShadowPipeline replacementSunShadow = null;
+        boolean replacementAtmosphereSubmitted = false;
         try {
             this.context.invalidateSharedPrograms();
+            this.context.prewarmSharedPrograms();
             replacementAtmosphere = new AtmospherePipeline(this.context);
             replacementSunShadow = this.traceBackend.prepareSunShadowReload();
-            if (offlineActive) {
-                this.offlineRenderer.reloadActive();
-                this.realtimeRenderer.invalidatePipeline();
-            } else {
-                this.realtimeRenderer.reloadActive(replacementAtmosphere);
-                this.offlineRenderer.invalidatePipeline();
-            }
+            this.submitBootstrapResources(replacementAtmosphere, false, false);
+            replacementAtmosphereSubmitted = true;
+            this.offlineRenderer.reload();
+            this.realtimeRenderer.reload(replacementAtmosphere);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacementSunShadow, exception);
-            ResourceCleanup.destroy(replacementAtmosphere, exception);
+            if (replacementAtmosphereSubmitted) {
+                AtmospherePipeline submittedAtmosphere = replacementAtmosphere;
+                ResourceCleanup.run(
+                        () -> this.context.defer(submittedAtmosphere), exception);
+            } else {
+                ResourceCleanup.destroy(replacementAtmosphere, exception);
+            }
             PrimeInfo.LOGGER.error("Prime shader reload failed; keeping the previous pipeline", exception);
             return;
         }
@@ -731,6 +777,62 @@ public final class VulkanRenderer implements AutoCloseable {
         PrimeInfo.LOGGER.info(
                 "Reloaded Prime {} ray tracing and atmosphere shaders",
                 offlineActive ? "offline" : "realtime");
+    }
+
+    private void submitBootstrapResources(
+            AtmospherePipeline targetAtmosphere,
+            boolean prepareTraceBackend,
+            boolean prepareMaterialTextures) {
+        var encoder = this.context.commandEncoder();
+        VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
+        VulkanImageInitializationBatch initialization = new VulkanImageInitializationBatch();
+        initialization.begin();
+        long traceToken = 0L;
+        boolean atmospherePending = false;
+        MaterialTexturePages.FrameToken materialToken = null;
+        boolean submitted = false;
+        try {
+            if (prepareTraceBackend) {
+                traceToken = this.traceBackend.prepareStatic(commandBuffer, initialization);
+            }
+            atmospherePending = targetAtmosphere.prepareStatic(commandBuffer);
+            if (prepareMaterialTextures) {
+                materialToken = this.materialTextures.prepareInitial(commandBuffer);
+            }
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end Prime renderer bootstrap command buffer");
+            encoder.execute(commandBuffer);
+            submitted = true;
+            initialization.submitted();
+            if (traceToken != 0L) {
+                this.traceBackend.submitted(traceToken);
+            }
+            if (atmospherePending) {
+                targetAtmosphere.submittedStatic();
+            }
+            this.materialTextures.submitted(materialToken);
+        } catch (RuntimeException exception) {
+            if (submitted) {
+                throw exception;
+            }
+            RuntimeException failure = exception;
+            MaterialTexturePages.FrameToken abandonedMaterial = materialToken;
+            if (abandonedMaterial != null) {
+                failure = ResourceCleanup.run(
+                        () -> this.materialTextures.abandon(abandonedMaterial), failure);
+            }
+            if (atmospherePending) {
+                failure = ResourceCleanup.run(targetAtmosphere::abandonStatic, failure);
+            }
+            long abandonedTrace = traceToken;
+            if (abandonedTrace != 0L) {
+                failure = ResourceCleanup.run(
+                        () -> this.traceBackend.abandon(abandonedTrace), failure);
+            }
+            failure = ResourceCleanup.run(initialization::abandon, failure);
+            throw failure;
+        }
     }
 
     private boolean isCameraInWater(Minecraft minecraft, FrameCamera camera) {

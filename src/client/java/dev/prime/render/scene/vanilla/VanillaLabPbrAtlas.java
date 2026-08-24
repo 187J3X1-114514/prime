@@ -6,6 +6,7 @@ import dev.prime.mixin.accessor.SpriteContentsAccessor;
 import dev.prime.mixin.accessor.TextureAtlasAccessor;
 import dev.prime.mixin.accessor.TextureAtlasSpriteAccessor;
 import dev.prime.render.scene.SpriteId;
+import dev.prime.render.scene.TextureIdRegistry;
 import dev.prime.render.terrain.LabPbrAtlasFrame;
 import dev.prime.render.terrain.LabPbrEmissionMap;
 import dev.prime.render.terrain.LabPbrHeightMap;
@@ -39,6 +40,7 @@ public final class VanillaLabPbrAtlas {
     private static final String SUPPORTED_FORMAT = "lab-pbr/1.3";
 
     private final AtomicLong requestedGeneration = new AtomicLong();
+    private final TextureIdRegistry textureIds = new TextureIdRegistry();
     private TextureAtlas capturedAtlas;
     private long capturedGeneration = -1L;
     private LabPbrAtlasFrame.Snapshot snapshot;
@@ -53,7 +55,7 @@ public final class VanillaLabPbrAtlas {
         if (this.snapshot == null
                 || this.capturedAtlas != atlas
                 || this.capturedGeneration != generation) {
-            Capture capture = capture(minecraft.getResourceManager(), atlas);
+            Capture capture = this.capture(minecraft.getResourceManager(), atlas);
             this.capturedAtlas = atlas;
             this.capturedGeneration = generation;
             this.snapshot = capture.snapshot;
@@ -71,7 +73,7 @@ public final class VanillaLabPbrAtlas {
         this.requestedGeneration.incrementAndGet();
     }
 
-    private static Capture capture(ResourceManager resourceManager, TextureAtlas atlas) {
+    private Capture capture(ResourceManager resourceManager, TextureAtlas atlas) {
         TextureAtlasAccessor atlasAccess = (TextureAtlasAccessor) (Object) atlas;
         boolean supported = readsLabPbr13(resourceManager);
         Set<SpriteId> normalSprites = new HashSet<>();
@@ -85,14 +87,10 @@ public final class VanillaLabPbrAtlas {
                 new ArrayList<>(atlasAccess.prime$texturesByName().values());
         atlasSprites.sort(Comparator.comparing(
                 sprite -> sprite.contents().name().toString()));
-        if (atlasSprites.size() > dev.prime.render.scene.CapturedSprite.MAX_TEXTURE_ID) {
-            throw new IllegalStateException("Block atlas exceeds Prime's 24-bit texture ID space");
-        }
-        for (int index = 0; index < atlasSprites.size(); index++) {
-            TextureAtlasSprite sprite = atlasSprites.get(index);
+        for (TextureAtlasSprite sprite : atlasSprites) {
             Identifier name = sprite.contents().name();
             SpriteId spriteId = spriteId(name);
-            int textureId = index + 1;
+            int textureId = this.textureIds.resolve(spriteId);
             textureIds.put(spriteId, textureId);
             LabPbrAtlasFrame.MaterialSource normal = supported
                     ? readMaterial(resourceManager, materialResource(name, "_n"), sprite)

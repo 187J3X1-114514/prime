@@ -160,20 +160,6 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         }
     }
 
-    public long prepareFrame(
-            VkCommandBuffer commandBuffer,
-            VulkanImageInitializationBatch initialization) {
-        return this.backend.prepareFrame(commandBuffer, initialization);
-    }
-
-    public void submitted(long token) {
-        this.backend.submitted(token);
-    }
-
-    public void abandon(long token) {
-        this.backend.abandon(token);
-    }
-
     /** Releases descriptor bindings and wavefront backing after the device has become idle. */
     public void releaseSizedResourcesAfterIdle() {
         if (this.bindings != null) {

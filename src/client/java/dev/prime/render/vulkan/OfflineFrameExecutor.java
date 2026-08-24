@@ -57,14 +57,11 @@ public final class OfflineFrameExecutor {
         VkCommandBuffer commandBuffer =
                 encoder.allocateAndBeginTransientCommandBuffer();
         long atmosphereFrame = 0L;
-        long pipelineFrame = 0L;
         MaterialTexturePages.FrameToken materialFrame = null;
         VulkanFrameSubmission submission =
                 new VulkanFrameSubmission(this.imageInitialization);
         try {
             submission.begin();
-            pipelineFrame = pipeline.prepareFrame(
-                    commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
                     () -> "Prime offline path accumulation");
@@ -76,7 +73,7 @@ public final class OfflineFrameExecutor {
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.prepareSceneTexturesForTrace(
                     commandBuffer, sceneTextures);
-            materialFrame = materialTextures.prepare(commandBuffer);
+            materialFrame = materialTextures.prepareAnimations(commandBuffer);
             // The sun-cache raygen borrows the shared scene descriptor set prepared above.
             atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
@@ -109,9 +106,7 @@ public final class OfflineFrameExecutor {
             HdrPresentation.publish(this.context, display.hdrOutput(), displayOutput);
             // Prime histories advance only after Minecraft's open host submission accepts it.
             submission.submitted();
-            long submittedPipelineFrame = pipelineFrame;
-            RuntimeException commitFailure = ResourceCleanup.run(
-                    () -> pipeline.submitted(submittedPipelineFrame), null);
+            RuntimeException commitFailure = null;
             long submittedAtmosphereFrame = atmosphereFrame;
             commitFailure = ResourceCleanup.run(
                     () -> atmosphere.submitted(submittedAtmosphereFrame),
@@ -125,12 +120,6 @@ public final class OfflineFrameExecutor {
         } catch (RuntimeException exception) {
             if (!submission.wasAcceptedByMinecraftHostSubmission()) {
                 RuntimeException failure = submission.abandon(exception);
-                if (pipelineFrame != 0L) {
-                    long abandonedPipelineFrame = pipelineFrame;
-                    failure = ResourceCleanup.run(
-                            () -> pipeline.abandon(abandonedPipelineFrame),
-                            failure);
-                }
                 long abandonedAtmosphereFrame = atmosphereFrame;
                 failure = ResourceCleanup.run(
                         () -> atmosphere.abandon(abandonedAtmosphereFrame),

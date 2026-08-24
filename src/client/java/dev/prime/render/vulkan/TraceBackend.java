@@ -139,11 +139,11 @@ public final class TraceBackend implements Destroyable {
         }
     }
 
-    public long prepareFrame(
+    public long prepareStatic(
             VkCommandBuffer commandBuffer,
             VulkanImageInitializationBatch initialization) {
         if (this.pendingFrameToken != 0L) {
-            throw new IllegalStateException("Trace-backend upload is already pending");
+            throw new IllegalStateException("Trace-backend static upload is already pending");
         }
         int uploads = 0;
         try {

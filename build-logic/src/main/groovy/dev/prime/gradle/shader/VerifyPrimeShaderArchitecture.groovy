@@ -347,6 +347,13 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
             def entryPath = pathKey(entry)
             [(entryPath): closureFor(entryPath)]
         }
+        def normalizedSourceBytes = { String path ->
+            new File(path).getText('UTF-8')
+                    .replace('\r\n', '\n')
+                    .replace('\r', '\n')
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                    .length
+        }
         def primaryChain = productionEntries.find {
             shaderRelative(it) == 'entry/realtime/primary_chain.raygeneration.slang'
         }
@@ -397,7 +404,7 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
         }
         budget.entries.each { relative, limit ->
             def closure = closures[pathKey(entryByRelative[relative])]
-            long bytes = closure.sum { new File(it).length() } as long
+            long bytes = closure.sum(normalizedSourceBytes) as long
             if (closure.size() > limit.maxFiles || bytes > limit.maxBytes) {
                 throw new GradleException(
                         "Shader closure budget exceeded for ${relative}: "
@@ -453,7 +460,7 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
         lines.add("unmodularized=${unmodularized.size()}")
         productionEntries.sort { pathKey(it) }.each { entry ->
             def closure = closures[pathKey(entry)]
-            long bytes = closure.sum { new File(it).length() } as long
+            long bytes = closure.sum(normalizedSourceBytes) as long
             def relative = shaderRoot.toPath().relativize(entry.toPath())
                     .toString().replace('\\', '/')
             lines.add("entry ${relative} files=${closure.size()} bytes=${bytes} "

@@ -66,7 +66,8 @@ public void primeSharcTrainingLandingScatter(
 
     PrimeDenoiserState denoiserState = primeInitialDenoiserState();
     if (continuation) {
-        path.bounce++;
+        // The query renderer starts its independent steady domain after this same landing.
+        path.bounce = 0u;
         // This bootstrap vertex intentionally has no NEE job. The first cached suffix therefore
         // treats an emitter reached by the bridge as an uncompeted BSDF sample.
         path.flags |= PRIME_PATH_PREVIOUS_DISCRETE;

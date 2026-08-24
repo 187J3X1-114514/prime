@@ -31,8 +31,10 @@ final class RealtimeSharc implements Destroyable {
     static final int TRAINING_PHASE_COUNT = TRAINING_GRID_SIZE * TRAINING_GRID_SIZE;
     private static final int ACCUMULATION_FRAMES = 64;
     private static final int STALE_FRAMES = 128;
-    private static final float LOGARITHM_BASE = 2.0F;
-    private static final float SCENE_SCALE = 50.0F;
+    static final float LOGARITHM_BASE = 2.0F;
+    // With zero level bias, every level is a power-of-two subdivision or multiple of one block.
+    static final float SCENE_SCALE = 64.0F;
+    static final float LEVEL_BIAS = 0.0F;
     private static final String INTEGRATED_UPDATE_SHADER =
             GeneratedShaderPrograms.resource("sharc_integrated_update");
     private static final String RESOLVE_SHADER =
@@ -329,7 +331,7 @@ final class RealtimeSharc implements Destroyable {
             putVec3(constants, ShaderAbi.SHARC_FRAME_PREVIOUS_CAMERA_POSITION_OFFSET,
                     previousX, previousY, previousZ);
             constants.putFloat(ShaderAbi.SHARC_FRAME_SCENE_SCALE_OFFSET, SCENE_SCALE);
-            constants.putFloat(ShaderAbi.SHARC_FRAME_LEVEL_BIAS_OFFSET, 0.0F);
+            constants.putFloat(ShaderAbi.SHARC_FRAME_LEVEL_BIAS_OFFSET, LEVEL_BIAS);
             constants.putFloat(
                     ShaderAbi.SHARC_FRAME_RADIANCE_SCALE_OFFSET,
                     radianceScale(input.lighting()));

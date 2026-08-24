@@ -1,4 +1,7 @@
 #include "core/prime_test_abi.slang"
+#define PRIME_SHARC_ELIGIBILITY_CORE_ONLY 1
+#include "service/sharc/eligibility.h"
+#undef PRIME_SHARC_ELIGIBILITY_CORE_ONLY
 #include "service/sharc/training_core.h"
 
 static const uint PRIME_SHARC_TRAINING_INPUT_WORDS = 4u;
@@ -75,6 +78,16 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     uint pendingControl = primeSharcTrainingWithPendingAnchor(
             anchorControl, anchorSlot);
     if (bypass != expectedBypass
+            || !primeSharcCacheFootprintEligible(
+                    false, false, 0.0, 0.0, 1.0)
+            || primeSharcCacheFootprintEligible(
+                    true, false, 1.0, 100.0, 1.0)
+            || primeSharcCacheFootprintEligible(
+                    false, true, 0.9, 1.0, 1.0)
+            || primeSharcCacheFootprintEligible(
+                    false, true, 0.5, 2.0, 1.0)
+            || !primeSharcCacheFootprintEligible(
+                    false, true, 0.9, 2.0, 1.0)
             || primeSharcTerminationReady(1.0)
             || !primeSharcTerminationReady(2.0)
             || selectedPhaseCount != 1u

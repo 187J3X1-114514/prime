@@ -10,6 +10,20 @@ import org.junit.jupiter.api.Test;
 
 final class RealtimeSharcTest {
     @Test
+    void logarithmicGridAlignsEveryLevelToMinecraftBlocks() {
+        assertEquals(2.0F, RealtimeSharc.LOGARITHM_BASE);
+        assertEquals(64.0F, RealtimeSharc.SCENE_SCALE);
+        assertEquals(0.0F, RealtimeSharc.LEVEL_BIAS);
+        for (int level = 1; level <= 10; level++) {
+            float voxelSize = (float) (Math.pow(
+                    RealtimeSharc.LOGARITHM_BASE,
+                    level - RealtimeSharc.LEVEL_BIAS)
+                    / RealtimeSharc.SCENE_SCALE);
+            assertEquals(Math.scalb(1.0F, level - 6), voxelSize);
+        }
+    }
+
+    @Test
     void cacheUsesTheFixedFourMillionEntryLayout() {
         assertEquals(1 << 22, RealtimeSharc.CAPACITY);
         assertEquals(32L << 20, RealtimeSharc.HASH_BYTES);

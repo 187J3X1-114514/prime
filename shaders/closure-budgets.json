@@ -155,7 +155,7 @@
     },
     "entry/realtime/sharc/bridge_query.raygeneration.slang": {
       "maxFiles": 65,
-      "maxBytes": 346892
+      "maxBytes": 347399
     },
     "entry/realtime/sharc/bridge_trace.raygeneration.slang": {
       "maxFiles": 35,
@@ -167,7 +167,7 @@
     },
     "entry/realtime/sharc/training_landing.raygeneration.slang": {
       "maxFiles": 102,
-      "maxBytes": 367695
+      "maxBytes": 367790
     },
     "entry/realtime/sharc/training_classify.raygeneration.slang": {
       "maxFiles": 84,
@@ -191,7 +191,7 @@
     },
     "entry/realtime/sharc/training_reduce.raygeneration.slang": {
       "maxFiles": 65,
-      "maxBytes": 359524
+      "maxBytes": 360031
     },
     "entry/realtime/steady_area.raygeneration.slang": {
       "maxFiles": 147,

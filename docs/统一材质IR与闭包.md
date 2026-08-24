@@ -90,6 +90,9 @@ emission 和 decorative interface。decorative interface 表示玻璃 alpha 规�
 - subsurface 0 表示关闭，1..190 表示权重 `code / 190`；
 - porosity 0..64 表示 `code / 64`，当前闭包尚不求值，但不再保留源格式字节。
 
+subsurface code 只保留作者输入；生产闭包仅在非金属材质明确标记 thin-walled 时消费该权重。
+厚材质不尝试缺少散射半径控制的表面穿透近似，统一把 subsurface 权重清零并退化为常规漫反射。
+
 玻璃保持既有规则：稳定 reference alpha 判定 stained，当前 alpha 与 seamless 开关判定
 decorative；无色 decorative 使用 opaque rough dielectric，染色 decorative 保持透射；光滑
 玻璃主体 roughness 为 0；decorative 优先使用 authored `_s`，否则使用全局默认。water 保持

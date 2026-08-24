@@ -18,7 +18,7 @@ final class CompactOpenPbrOpaqueGpuTest {
     private static final int INPUT_WORDS = 4;
     private static final int WITNESS_WORDS = 12;
     private static final int CASES_PER_KIND = 8_192;
-    private static final int KIND_COUNT = 4;
+    private static final int KIND_COUNT = 3;
     private static final int CASE_COUNT = CASES_PER_KIND * KIND_COUNT;
     private static final int MIXED_CASE_COUNT = 16_384;
     private static final int MIXED_WITNESS_WORDS = 10;
@@ -91,7 +91,7 @@ final class CompactOpenPbrOpaqueGpuTest {
     }
 
     @Test
-    void fractionalSubsurfacePreservesOpenPbrCompositionProperties() throws IOException {
+    void fractionalThinSubsurfacePreservesOpenPbrCompositionProperties() throws IOException {
         Path shader = Path.of(
                 System.getProperty("prime.test.slangShaderDirectory"),
                 "compact_openpbr_mixed_properties.comp.spv");
@@ -161,7 +161,7 @@ final class CompactOpenPbrOpaqueGpuTest {
             putCase(
                     input,
                     caseIndex,
-                    (caseIndex / ROUGHNESSES.length) & 1,
+                    1,
                     ROUGHNESSES[caseIndex % ROUGHNESSES.length],
                     IORS[(caseIndex * 3) % IORS.length],
                     COSINES[caseIndex % COSINES.length],

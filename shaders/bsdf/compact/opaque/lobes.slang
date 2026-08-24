@@ -165,19 +165,16 @@ public PrimeOpenPbrSampleResult primeCompactZeroRoughnessEonSample(
 public PrimeOpenPbrThroughput primeCompactSubsurfaceEval(
         float3 wi, float3 wo, PrimeCompactOpaqueState state, uint samplingFlags) {
     bool reflected = wo.z * wi.z > 0.0;
-    if ((reflected && ((samplingFlags & PRIME_OPENPBR_FLAG_DIFFUSE_REFLECTION) == 0u
-            || state.thinWalled == 0u))
+    if ((reflected && (samplingFlags & PRIME_OPENPBR_FLAG_DIFFUSE_REFLECTION) == 0u)
             || (!reflected && (samplingFlags & PRIME_OPENPBR_FLAG_DIFFUSE_TRANSMISSION) == 0u)) {
         return primeOpenPbrZeroThroughput();
     }
     PrimeOpenPbrThroughput result;
-    result.value = float3(PRIME_OPENPBR_INV_PI * abs(wo.z));
-    if (state.thinWalled != 0u) {
-        result.value *= state.subsurfaceColor * 0.5
-                * (reflected
-                        ? 1.0 - state.subsurfaceAnisotropy
-                        : 1.0 + state.subsurfaceAnisotropy);
-    }
+    result.value = float3(PRIME_OPENPBR_INV_PI * abs(wo.z))
+            * state.subsurfaceColor * 0.5
+            * (reflected
+                    ? 1.0 - state.subsurfaceAnisotropy
+                    : 1.0 + state.subsurfaceAnisotropy);
     result.flags = reflected
             ? PRIME_OPENPBR_FLAG_DIFFUSE_REFLECTION
             : PRIME_OPENPBR_FLAG_DIFFUSE_TRANSMISSION;
@@ -186,15 +183,13 @@ public PrimeOpenPbrThroughput primeCompactSubsurfaceEval(
 
 public float primeCompactSubsurfaceReflectionProbability(
         PrimeCompactOpaqueState state, uint samplingFlags) {
-    float probability = state.thinWalled != 0u
-            ? (1.0 - state.subsurfaceAnisotropy) * 0.5 : 0.0;
+    float probability = (1.0 - state.subsurfaceAnisotropy) * 0.5;
     return primeOpenPbrIsReflective(samplingFlags) ? probability : 0.0;
 }
 
 public float primeCompactSubsurfaceTransmissionProbability(
         PrimeCompactOpaqueState state, uint samplingFlags) {
-    float probability = state.thinWalled != 0u
-            ? (1.0 + state.subsurfaceAnisotropy) * 0.5 : 1.0;
+    float probability = (1.0 + state.subsurfaceAnisotropy) * 0.5;
     return primeOpenPbrIsTransmissive(samplingFlags) ? probability : 0.0;
 }
 
@@ -214,7 +209,7 @@ public float primeCompactSubsurfacePdf(
 public float3 primeCompactSubsurfaceEnergy(
         PrimeCompactOpaqueState state, uint samplingFlags) {
     if ((samplingFlags & PRIME_OPENPBR_FLAG_DIFFUSE_REFLECTION) != 0u) {
-        return state.thinWalled == 0u ? float3(1.0) : state.subsurfaceColor;
+        return state.subsurfaceColor;
     }
     return float3(0.0);
 }
@@ -243,9 +238,7 @@ public PrimeOpenPbrSampleResult primeCompactSubsurfaceSample(
         result.bsdfSample.pdf *= transmissionProbability;
         result.bsdfSample.throughput.value *= transmissionProbability;
         result.bsdfSample.throughput.flags = PRIME_OPENPBR_FLAG_DIFFUSE_TRANSMISSION;
-        if (state.thinWalled != 0u) {
-            result.bsdfSample.throughput.value *= state.subsurfaceColor;
-        }
+        result.bsdfSample.throughput.value *= state.subsurfaceColor;
     } else {
         result.bsdfSample.pdf *= reflectionProbability;
         result.bsdfSample.throughput.value *= reflectionProbability * state.subsurfaceColor;

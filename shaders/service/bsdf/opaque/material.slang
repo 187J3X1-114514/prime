@@ -28,9 +28,9 @@ public PrimeOpenPbrMaterial primeOpaqueMaterialWithMinimumRoughness(
         material.specular.color = fresnel.f82Tint;
     } else {
         material.specular.ior = primeOpenPbrF0ToIor(translated.dielectricF0);
-        material.weight.subsurface = translated.subsurfaceWeight;
-        material.subsurface.color = baseColor;
         if (translated.thinWalled != 0u) {
+            material.weight.subsurface = translated.subsurfaceWeight;
+            material.subsurface.color = baseColor;
             material.geometry.thinWalled = 1u;
             material.geometry.thickness = 0.0625;
         }

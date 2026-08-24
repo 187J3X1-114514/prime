@@ -460,6 +460,50 @@ void primeAdapterProperties(
                 opticalControl,
                 materialControl,
                 minimumLinearRoughness);
+        PrimeOpticalMaterial translatedOpaque = primeDecodeOpticalMaterial(
+                roughness, opticalControl, materialControl);
+        bool thinSubsurface = !primeOpticalMaterialIsMetal(translatedOpaque)
+                && translatedOpaque.thinWalled != 0u
+                && translatedOpaque.subsurfaceWeight > 0.0;
+        float expectedSubsurfaceWeight = thinSubsurface
+                ? translatedOpaque.subsurfaceWeight : 0.0;
+        if (opaqueMaterial.weight.subsurface != expectedSubsurfaceWeight
+                || (expectedSubsurfaceWeight == 0.0
+                        && (state.kind == PRIME_COMPACT_OPAQUE_SUBSURFACE
+                                || state.kind == PRIME_COMPACT_OPAQUE_MIXED_SUBSURFACE))) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+        if ((materialControl & PRIME_MATERIAL_THIN_WALLED) == 0u) {
+            uint diffuseOpticalControl = opticalControl
+                    & ~(0xffu << PRIME_OPTICAL_SUBSURFACE_SHIFT);
+            BsdfSample diffuseFallback = primeSampleOpaque(
+                    baseColor,
+                    outwardNormal,
+                    roughness,
+                    diffuseOpticalControl,
+                    materialControl,
+                    viewDirection,
+                    firstSample,
+                    rayT,
+                    stack);
+            PrimeBsdfComponents diffuseProbe = primeEvaluateOpaqueComponents(
+                    baseColor,
+                    outwardNormal,
+                    roughness,
+                    diffuseOpticalControl,
+                    materialControl,
+                    viewDirection,
+                    probeDirection,
+                    rayT,
+                    stack);
+            if (!primeAdapterSameSample(result.first, diffuseFallback)
+                    || !all(equal(
+                            result.probeEvaluation.response,
+                            diffuseProbe.diffuseResponse + diffuseProbe.specularResponse))
+                    || result.probeEvaluation.pdf != diffuseProbe.pdf) {
+                result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        }
         if (!primeCompactOpaqueSupports(opaqueMaterial)
                 || !primeCompactOpaqueSupports(minimumOpaqueMaterial)) {
             result.mask |= PRIME_TEST_FAILURE_STATE;

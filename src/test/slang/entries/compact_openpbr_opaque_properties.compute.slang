@@ -96,7 +96,7 @@ PrimeCompactTestResult primeCompactRun(uint4 encoded[4]) {
         material.weight.subsurface = 1.0;
         material.subsurface.color = color;
         material.subsurface.scatterAnisotropy = anisotropy;
-        material.geometry.thinWalled = result.kind == 3u ? 1u : 0u;
+        material.geometry.thinWalled = 1u;
     }
     if (!primeCompactOpaqueSupports(material)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
@@ -105,6 +105,13 @@ PrimeCompactTestResult primeCompactRun(uint4 encoded[4]) {
     unsupported.weight.coat = 0.5;
     if (primeCompactOpaqueSupports(unsupported)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    if (material.weight.subsurface > 0.0) {
+        unsupported = material;
+        unsupported.geometry.thinWalled = 0u;
+        if (primeCompactOpaqueSupports(unsupported)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
     }
 
     PrimeCompactOpaqueState state = primeCompactOpaqueStateInit(

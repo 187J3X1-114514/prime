@@ -22,7 +22,9 @@ public bool primeCompactOpaqueSupports(PrimeOpenPbrMaterial material) {
             && material.weight.diffuseRoughness == 0.0
             && material.weight.subsurface >= 0.0
             && material.weight.subsurface <= 1.0
-            && (material.weight.subsurface == 0.0 || material.weight.metalness == 0.0);
+            && (material.weight.subsurface == 0.0
+                    || (material.weight.metalness == 0.0
+                            && material.geometry.thinWalled != 0u));
 }
 
 public PrimeCompactOpaqueState primeCompactOpaqueStateInit<TransmissionGgxEnergy>(
@@ -42,7 +44,6 @@ public PrimeCompactOpaqueState primeCompactOpaqueStateInit<TransmissionGgxEnergy
                     : material.weight.subsurface > 0.0
                             ? PRIME_COMPACT_OPAQUE_MIXED_SUBSURFACE
                             : PRIME_COMPACT_OPAQUE_DIELECTRIC;
-    state.thinWalled = material.geometry.thinWalled;
     state.rayT = rayT;
     state.baseColor = material.base.color;
     state.subsurfaceWeight = material.weight.subsurface;

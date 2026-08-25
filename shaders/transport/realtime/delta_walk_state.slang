@@ -2,6 +2,7 @@
 module "transport/realtime/delta_walk_state.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/bsdf/support/sanitization.slang";
 import "service/reconstruct/nrd/common.slang";
@@ -32,6 +33,7 @@ import "state/realtime/transport.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/realtime/ordinary.slang";
 import "contract/realtime/transparent.slang";
+import "contract/path.slang";
 
 public bool primeAdvanceOrdinaryDeltaWalk(
         inout PrimeIntegratorContext context,
@@ -50,7 +52,8 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             primeLoadWavefrontActiveIntermediate(pixel, control);
 
     if (denoiserState.hasPrimarySurface
-            && path.bounce == denoiserState.primaryBounce + 1u) {
+            && primePathBounce(path.control)
+                    == denoiserState.primaryBounce + 1u) {
         float hitDistance = primeNrdSanitizeHitDistance(surface.t);
         if (denoiserState.diffusePath) {
             result.guides.diffuseHitDistance = hitDistance;
@@ -69,7 +72,10 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             denoiserState.diffusePath,
             primeEvaluateDeltaHitEmission(context, path, surface));
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     float3 scatterSample = primeSobolSample3D(
             preparedSample,
             PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
@@ -80,7 +86,7 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             viewDirection,
             scatterSample,
             volumeStack,
-            path.bounce);
+            primePathBounce(path.control));
     PrimePathScatter scatter = guided.scatter;
     BsdfSample bsdf = scatter.bsdf;
     volumeStack = scatter.volumeStack;
@@ -93,7 +99,7 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             denoiserState.diffuseAlbedoProduct *= guided.albedos.diffuse;
             denoiserState.diffusePath = false;
             denoiserState.hasPrimarySurface = true;
-            denoiserState.primaryBounce = path.bounce;
+            denoiserState.primaryBounce = primePathBounce(path.control);
         } else {
             denoiserState.specularAlbedoProduct *= guided.albedos.specular;
         }
@@ -110,7 +116,7 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             0u)) {
         return false;
     }
-    path.bounce++;
+    path.control = primeIncrementPathBounce(path.control);
     PrimeWavefrontTransportRecord updated = primeMakeUpdatedWavefrontRecord(
             path,
             volumeStack,
@@ -120,7 +126,7 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             true);
     primeStoreWavefrontTransportRecord(recordIndex, updated);
     primeStoreWavefrontPreviousLightNormal(
-            recordIndex, path.previousLightNormal);
+            recordIndex, primePathPreviousLightNormal(path.control));
     primeStoreWavefrontActiveIntermediate(pixel, false, result);
     return true;
 }
@@ -159,10 +165,10 @@ public bool primeAdvanceTransparentDeltaWalk(
             ? primeLoadWavefrontPsrState(recordIndex, record)
             : primeEmptyQueuedPsrState();
 
-    if (path.bounce == 1u) {
+    if (primePathBounce(path.control) == 1u) {
         result.firstHitDistance = primeNrdSanitizeHitDistance(surface.t);
     }
-    if (hadGuide && path.bounce == guideBounce + 1u) {
+    if (hadGuide && primePathBounce(path.control) == guideBounce + 1u) {
         if (diffusePath) {
             result.guides.diffuseHitDistance =
                     primeNrdSanitizeHitDistance(surface.t);
@@ -183,9 +189,12 @@ public bool primeAdvanceTransparentDeltaWalk(
     float3 viewDirection = -path.rayDirection;
     float3 guidePreviousPosition = path.physicalOrigin;
     float3 guideThroughput = path.throughput;
-    uint forkBounce = path.bounce;
+    uint forkBounce = primePathBounce(path.control);
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     PrimePathScatter scatter = primeSampleDiscretePathSurface(
             context,
             surface,
@@ -235,7 +244,7 @@ public bool primeAdvanceTransparentDeltaWalk(
             0u)) {
         return false;
     }
-    path.bounce++;
+    path.control = primeIncrementPathBounce(path.control);
 
     PrimeWavefrontTransportRecord updated =
             primeMakeUpdatedTransparentWavefrontRecord(
@@ -255,7 +264,7 @@ public bool primeAdvanceTransparentDeltaWalk(
         primeStoreWavefrontPsrState(recordIndex, psrState);
     } else {
         primeStoreWavefrontPreviousLightNormal(
-                recordIndex, path.previousLightNormal);
+                recordIndex, primePathPreviousLightNormal(path.control));
     }
     primeStoreTransparentBranchActiveIntermediate(
             pixel,

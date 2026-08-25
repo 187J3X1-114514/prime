@@ -2,6 +2,7 @@
 module "state/realtime/steady_transition.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "contract/path.slang";
 import "state/realtime/contract.slang";
 import "state/realtime/transport.slang";
@@ -9,12 +10,13 @@ import "state/realtime/transport.slang";
 // The steady domain owns a fresh local bounce sequence. A bootstrap that skipped NEE must also
 // suppress emitter MIS at the first steady vertex because no competing light sample exists.
 public void primeEnterSteadyAfterNee(inout PathState path) {
-    path.bounce = 0u;
+    path.control = primePathWithBounce(path.control, 0u);
 }
 
 public void primeEnterSteadyWithoutNee(inout PathState path) {
-    path.bounce = 0u;
-    path.flags |= PRIME_PATH_PREVIOUS_DISCRETE;
+    path.control = primePathWithBounce(path.control, 0u);
+    path.control = primePathWithAddedFlags(
+            path.control, PRIME_PATH_PREVIOUS_DISCRETE);
 }
 
 public PrimeWavefrontTransportRecord primeEnterSteadyRecord(

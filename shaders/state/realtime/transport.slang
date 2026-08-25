@@ -4,6 +4,7 @@ module "state/realtime/transport.slang";
 import "state/realtime/contract.slang";
 import "prime_realtime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "contract/realtime/guide.slang";
 import "math/queued_psr.slang";
 import "math/packed_geometry.slang";
@@ -11,16 +12,18 @@ import "math/transport.slang";
 import "state/realtime/medium.slang";
 import "model/realtime/transport.slang";
 import "bsdf/compact/contract/volume.slang";
+import "contract/path.slang";
 
 public uint primePackWavefrontPathControl(PathState path) {
     // FP16 etaScale only changes the roulette probability; survivor reweighting preserves the
     // estimator's expectation. Medium extinction and IOR remain FP32 in the transport record.
-    return (min(path.bounce, PRIME_WAVEFRONT_BYTE_MASK)
+    return (min(primePathBounce(path.control), PRIME_WAVEFRONT_BYTE_MASK)
                     << PRIME_WAVEFRONT_BOUNCE_SHIFT)
             | ((primePackWavefrontEtaScale(path.etaScale)
                     & PRIME_WAVEFRONT_ETA_SCALE_MASK)
                     << PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
-            | ((path.flags & PRIME_WAVEFRONT_PATH_FLAGS_MASK)
+            | ((primePathFlags(path.control)
+                    & PRIME_WAVEFRONT_PATH_FLAGS_MASK)
                     << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
 }
 
@@ -159,7 +162,7 @@ public PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
             float4(path.physicalOrigin, path.previousBsdfPdf);
     record.sourceAndPathControl = uint4(
             path.sourcePrimitive,
-            path.sourceReserved,
+            0u,
             primePackWavefrontPathControl(path));
     record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
     record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
@@ -191,7 +194,7 @@ public PrimeWavefrontPathRecord primeMakeWavefrontRecord(
         bool enabled) {
     PrimeWavefrontPathRecord record;
     record.transport = primeMakeWavefrontTransportRecord(
-path,
+            path,
             volumeStack,
             denoiserState,
             guides.primaryMaterialFlags,
@@ -199,7 +202,7 @@ path,
     record = primeWavefrontWithQueuedPsrState(
             record, primeEmptyQueuedPsrState());
     record = primeWavefrontWithPreviousLightNormal(
-            record, path.previousLightNormal);
+            record, primePathPreviousLightNormal(path.control));
     record = primeWavefrontWithPrimaryPreviousPosition(record, guides);
     return record;
 }

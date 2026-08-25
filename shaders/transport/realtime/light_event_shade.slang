@@ -6,6 +6,7 @@ import "contract/realtime/light_event.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
 import "math/sampling.slang";
@@ -21,6 +22,7 @@ import "transport/direct/primary.slang";
 import "transport/direct/selection.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
+import "contract/path.slang";
 
 public bool primePrepareRealtimeAreaSample(
         inout PrimeIntegratorContext context,
@@ -36,7 +38,10 @@ public bool primePrepareRealtimeAreaSample(
     }
     preparedThroughput = path.throughput;
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     lightData.position = surface.position;
     lightData.receiverNormal =
             primeAreaLightReceiverNormal(surface, -path.rayDirection);
@@ -87,7 +92,10 @@ public void primeShadeRealtimeDualLightEvent(
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     float3 viewDirection = -path.rayDirection;
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
             primePush.sunDirection,

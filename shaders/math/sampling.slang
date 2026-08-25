@@ -68,17 +68,6 @@ public static const uint PRIME_SOBOL_BURLEY_TABLE[128] = {
     0x1f001001, 0x2e003003, 0x45004004, 0xc900a00a
 };
 
-public PrimeSampleBase primeMakeSampleBase(PathState path, uint vertexIndex)
-{
-    PrimeSampleBase result;
-    result.pixel = path.pixel;
-    result.sampleIndex = path.sampleIndex;
-    result.sampleEpoch = path.sampleEpoch;
-    result.vertexIndex = vertexIndex;
-    result.pathIndex = path.sampleDimension;
-    return result;
-}
-
 public uint primeHash32(uint value)
 {
     value ^= value >> 16;
@@ -104,13 +93,20 @@ public uint primeHashCombine(uint seed, uint value)
     return seed ^ (primeHash32(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2));
 }
 
+public uint primePathSampleSeed(uint2 pixel, uint sampleEpoch, uint pathIndex)
+{
+    uint seed = primeHash32(pixel.x);
+    seed = primeHashCombine(seed, pixel.y);
+    seed = primeHashCombine(seed, sampleEpoch);
+    return primeHashCombine(seed, pathIndex);
+}
+
 public uint primeSampleBaseSeed(PrimeSampleBase base)
 {
-    uint seed = primeHash32(base.pixel.x);
-    seed = primeHashCombine(seed, base.pixel.y);
-    seed = primeHashCombine(seed, base.sampleEpoch);
-    seed = primeHashCombine(seed, base.pathIndex);
-    return primeHashCombine(seed, base.vertexIndex);
+    return primeHashCombine(
+            primePathSampleSeed(
+                    base.pixel, base.sampleEpoch, base.pathIndex),
+            base.vertexIndex);
 }
 
 public PrimePreparedSampleBase primePrepareSampleBase(PrimeSampleBase base)
@@ -118,6 +114,15 @@ public PrimePreparedSampleBase primePrepareSampleBase(PrimeSampleBase base)
     PrimePreparedSampleBase result;
     result.sampleIndex = base.sampleIndex;
     result.seed = primeSampleBaseSeed(base);
+    return result;
+}
+
+public PrimePreparedSampleBase primePreparePathSample(
+        uint sampleSeed, uint sampleIndex, uint vertexIndex)
+{
+    PrimePreparedSampleBase result;
+    result.sampleIndex = sampleIndex;
+    result.seed = primeHashCombine(sampleSeed, vertexIndex);
     return result;
 }
 

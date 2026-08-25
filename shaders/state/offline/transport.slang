@@ -2,15 +2,18 @@
 module "state/offline/transport.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "policy/runtime/config.slang";
 import "state/realtime/medium.slang";
 import "state/offline/contract.slang";
 import "bsdf/compact/contract/volume.slang";
+import "math/sampling.slang";
+import "contract/path.slang";
 
 public uint primePackOfflinePathControl(PathState path) {
-    return (min(path.bounce, PRIME_OFFLINE_PATH_BYTE_MASK)
+    return (min(primePathBounce(path.control), PRIME_OFFLINE_PATH_BYTE_MASK)
                     << PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
-            | ((path.flags & PRIME_OFFLINE_PATH_FLAGS_MASK)
+            | ((primePathFlags(path.control) & PRIME_OFFLINE_PATH_FLAGS_MASK)
                     << PRIME_OFFLINE_PATH_FLAGS_SHIFT);
 }
 
@@ -23,7 +26,7 @@ public PrimeOfflineTransportRecord primeMakeOfflineTransport(
             float4(path.physicalOrigin, path.previousBsdfPdf);
     record.sourceAndPathControl = uint4(
             path.sourcePrimitive,
-            path.sourceReserved,
+            0u,
             primePackOfflinePathControl(path));
     uint control = enabled ? PRIME_OFFLINE_CONTROL_ACTIVE : 0u;
     control |= min(volumeStack.count, 2u) << PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT;
@@ -42,21 +45,18 @@ public PathState primeOfflinePath(
     PathState path;
     uint pathControl = record.sourceAndPathControl.w;
     path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
-    path.bounce = (pathControl >> PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
-            & PRIME_OFFLINE_PATH_BYTE_MASK;
-    path.sourcePrimitive = record.sourceAndPathControl.xy;
-    path.sourceReserved = record.sourceAndPathControl.z;
-    path.sampleDimension = 0u;
-    path.rayDirection = record.rayDirectionAndControl.xyz;
-    path.flags = (pathControl >> PRIME_OFFLINE_PATH_FLAGS_SHIFT)
-            & PRIME_OFFLINE_PATH_FLAGS_MASK;
-    path.throughput = record.throughput.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
+    path.rayDirection = record.rayDirectionAndControl.xyz;
     path.etaScale = record.throughput.w;
-    path.previousLightNormal = previousLightNormal;
-    path.pixel = pixel;
-    path.sampleIndex = primeSampleIndex();
-    path.sampleEpoch = primeSampleEpoch();
+    path.throughput = record.throughput.xyz;
+    uint bounce = (pathControl >> PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
+            & PRIME_OFFLINE_PATH_BYTE_MASK;
+    uint flags = (pathControl >> PRIME_OFFLINE_PATH_FLAGS_SHIFT)
+            & PRIME_OFFLINE_PATH_FLAGS_MASK;
+    path.control = primeMakePathStateControl(
+            bounce, flags, previousLightNormal);
+    path.sourcePrimitive = record.sourceAndPathControl.xy;
+    path.sampleSeed = primePathSampleSeed(pixel, primeSampleEpoch(), 0u);
     return path;
 }
 

@@ -2,6 +2,7 @@
 module "phase/offline/path_surface_step.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "contract/offline/shader_record.slang";
 import "policy/runtime/config.slang";
 import "service/trace/context.slang";
@@ -56,7 +57,7 @@ public void primePhase() {
             true);
     PrimeOfflineAreaRequest request = surfaceStep.areaRequest;
     bool continuation = surfaceStep.continuation
-            && path.bounce < primeMaximumBounces();
+            && primePathBounce(path.control) < primeMaximumBounces();
     primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
             path,
             volumeStack,

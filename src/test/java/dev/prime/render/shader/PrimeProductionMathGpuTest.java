@@ -1236,7 +1236,7 @@ final class PrimeProductionMathGpuTest {
     void samplingIsDeterministicAndProducesUnitIntervalValues() throws IOException {
         int cases = 1 << 15;
         int inputWords = 2;
-        int outputWords = 3;
+        int outputWords = 4;
         ByteBuffer input = ShaderTestBuffer.inputs(cases, inputWords);
         ShaderTestBuffer.setOutputWords(input, outputWords);
         SplittableRandom random = new SplittableRandom(SAMPLING_SEED);
@@ -1277,7 +1277,7 @@ final class PrimeProductionMathGpuTest {
                                     + " second=0x" + Integer.toHexString(actual));
                 }
             }
-            for (int word = 1; word < outputWords; word++) {
+            for (int word = 1; word < 3; word++) {
                 for (int component = 0; component < 4; component++) {
                     float expected = ShaderTestBuffer.getFloat(
                             first, index, outputWords, word, component);
@@ -1294,6 +1294,16 @@ final class PrimeProductionMathGpuTest {
                                         + " first=" + expected
                                         + " second=" + actual);
                     }
+                }
+            }
+            for (int component = 0; component < 4; component++) {
+                int parity = ShaderTestBuffer.getInt(
+                        first, index, outputWords, 3, component);
+                if (parity != 0) {
+                    throw new AssertionError(
+                            "Compact path state changed sampling/control at case=" + index
+                                    + " component=" + component
+                                    + " difference=0x" + Integer.toHexString(parity));
                 }
             }
         }

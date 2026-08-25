@@ -3,6 +3,7 @@ module "transport/scatter/path_update.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "math/packed_geometry.slang";
 import "math/queued_psr.slang";
@@ -56,12 +57,13 @@ public bool primeApplyPathScatter(
     path.physicalOrigin = surface.position;
     path.sourcePrimitive = uint2(
             surface.sectionIndex, primeSurfaceTriangleIndex(surface));
-    path.sourceReserved = 0u;
     path.rayDirection = bsdf.direction;
     path.previousBsdfPdf = bsdf.pdf;
-    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
-            ? PRIME_PATH_PREVIOUS_DISCRETE
-            : 0u;
+    path.control = primePathWithFlags(
+            path.control,
+            (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
+                    ? PRIME_PATH_PREVIOUS_DISCRETE
+                    : 0u);
     return true;
 }
 
@@ -74,7 +76,8 @@ public bool primeAdvancePathWithoutRoulette(
     if (!primeApplyPathScatter(context, path, surface, bsdf)) {
         return false;
     }
-    path.previousLightNormal = previousLightNormal;
+    path.control = primePathWithPreviousLightNormal(
+            path.control, previousLightNormal);
     return true;
 }
 

@@ -18,7 +18,7 @@ final class ShaderAbiTest {
         assertEquals(12, ShaderAbi.LIGHT_CELL_SIZE);
         assertEquals(48, ShaderAbi.SECTION_LIGHT_HEADER_SIZE);
         assertEquals(32, ShaderAbi.INTEGRATOR_RECORD_SIZE);
-        assertEquals(96, ShaderAbi.PATH_STATE_SIZE);
+        assertEquals(64, ShaderAbi.PATH_STATE_SIZE);
         assertEquals(96, ShaderAbi.TRACE_PAYLOAD_SIZE);
         assertEquals(96, ShaderAbi.SURFACE_INTERACTION_SIZE);
         assertEquals(96, ShaderAbi.WAVEFRONT_SURFACE_RECORD_SIZE);
@@ -223,12 +223,11 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.INTEGRATOR_SUN_DIRECTION_INTENSITY_OFFSET);
         assertEquals(16, ShaderAbi.INTEGRATOR_ENVIRONMENT_RADIANCE_OFFSET);
         assertEquals(0, ShaderAbi.PATH_STATE_PHYSICAL_ORIGIN_OFFSET);
-        assertEquals(16, ShaderAbi.PATH_STATE_SOURCE_PRIMITIVE_OFFSET);
-        assertEquals(24, ShaderAbi.PATH_STATE_SOURCE_RESERVED_OFFSET);
-        assertEquals(64, ShaderAbi.PATH_STATE_ETA_SCALE_OFFSET);
-        assertEquals(68, ShaderAbi.PATH_STATE_PREVIOUS_LIGHT_NORMAL_OFFSET);
-        assertEquals(72, ShaderAbi.PATH_STATE_PIXEL_OFFSET);
-        assertEquals(84, ShaderAbi.PATH_STATE_SAMPLE_EPOCH_OFFSET);
+        assertEquals(12, ShaderAbi.PATH_STATE_PREVIOUS_BSDF_PDF_OFFSET);
+        assertEquals(28, ShaderAbi.PATH_STATE_ETA_SCALE_OFFSET);
+        assertEquals(44, ShaderAbi.PATH_STATE_CONTROL_OFFSET);
+        assertEquals(48, ShaderAbi.PATH_STATE_SOURCE_PRIMITIVE_OFFSET);
+        assertEquals(56, ShaderAbi.PATH_STATE_SAMPLE_SEED_OFFSET);
         assertEquals(0, ShaderAbi.TRACE_PAYLOAD_GEOMETRIC_NORMAL_OFFSET);
         assertEquals(28, ShaderAbi.TRACE_PAYLOAD_MATERIAL_CONTROL_OFFSET);
         assertEquals(32, ShaderAbi.TRACE_PAYLOAD_SECTION_INDEX_OFFSET);

@@ -7,6 +7,7 @@ import "policy/realtime/queue.slang";
 import "prime_realtime_abi.slang";
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "contract/realtime/guide.slang";
 import "model/atmosphere/sky.slang";
@@ -104,7 +105,10 @@ public PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
             surface, viewDirection, volumeStack, primeUsesAirGap());
     bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     PrimeTransmissivePrimarySample primarySample =
             primeSampleMinecraftTransmissionPrimary(
             surface.baseColor,
@@ -190,7 +194,7 @@ public PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 && !hasGuide
                 && primeSurfaceHasMotion(surface);
         bool diffusePath = transmissionBranch;
-        uint guideBounce = path.bounce;
+        uint guideBounce = primePathBounce(path.control);
 
         if (hasScatter) {
             if (transmissionBranch) {
@@ -231,7 +235,10 @@ public PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                 initialResult.guides.primaryAreaDirection;
 
         PathState branchPath = path;
-        branchPath.sampleDimension = transmissionBranch ? 1u : 0u;
+        branchPath.sampleSeed = primePathSampleSeed(
+                pixel,
+                primeSampleEpoch(),
+                transmissionBranch ? 1u : 0u);
         bool branchDiscreteOnly = discreteOnlyInterface;
         bool continuation = hasScatter;
         if (continuation) {
@@ -244,7 +251,8 @@ public PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                     true);
         }
         if (continuation) {
-            branchPath.bounce = path.bounce + 1u;
+            branchPath.control = primePathWithBounce(
+                    branchPath.control, primePathBounce(path.control) + 1u);
         }
         bool deltaWalk = continuation
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u;
@@ -349,7 +357,8 @@ public void primeSplitVisibleSurface<AreaNee>(
                 true,
                 recordIndex);
         bool deltaWalk = continuation
-                && (path.flags & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
+                && (primePathFlags(path.control)
+                        & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
         if (continuation && !deltaWalk) {
             primeEnterSteadyAfterNee(path);
         }

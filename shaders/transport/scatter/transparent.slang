@@ -3,6 +3,7 @@ module "transport/scatter/transparent.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/bsdf/support/sanitization.slang";
 import "service/reconstruct/nrd/common.slang";
@@ -71,10 +72,10 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
     float hitDistance = surface.hitKind == PRIME_HIT_NONE
             ? PRIME_NRD_FP16_MAX
             : primeNrdSanitizeHitDistance(surface.t);
-    if (path.bounce == phase.transparentFirstHitBounce()) {
+    if (primePathBounce(path.control) == phase.transparentFirstHitBounce()) {
         result.firstHitDistance = hitDistance;
     }
-    if (hasGuide && path.bounce == guideBounce + 1u) {
+    if (hasGuide && primePathBounce(path.control) == guideBounce + 1u) {
         if (diffusePath) {
             result.guides.diffuseHitDistance = hitDistance;
         } else {
@@ -114,7 +115,10 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
 
     float3 viewDirection = -path.rayDirection;
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     bool transmissive = primeMaterialIsTransmissive(surface.materialControl);
     float surfaceLinearRoughness = (transmissive || !hasGuide)
             ? primeSurfaceLinearRoughness(surface)
@@ -131,7 +135,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
     bool previousUsedAreaNee = phase.transparentPreviousUsedAreaNee(
-            areaNee.enabled(), path.bounce);
+            areaNee.enabled(), primePathBounce(path.control));
     float3 emitted = primeEvaluateHitEmission(
             context, path, surface, previousUsedAreaNee);
     primeAccumulateTransparentBranch(
@@ -177,7 +181,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
                 viewDirection,
                 scatterSample,
                 volumeStack,
-                path.bounce,
+                primePathBounce(path.control),
                 primeUsesAirGap());
         scatter = guided.scatter;
         surfaceAlbedos = guided.albedos;
@@ -195,7 +199,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
                     psrState, surface.position, surface.geometricNormal);
         }
         hasGuide = true;
-        guideBounce = path.bounce;
+        guideBounce = primePathBounce(path.control);
     } else {
         scatter = primeSamplePathSurface(
                 context,
@@ -275,6 +279,6 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
                     hasGuide))) {
         return false;
     }
-    path.bounce++;
+    path.control = primeIncrementPathBounce(path.control);
     return true;
 }

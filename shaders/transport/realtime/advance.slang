@@ -4,6 +4,7 @@ module "transport/realtime/advance.slang";
 import "transport/scatter/phase_contract.slang";
 import "policy/realtime/direct.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "prime_abi.slang";
 import "contract/realtime/guide.slang";
 import "model/atmosphere/sky.slang";
@@ -31,6 +32,7 @@ import "transport/realtime/trace.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/realtime/ordinary.slang";
 import "contract/realtime/transparent.slang";
+import "contract/path.slang";
 
 public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
         Phase phase,
@@ -53,8 +55,9 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
 
     if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
             && !primePreviousCannotUseMis(path)) {
-        path.previousLightNormal =
-                primeLoadWavefrontPreviousLightNormal(recordIndex);
+        path.control = primePathWithPreviousLightNormal(
+                path.control,
+                primeLoadWavefrontPreviousLightNormal(recordIndex));
     }
     bool guideWasPending =
             (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
@@ -77,7 +80,8 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
             skipRoulette,
             recordIndex);
     continuation = continuation
-            && (skipRoulette || path.bounce < primeMaximumBounces());
+            && (skipRoulette
+                    || primePathBounce(path.control) < primeMaximumBounces());
     PrimeWavefrontTransportRecord updatedRecord =
             primeMakeUpdatedWavefrontRecord(
                     path,
@@ -88,7 +92,7 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
                     continuation);
     primeStoreWavefrontTransportRecord(recordIndex, updatedRecord);
     primeStoreWavefrontPreviousLightNormal(
-            recordIndex, path.previousLightNormal);
+            recordIndex, primePathPreviousLightNormal(path.control));
     primeStoreWavefrontActiveIntermediate(
             pixel, guideWasPending, result);
     return continuation;
@@ -115,8 +119,9 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
 
     if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
             && !primePreviousCannotUseMis(path)) {
-        path.previousLightNormal =
-                primeLoadWavefrontPreviousLightNormal(recordIndex);
+        path.control = primePathWithPreviousLightNormal(
+                path.control,
+                primeLoadWavefrontPreviousLightNormal(recordIndex));
     }
 
     bool hadGuide =
@@ -163,7 +168,8 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
             recordIndex);
     bool integratedContinuation = continuation;
     continuation = continuation
-            && (skipRoulette || path.bounce < primeMaximumBounces());
+            && (skipRoulette
+                    || primePathBounce(path.control) < primeMaximumBounces());
     PrimeWavefrontTransportRecord updatedRecord =
             primeMakeUpdatedTransparentWavefrontRecord(
                     path,
@@ -182,7 +188,7 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
         primeStoreWavefrontPsrState(recordIndex, psrState);
     } else {
         primeStoreWavefrontPreviousLightNormal(
-                recordIndex, path.previousLightNormal);
+                recordIndex, primePathPreviousLightNormal(path.control));
     }
     primeStoreTransparentBranchActiveIntermediate(
             pixel,

@@ -5,6 +5,7 @@ import "service/bsdf/support/sanitization.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/reconstruct/nrd/common.slang";
 import "math/packed_geometry.slang";
@@ -56,7 +57,7 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
     }
 
     if (denoiserState.hasPrimarySurface
-            && path.bounce == phase.ordinaryGuideHitBounce(
+            && primePathBounce(path.control) == phase.ordinaryGuideHitBounce(
                     denoiserState.primaryBounce)) {
         float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
                 ? PRIME_NRD_FP16_MAX
@@ -125,7 +126,10 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
             closureTraits, PRIME_MEASURE_SOLID_ANGLE);
     bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     if (supportsSolidAngle) {
         if (denoiserState.hasPrimarySurface) {
             float3 direct = path.throughput * primeEstimateDirectLighting(
@@ -162,7 +166,7 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
                 viewDirection,
                 scatterSample,
                 volumeStack,
-                path.bounce,
+                primePathBounce(path.control),
                 primeUsesAirGap());
         scatter = guided.scatter;
         surfaceAlbedos = guided.albedos;
@@ -189,7 +193,7 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
             denoiserState.diffusePath = sampledSolidAngle
                     && (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
             denoiserState.hasPrimarySurface = true;
-            denoiserState.primaryBounce = path.bounce;
+            denoiserState.primaryBounce = primePathBounce(path.control);
             result.guides.primaryDistance = length(
                     surface.position - primePush.cameraPosition);
             result.guides.primaryPosition = surface.position - primePush.cameraPosition;
@@ -243,6 +247,6 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
                     skipRoulette)) {
         return false;
     }
-    path.bounce++;
+    path.control = primeIncrementPathBounce(path.control);
     return true;
 }

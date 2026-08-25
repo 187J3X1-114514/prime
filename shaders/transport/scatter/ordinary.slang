@@ -2,6 +2,7 @@
 module "transport/scatter/ordinary.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "policy/runtime/config.slang";
 import "math/sampling.slang";
@@ -53,7 +54,8 @@ public bool primeAdvanceRealtimePath(
     // zero. Count that scatter for RR without folding primary delta depth into the steady bounce
     // domain or reducing its independent dispatch limit.
     uint rouletteCompletedScatters =
-            primeTwoStageRouletteCompletedScatters(path.bounce);
+            primeTwoStageRouletteCompletedScatters(
+                    primePathBounce(path.control));
     if (!primeRussianRouletteApplies(
             rouletteCompletedScatters, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;

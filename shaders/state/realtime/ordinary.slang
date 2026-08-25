@@ -2,6 +2,7 @@
 module "state/realtime/ordinary.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "contract/realtime/guide.slang";
 import "math/queued_psr.slang";
 import "policy/runtime/config.slang";
@@ -14,34 +15,33 @@ import "model/realtime/transport.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/realtime/ordinary.slang";
 import "contract/realtime/transparent.slang";
+import "contract/path.slang";
 
 public PathState primeWavefrontPath(
         uint2 pixel, PrimeWavefrontTransportRecord record) {
     PathState path;
     uint pathControl = record.sourceAndPathControl.w;
     path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
-    path.bounce = (pathControl >> PRIME_WAVEFRONT_BOUNCE_SHIFT)
-            & PRIME_WAVEFRONT_BYTE_MASK;
-    path.sourcePrimitive = record.sourceAndPathControl.xy;
-    path.sourceReserved = record.sourceAndPathControl.z;
-    uint denoiserControl =
-            asuint(record.rayDirectionAndDenoiserControl.w);
-    path.sampleDimension =
-            (denoiserControl & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u
-            ? 1u
-            : 0u;
-    path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
-    path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
-            & PRIME_WAVEFRONT_PATH_FLAGS_MASK;
-    path.throughput = record.throughputAndReserved.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
+    path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
     path.etaScale = primeUnpackWavefrontEtaScale(
             (pathControl >> PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
                     & PRIME_WAVEFRONT_ETA_SCALE_MASK);
-    path.previousLightNormal = 0u;
-    path.pixel = pixel;
-    path.sampleIndex = primeSampleIndex();
-    path.sampleEpoch = primeSampleEpoch();
+    path.throughput = record.throughputAndReserved.xyz;
+    uint bounce = (pathControl >> PRIME_WAVEFRONT_BOUNCE_SHIFT)
+            & PRIME_WAVEFRONT_BYTE_MASK;
+    uint flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
+            & PRIME_WAVEFRONT_PATH_FLAGS_MASK;
+    path.control = primeMakePathStateControl(bounce, flags, 0u);
+    path.sourcePrimitive = record.sourceAndPathControl.xy;
+    uint denoiserControl =
+            asuint(record.rayDirectionAndDenoiserControl.w);
+    uint samplePathIndex =
+            (denoiserControl & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u
+            ? 1u
+            : 0u;
+    path.sampleSeed = primePathSampleSeed(
+            pixel, primeSampleEpoch(), samplePathIndex);
     return path;
 }
 

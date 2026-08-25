@@ -4,6 +4,7 @@ module "transport/offline/surface.slang";
 import "policy/runtime/config.slang";
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "model/atmosphere/sky.slang";
 import "service/reconstruct/nrd/common.slang";
@@ -148,7 +149,7 @@ public bool primeAdvanceOfflinePath(
     }
 
     if (!primeRussianRouletteApplies(
-            path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
+            primePathBounce(path.control), PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
     float survival = primeRussianRouletteSurvival(
@@ -193,7 +194,8 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     }
 
     bool previousUsedAreaNee =
-            (path.flags & PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE) != 0u;
+            (primePathFlags(path.control)
+                    & PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE) != 0u;
     primeAccumulate(
             context,
             radiance,
@@ -208,7 +210,10 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     }
 
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
             surface, viewDirection, volumeStack, primeUsesAirGap());
     bool neeEligible = primeClosureSupports(
@@ -238,9 +243,11 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     // Reverse MIS depends on whether the competing light-sampling technique existed at this
     // vertex, not on whether this particular random Area sample produced a non-zero request.
     bool usedAreaNee = neeEligible;
-    path.previousLightNormal = usedAreaNee
-            ? primeAreaLightReceiverNormal(surface, viewDirection)
-            : 0u;
+    path.control = primePathWithPreviousLightNormal(
+            path.control,
+            usedAreaNee
+                    ? primeAreaLightReceiverNormal(surface, viewDirection)
+                    : 0u);
     if (result.areaRequest.valid && !deferArea) {
         PrimeShadowTrace shadow = primeTraceShadow(
                 context,
@@ -278,17 +285,22 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
         path.physicalOrigin = surface.position;
         path.sourcePrimitive = uint2(
                 surface.sectionIndex, primeSurfaceTriangleIndex(surface));
-        path.sourceReserved = 0u;
-        path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
+        path.control = primePathWithFlags(
+                path.control,
+                usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u);
         return result;
     }
     if (!primeAdvanceOfflinePath(
             context, path, surface, bsdf, preparedSample)) {
-        path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
+        path.control = primePathWithFlags(
+                path.control,
+                usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u);
         return result;
     }
-    path.flags |= usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
-    path.bounce++;
+    path.control = primePathWithAddedFlags(
+            path.control,
+            usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u);
+    path.control = primeIncrementPathBounce(path.control);
     result.continuation = true;
     return result;
 }

@@ -35,7 +35,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     value ^= asuint(lightCells[index].probabilityMass);
     value ^= sectionLightHeaders[index].emitterCount;
     value ^= asuint(integratorRecords[index].environmentRadiance.w);
-    value ^= pathStates[index].sampleEpoch;
+    value ^= pathStates[index].sampleSeed;
     value ^= tracePayloads[index].adjacentInterfaceControl;
     value ^= surfaceInteractions[index].adjacentInterfaceControl;
     value ^= asuint(nrdMotionRecords[index].currentJitterPixels.y);

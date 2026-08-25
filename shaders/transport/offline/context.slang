@@ -3,6 +3,7 @@ module "transport/offline/context.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
 import "state/realtime/medium.slang";
@@ -61,7 +62,7 @@ public PrimeOfflinePathRecord primeMakeOfflineRecord(
     record.areaContributionAndValid = float4(
             request.contribution,
             asfloat(primeOfflineAreaControl(
-                    path.previousLightNormal,
+                    primePathPreviousLightNormal(path.control),
                     request.valid,
                     request.startingMediumCount)));
     record.areaTargetEmitter = uint4(request.targetEmitter, 0u, 0u);

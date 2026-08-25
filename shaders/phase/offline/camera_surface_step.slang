@@ -3,6 +3,7 @@ module "phase/offline/camera_surface_step.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/camera/projection.slang";
 import "policy/runtime/config.slang";
 import "service/trace/context.slang";
@@ -58,7 +59,8 @@ public void primePhase() {
             surface,
             true);
     PrimeOfflineAreaRequest request = step.areaRequest;
-    bool continuation = step.continuation && path.bounce < maximumBounces;
+    bool continuation = step.continuation
+            && primePathBounce(path.control) < maximumBounces;
     primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
             path,
             volumeStack,

@@ -63,18 +63,14 @@ public float3 primeCameraRayDirection(uint2 pixel, float2 cameraSample) {
 public PathState primeCameraPath(uint2 pixel, uint pathIndex, float2 cameraSample) {
     PathState path;
     path.physicalOrigin = primePush.cameraPosition;
-    path.bounce = 0u;
-    path.sourcePrimitive = uint2(PRIME_NO_PRIMITIVE_INDEX);
-    path.sourceReserved = 0u;
-    path.sampleDimension = pathIndex;
-    path.rayDirection = primeCameraRayDirection(pixel, cameraSample);
-    path.flags = PRIME_PATH_PREVIOUS_DISCRETE;
-    path.throughput = float3(1.0);
     path.previousBsdfPdf = 0.0;
+    path.rayDirection = primeCameraRayDirection(pixel, cameraSample);
     path.etaScale = 1.0;
-    path.previousLightNormal = 0u;
-    path.pixel = pixel;
-    path.sampleIndex = primeSampleIndex();
-    path.sampleEpoch = primeSampleEpoch();
+    path.throughput = float3(1.0);
+    path.control = PRIME_PATH_PREVIOUS_DISCRETE
+            << PRIME_PATH_STATE_FLAGS_SHIFT;
+    path.sourcePrimitive = uint2(PRIME_NO_PRIMITIVE_INDEX);
+    path.sampleSeed = primePathSampleSeed(
+            pixel, primeSampleEpoch(), pathIndex);
     return path;
 }

@@ -2,6 +2,7 @@
 module "transport/surface/emission.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "contract/path.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
@@ -21,7 +22,8 @@ public float3 primeEvaluateEnvironmentContribution(
     LightEvaluation sun = primeEvaluateSun(
             integrator, path.physicalOrigin, path.rayDirection);
     bool previousUsedSunNee =
-            (path.flags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u;
+            (primePathFlags(path.control)
+                    & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u;
     float sunWeight = primePreviousCannotUseMis(path) || !previousUsedSunNee
             ? 1.0
             : primePowerHeuristic(
@@ -50,7 +52,7 @@ public float3 primeEvaluateLocalHitEmission(
             surface,
             path.physicalOrigin,
             path.rayDirection,
-            path.previousLightNormal,
+            primePathPreviousLightNormal(path.control),
             evaluateAreaPdf);
     float hitAreaWeight = primeAreaHitMisWeightValue(
             previousUsedAreaNee,

@@ -4,6 +4,7 @@ module "transport/realtime/visible_direct.slang";
 import "prime_realtime_abi.slang";
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "contract/realtime/guide.slang";
 import "model/atmosphere/sky.slang";
@@ -46,7 +47,10 @@ public void primeShadeVisibleDirect(
     }
 
     PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+            primePreparePathSample(
+                    path.sampleSeed,
+                    primeSampleIndex(),
+                    primePathBounce(path.control) + 1u);
     bool transparent = primeMaterialIsTransmissive(surface.materialControl);
 
     PrimeDirectLightingSplit area = primeEstimatePrimaryNonsunDirect(

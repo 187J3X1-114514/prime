@@ -2,6 +2,7 @@
 module "transport/surface/access.slang";
 
 import "prime_abi_types.slang";
+import "state/path.slang";
 import "math/packed_geometry.slang";
 import "model/material/defaults.slang";
 import "contract/path.slang";
@@ -12,8 +13,9 @@ public bool primeKnownHitKind(SurfaceInteraction surface) {
 }
 
 public bool primePreviousCannotUseMis(PathState path) {
-    return path.bounce == 0u
-            || (path.flags & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
+    return primePathBounce(path.control) == 0u
+            || (primePathFlags(path.control)
+                    & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
 }
 
 public float3 primeSurfaceOutwardShadingNormal(SurfaceInteraction surface) {

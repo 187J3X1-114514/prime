@@ -94,22 +94,16 @@
       ]
     },
     "pathState": {
-      "size": 96,
+      "size": 64,
       "fields": [
         { "name": "physicalOrigin", "type": "vec3", "offset": 0 },
-        { "name": "bounce", "type": "uint", "offset": 12 },
-        { "name": "sourcePrimitive", "type": "uvec2", "offset": 16 },
-        { "name": "sourceReserved", "type": "uint", "offset": 24 },
-        { "name": "sampleDimension", "type": "uint", "offset": 28 },
-        { "name": "rayDirection", "type": "vec3", "offset": 32 },
-        { "name": "flags", "type": "uint", "offset": 44 },
-        { "name": "throughput", "type": "vec3", "offset": 48 },
-        { "name": "previousBsdfPdf", "type": "float", "offset": 60 },
-        { "name": "etaScale", "type": "float", "offset": 64 },
-        { "name": "previousLightNormal", "type": "uint", "offset": 68 },
-        { "name": "pixel", "type": "uvec2", "offset": 72 },
-        { "name": "sampleIndex", "type": "uint", "offset": 80 },
-        { "name": "sampleEpoch", "type": "uint", "offset": 84 }
+        { "name": "previousBsdfPdf", "type": "float", "offset": 12 },
+        { "name": "rayDirection", "type": "vec3", "offset": 16 },
+        { "name": "etaScale", "type": "float", "offset": 28 },
+        { "name": "throughput", "type": "vec3", "offset": 32 },
+        { "name": "control", "type": "uint", "offset": 44 },
+        { "name": "sourcePrimitive", "type": "uvec2", "offset": 48 },
+        { "name": "sampleSeed", "type": "uint", "offset": 56 }
       ]
     },
     "tracePayload": {

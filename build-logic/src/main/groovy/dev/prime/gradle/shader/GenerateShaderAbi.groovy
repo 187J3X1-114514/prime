@@ -48,7 +48,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| lightLeaf.size != 8 || lightLeafEntry.size != 8
 				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48
-				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 96
+				|| integrator.size != 32 || pathState.size != 64 || tracePayload.size != 96
 				|| surfaceInteraction.size != 96 || wavefrontSurfaceRecord.size != 96
 				|| push.size != 128
 				|| nrdMotionPush.size != 144

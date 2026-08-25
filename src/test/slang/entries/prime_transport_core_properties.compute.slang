@@ -10,7 +10,6 @@ import "state/realtime/medium.slang";
 
 import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
-import "policy/transport/light_family.slang";
 import "policy/transport/path.slang";
 
 static const uint PRIME_TRANSPORT_INPUT_WORDS = 6;
@@ -71,65 +70,6 @@ void primeCheckMis(
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
     result.first = float4(first, second, scaled, overPdf);
-}
-
-void primeCheckLightFamilyPdf(
-        inout PrimeTransportResult result, float conditionalPdf, float probability)
-{
-    float familyPdf = primeLightFamilyPdfValue(
-            conditionalPdf, probability);
-    float reconstructed = probability > 0.0 ? familyPdf / probability : 0.0;
-    primeTransportClassify(result.mask, float3(familyPdf, reconstructed, 0.0));
-    if (familyPdf < 0.0
-            || !primeTestClose(
-                    familyPdf,
-                    conditionalPdf * probability,
-                    0.0,
-                    0.0)
-            || (probability > 0.0
-                    && !primeTestClose(reconstructed, conditionalPdf, 0.0, 2.0e-6))) {
-        result.mask |= PRIME_TEST_FAILURE_PDF;
-    }
-    result.first = float4(familyPdf, reconstructed, conditionalPdf, 0.0);
-}
-
-void primeCheckLightFamilyProbability(
-        inout PrimeTransportResult result,
-        float sunImportance,
-        float areaImportance)
-{
-    float probability = primeQuantizedSunFamilyProbability(
-            sunImportance, areaImportance);
-    uint storedProbability = primeStoredSunFamilyProbability(probability);
-    uint restoredCode = storedProbability - 1u;
-    float restoredSun = primeSunFamilyProbabilityFromStored(storedProbability);
-    float restoredArea = primeAreaFamilyProbabilityFromStored(storedProbability);
-    uint originalHitKind = 0xa5a50001u;
-    uint packedHitKind = primePackWavefrontSurfaceSunProbability(
-            originalHitKind, storedProbability);
-    uint queuedProbability = primeWavefrontSurfaceSunProbability(packedHitKind);
-    bool hasSun = sunImportance > 0.0;
-    bool hasArea = areaImportance > 0.0;
-    primeTransportClassify(result.mask, float3(probability, restoredSun, restoredArea));
-    if (probability < 0.0 || probability > 1.0
-            || asuint(probability) != asuint(restoredSun)
-            || !primeTestClose(restoredSun + restoredArea, 1.0, 1.0e-7, 1.0e-7)
-            || !primeHasStoredLightFamilyProbability(storedProbability)
-            || storedProbability > PRIME_SUN_FAMILY_PROBABILITY_STEPS + 1u
-            || queuedProbability != storedProbability
-            || (packedHitKind & 0xffu) != 1u
-            || (packedHitKind & ~PRIME_WAVEFRONT_SURFACE_SUN_PROBABILITY_MASK)
-                    != (originalHitKind
-                            & ~PRIME_WAVEFRONT_SURFACE_SUN_PROBABILITY_MASK)
-            || (!hasSun && probability != 0.0)
-            || (hasSun && !hasArea && probability != 1.0)
-            || (hasSun && hasArea
-                    && (restoredCode < PRIME_SUN_FAMILY_MINIMUM_MIXED_CODE
-                            || restoredCode > PRIME_SUN_FAMILY_MAXIMUM_MIXED_CODE))) {
-        result.mask |= PRIME_TEST_FAILURE_STATE;
-    }
-    result.first = float4(probability, restoredSun, restoredArea, asfloat(storedProbability));
-    result.second = float4(sunImportance, areaImportance, 0.0, 0.0);
 }
 
 void primeCheckAreaHitMis(
@@ -211,8 +151,9 @@ void primeCheckRoulette(
             || primeTransparentPrimaryReflectionOnly(true, false, false)) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
-    if (!primePreviousSunNeeEnabled(0u)
-            || primePreviousSunNeeEnabled(PRIME_PATH_PREVIOUS_NO_SUN_NEE)) {
+    if ((0u & PRIME_PATH_PREVIOUS_NO_SUN_NEE) != 0u
+            || (PRIME_PATH_PREVIOUS_NO_SUN_NEE
+                    & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
     if (survival > 0.0) {
@@ -863,18 +804,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     } else if (kind == 13) {
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
     } else if (kind == 14) {
-        primeCheckLightFamilyPdf(
-                result, abs(first.x), clamp(abs(first.y), 0.0, 1.0));
-    } else if (kind == 15) {
         primeCheckPreviousDynamicSurface(result, first, second, third, fourth.xy);
-    } else if (kind == 16) {
+    } else if (kind == 15) {
         primeCheckGlobalTriangleIndex(
                 result, control, asuint(first), asuint(second.xy));
-    } else if (kind == 17) {
+    } else if (kind == 16) {
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
-    } else if (kind == 18) {
-        primeCheckLightFamilyProbability(
-                result, max(first.x, 0.0), max(first.y, 0.0));
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

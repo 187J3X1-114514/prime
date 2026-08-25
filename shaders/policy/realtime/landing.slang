@@ -10,7 +10,4 @@ public struct PrimeLandingTransportPhase : IPrimeRealtimeTransportPhase {
         return enabled && bounce > 0u;
     }
     uint ordinaryGuideHitBounce(uint primaryBounce) { return primaryBounce + 1u; }
-    bool ordinaryMarksSecondaryArea(uint bounce, uint primaryBounce) {
-        return bounce != primaryBounce;
-    }
 }

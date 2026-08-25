@@ -61,7 +61,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 19;
+        int kinds = 17;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -618,7 +618,7 @@ final class PrimeProductionMathGpuTest {
                             receiverNormal[1],
                             receiverNormal[2],
                             0.0F);
-                } else if (kind == 15) {
+                } else if (kind == 14) {
                     float[] first = local == 0
                             ? new float[] {3.0F, -2.0F, 7.0F}
                             : new float[] {
@@ -669,7 +669,7 @@ final class PrimeProductionMathGpuTest {
                             translationZ);
                     putVec4(input, index, words, 4,
                             barycentricX, barycentricY, 0.0F, 0.0F);
-                } else if (kind == 16) {
+                } else if (kind == 15) {
                     int opaquePrimitiveCount = random.nextInt(1, 257);
                     int cutoutPrimitiveCount = random.nextInt(1, 257);
                     int transmissivePrimitiveCount = random.nextInt(1, 257);
@@ -714,31 +714,6 @@ final class PrimeProductionMathGpuTest {
                                     + (geometry == 1 ? 0 : cutoutPrimitiveCount);
                     putInt(input, index, words, 2, 0, transmissiveMacroBase);
                     putInt(input, index, words, 2, 1, expectedPrimitive);
-                } else if (kind == 18) {
-                    float sunImportance = positiveFloat(random, -20, 20);
-                    float areaImportance = positiveFloat(random, -20, 20);
-                    if (local == 0) {
-                        sunImportance = 0.0F;
-                        areaImportance = 0.0F;
-                    } else if (local == 1) {
-                        sunImportance = 1.0F;
-                        areaImportance = 0.0F;
-                    } else if (local == 2) {
-                        sunImportance = 0.0F;
-                        areaImportance = 1.0F;
-                    } else if (local == 3) {
-                        sunImportance = 1.0F;
-                        areaImportance = 1.0F;
-                    }
-                    putVec4(
-                            input,
-                            index,
-                            words,
-                            1,
-                            sunImportance,
-                            areaImportance,
-                            0.0F,
-                            0.0F);
                 } else {
                     putVec4(
                             input,

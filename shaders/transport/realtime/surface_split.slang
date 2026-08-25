@@ -347,7 +347,6 @@ public void primeSplitVisibleSurface<AreaNee>(
                 denoiserState,
                 result,
                 surface,
-                0u,
                 true,
                 recordIndex);
         bool deltaWalk = continuation

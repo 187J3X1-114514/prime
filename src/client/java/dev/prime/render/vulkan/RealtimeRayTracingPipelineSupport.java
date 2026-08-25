@@ -436,7 +436,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 commandBuffer,
                 stack,
                 program,
-                RealtimePrimaryGroups.LANDING_SAMPLED_LIGHT_ADVANCE,
+                RealtimePrimaryGroups.LANDING_DUAL_LIGHT_ADVANCE,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_AREA_QUEUE);
         this.queueBarrier(commandBuffer, stack);

@@ -22,7 +22,6 @@ import "transport/direct/primary.slang";
 import "transport/direct/selection.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
-import "policy/transport/light_family.slang";
 
 public bool primePrepareRealtimeAreaSample(
         inout PrimeIntegratorContext context,
@@ -70,60 +69,7 @@ public AreaLightSample primeExecuteRealtimeAreaSample(
     return area;
 }
 
-public PrimeRealtimeLightResult primeShadeRealtimeSunLightEvent<SharcTraining>(
-        SharcTraining sharcTraining,
-        inout PrimeIntegratorContext context,
-        uint recordIndex,
-        PrimeWavefrontTransportRecord record,
-        SurfaceInteraction surface,
-        PrimeRealtimeLightEvent event)
-    where SharcTraining : IPrimeWavefrontSharcTraining
-{
-    PrimeRealtimeLightResult result;
-    result.storedSunProbability = event.storedSunProbability;
-    uint2 pixel = primeWavefrontPixel(recordIndex);
-    PathState path = primeWavefrontPath(pixel, record);
-    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
-    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
-        return result;
-    }
-    float3 viewDirection = -path.rayDirection;
-    PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    IntegratorRecord integrator;
-    integrator.sunDirectionIntensity = float4(
-            primePush.sunDirection,
-            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
-    integrator.environmentRadiance = float4(0.0);
-    float sunProbability = primeSunFamilyProbabilityFromStored(
-            event.storedSunProbability);
-    float3 direct = primeEstimateDirectSun(
-            context,
-            integrator,
-            surface,
-            viewDirection,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            volumeStack,
-            sunProbability);
-    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    if (!primeWavefrontTransparentBranch(control)) {
-        sharcTraining.recordHit(context, path, surface, direct);
-    }
-    float3 contribution = path.throughput * direct;
-    if (any(contribution > float3(0.0))) {
-        primeAccumulateDeferredDirectLight(
-                context,
-                pixel,
-                control,
-                contribution);
-    }
-    return result;
-}
-
-public PrimeRealtimeLightResult primeShadeRealtimeAreaLightEvent<SharcTraining>(
+public void primeShadeRealtimeDualLightEvent<SharcTraining>(
         SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint recordIndex,
@@ -135,10 +81,8 @@ public PrimeRealtimeLightResult primeShadeRealtimeAreaLightEvent<SharcTraining>(
         AreaLightSample area)
     where SharcTraining : IPrimeWavefrontSharcTraining
 {
-    PrimeRealtimeLightResult result;
-    result.storedSunProbability = event.storedSunProbability;
     if (!preparedArea) {
-        return result;
+        return;
     }
 
     uint2 pixel = primeWavefrontPixel(recordIndex);
@@ -185,19 +129,25 @@ public PrimeRealtimeLightResult primeShadeRealtimeAreaLightEvent<SharcTraining>(
                 path.throughput
                         * (sun.lighting.specular * sun.visibility
                                 + nonsun.specular));
-        result.storedSunProbability = 0u;
-        return result;
+        return;
     }
 
-    float sunProbability = primeSunFamilyProbabilityFromStored(
-            event.storedSunProbability);
-    float3 direct = primeEstimateDirectPreparedAreaLight(
+    float3 direct = primeEstimateDirectSun(
+            context,
+            integrator,
+            surface,
+            viewDirection,
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            volumeStack);
+    direct += primeEstimateDirectPreparedAreaLight(
             context,
             surface,
             viewDirection,
             area,
-            volumeStack,
-            1.0 - sunProbability);
+            volumeStack);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     if (!primeWavefrontTransparentBranch(control)) {
         sharcTraining.recordHit(context, path, surface, direct);
@@ -210,5 +160,4 @@ public PrimeRealtimeLightResult primeShadeRealtimeAreaLightEvent<SharcTraining>(
                 control,
                 contribution);
     }
-    return result;
 }

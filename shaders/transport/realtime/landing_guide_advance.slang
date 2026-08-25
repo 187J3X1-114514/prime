@@ -21,8 +21,6 @@ public void primeAdvanceLandingGuidePath(
             primeLoadWavefrontTransportRecord(recordIndex);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    uint storedSunProbability =
-            primeLoadWavefrontSunFamilyProbability(recordIndex);
     bool continuation = primeAdvanceTransparentWavefrontRecord(
             PrimeLandingTransportPhase(),
             context,
@@ -30,7 +28,6 @@ public void primeAdvanceLandingGuidePath(
             record,
             surface,
             control,
-            storedSunProbability,
             true);
     primePublishLandingContinuation(recordIndex, true, continuation);
 }

@@ -54,7 +54,6 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
         SurfaceInteraction surface,
         bool transmissionBranch,
         bool guideEnabled,
-        uint storedSunProbability,
         bool skipRoulette,
         uint pathIndex)
     where Phase : IPrimeRealtimeTransportPhase
@@ -276,15 +275,6 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
                     guideEnabled,
                     hasGuide))) {
         return false;
-    }
-    if (areaNee.enabled() && supportsSolidAngle
-            && !primarySurfaceReplacement) {
-        areaNee.markSecondaryPath(
-                path,
-                integrator,
-                surface,
-                viewDirection,
-                storedSunProbability);
     }
     path.bounce++;
     return true;

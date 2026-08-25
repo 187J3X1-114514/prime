@@ -162,11 +162,8 @@ public float3 primeEstimateDirectPreparedAreaLight(
         SurfaceInteraction surface,
         float3 viewDirection,
         AreaLightSample area,
-        PrimeOpenPbrVolumeStack volumeStack,
-        float lightFamilyProbability) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    area.light.pdf = primeLightFamilyPdfValue(
-            area.light.pdf, lightFamilyProbability);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         return float3(0.0);
     }
@@ -199,8 +196,7 @@ public float3 primeEstimateDirectAreaLight(
         float3 viewDirection,
         float2 treeSample,
         float2 positionSample,
-        PrimeOpenPbrVolumeStack volumeStack,
-        float lightFamilyProbability) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     AreaLightSample area = primeSampleAreaLight(
             surface.position,
             primeAreaLightReceiverNormal(surface, viewDirection),
@@ -211,8 +207,7 @@ public float3 primeEstimateDirectAreaLight(
             surface,
             viewDirection,
             area,
-            volumeStack,
-            lightFamilyProbability);
+            volumeStack);
 }
 
 public float3 primeEstimateDirectSun(
@@ -221,11 +216,8 @@ public float3 primeEstimateDirectSun(
         SurfaceInteraction surface,
         float3 viewDirection,
         float2 sampleValue,
-        PrimeOpenPbrVolumeStack volumeStack,
-        float lightFamilyProbability) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
-    light.pdf = primeLightFamilyPdfValue(
-            light.pdf, lightFamilyProbability);
     if (!primeAtmosphereDistantDirectionVisible(light.direction)) {
         return float3(0.0);
     }
@@ -250,51 +242,6 @@ public float3 primeEstimateDirectSun(
             volumeStack,
             primeUsesAirGap(),
             true);
-}
-
-public struct PrimePreparedSunShadow {
-    public LightSample light;
-    public float3 contribution;
-    public bool active;
-};
-
-public PrimePreparedSunShadow primePrepareDirectSunShadow(
-        inout PrimeIntegratorContext context,
-        IntegratorRecord integrator,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        float2 sampleValue,
-        PrimeOpenPbrVolumeStack volumeStack,
-        float lightFamilyProbability) {
-    PrimePreparedSunShadow result;
-    result.light = primeSampleSun(integrator, surface.position, sampleValue);
-    result.light.pdf = primeLightFamilyPdfValue(
-            result.light.pdf, lightFamilyProbability);
-    result.contribution = float3(0.0);
-    result.active = false;
-    if (!primeAtmosphereDistantDirectionVisible(result.light.direction)) {
-        return result;
-    }
-    float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    if (!primeDirectSampleEligible(surface, shadingNormal, result.light)) {
-        return result;
-    }
-    float3 radiance = primeResolveSampledSunRadiance(
-            integrator, surface.position, result.light);
-    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
-            context,
-            surface,
-            viewDirection,
-            shadingNormal,
-            result.light,
-            radiance,
-            volumeStack,
-            primeUsesAirGap(),
-            false,
-            true);
-    result.contribution = split.diffuse + split.specular;
-    result.active = any(result.contribution > float3(0.0));
-    return result;
 }
 
 public PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(

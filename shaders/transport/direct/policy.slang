@@ -8,17 +8,9 @@ import "contract/light.slang";
 import "transport/direct/primary.slang";
 import "transport/direct/selection.slang";
 import "bsdf/compact/contract/volume.slang";
-import "policy/transport/light_family.slang";
 
 public interface IPrimeSecondaryAreaNee {
     bool enabled();
-    void markSecondaryPath(
-            inout PathState path,
-            IntegratorRecord integrator,
-            SurfaceInteraction surface,
-            float3 viewDirection,
-            uint storedSunProbability);
-
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
@@ -66,20 +58,12 @@ public struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
                         preparedSample,
                         PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                         PRIME_SAMPLE_DIMENSION_PRIMARY),
-                volumeStack,
-                1.0);
+                volumeStack);
     }
 }
 
 public struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return true; }
-    void markSecondaryPath(
-            inout PathState path,
-            IntegratorRecord integrator,
-            SurfaceInteraction surface,
-            float3 viewDirection,
-            uint storedSunProbability) {}
-
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
@@ -114,26 +98,12 @@ public struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
                         preparedSample,
                         PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                         PRIME_SAMPLE_DIMENSION_SECONDARY),
-                volumeStack,
-                1.0);
+                volumeStack);
     }
 }
 
 public struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return true; }
-    void markSecondaryPath(
-            inout PathState path,
-            IntegratorRecord integrator,
-            SurfaceInteraction surface,
-            float3 viewDirection,
-            uint storedSunProbability) {
-        path.sourceReserved = storedSunProbability != 0u
-                ? storedSunProbability
-                : primeStoredSunFamilyProbability(
-                        primeSecondarySunFamilyProbability(
-                                integrator, surface, viewDirection));
-    }
-
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
@@ -163,13 +133,6 @@ public struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
 
 public struct PrimeNoSecondaryAreaNee : IPrimeSecondaryAreaNee {
     bool enabled() { return false; }
-    void markSecondaryPath(
-            inout PathState path,
-            IntegratorRecord integrator,
-            SurfaceInteraction surface,
-            float3 viewDirection,
-            uint storedSunProbability) {}
-
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,

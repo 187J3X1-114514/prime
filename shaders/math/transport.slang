@@ -61,11 +61,6 @@ public float primePowerHeuristicOverPdfValue(float sampledPdf, float otherPdf)
     return (ratio / otherPdf) / (1.0 + ratio * ratio);
 }
 
-public float primeLightFamilyPdfValue(float conditionalPdf, float familyProbability)
-{
-    return conditionalPdf * familyProbability;
-}
-
 public float primeAreaHitMisWeightValue(
         bool previousUsedAreaNee,
         bool previousCannotUseMis,

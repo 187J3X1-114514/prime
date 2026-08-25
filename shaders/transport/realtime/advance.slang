@@ -39,7 +39,6 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
         uint control,
-        uint storedSunProbability,
         bool skipRoulette)
     where Phase : IPrimeRealtimeTransportPhase
 {
@@ -75,7 +74,6 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
             denoiserState,
             result,
             surface,
-            storedSunProbability,
             skipRoulette,
             recordIndex);
     continuation = continuation
@@ -103,7 +101,6 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
         uint control,
-        uint storedSunProbability,
         bool skipRoulette)
     where Phase : IPrimeRealtimeTransportPhase
 {
@@ -162,7 +159,6 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
             surface,
             transmissionBranch,
             guideEnabled,
-            storedSunProbability,
             skipRoulette,
             recordIndex);
     bool integratedContinuation = continuation;

@@ -133,7 +133,7 @@
       "maxFiles": 113,
       "maxBytes": 468894
     },
-    "entry/realtime/landing_sampled_light_advance.raygeneration.slang": {
+    "entry/realtime/landing_dual_light_advance.raygeneration.slang": {
       "maxFiles": 153,
       "maxBytes": 632686
     },
@@ -177,11 +177,7 @@
       "maxFiles": 21,
       "maxBytes": 69097
     },
-    "entry/realtime/sharc/training_light_sun.raygeneration.slang": {
-      "maxFiles": 106,
-      "maxBytes": 447620
-    },
-    "entry/realtime/sharc/training_light_area.raygeneration.slang": {
+    "entry/realtime/sharc/training_dual_light.raygeneration.slang": {
       "maxFiles": 107,
       "maxBytes": 448596
     },
@@ -193,7 +189,7 @@
       "maxFiles": 65,
       "maxBytes": 360031
     },
-    "entry/realtime/steady_area_shade_advance.raygeneration.slang": {
+    "entry/realtime/steady_dual_light_advance.raygeneration.slang": {
       "maxFiles": 147,
       "maxBytes": 611567
     },
@@ -204,10 +200,6 @@
     "entry/realtime/steady_no_light_advance.raygeneration.slang": {
       "maxFiles": 147,
       "maxBytes": 611591
-    },
-    "entry/realtime/steady_sun_shade_advance.raygeneration.slang": {
-      "maxFiles": 147,
-      "maxBytes": 611557
     },
     "entry/realtime/branch_resolve.raygeneration.slang": {
       "maxFiles": 32,

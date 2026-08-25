@@ -55,7 +55,7 @@ entry。优先级由“减少的可见代码与编译扇出 / 新增的队列、
 
 首选的源码级特化轴是：
 
-1. 已有 wavefront 阶段以及 NONE/SUN/AREA 等已分类光照模式；
+1. 已有 wavefront 阶段以及 NONE/DUAL 等已分类光照模式；
 2. discrete-only 与一般 solid-angle 路径；
 3. opaque 与需要完整透射/foliage 能力的复杂材质；
 4. 普通路径与首接口条件分支；

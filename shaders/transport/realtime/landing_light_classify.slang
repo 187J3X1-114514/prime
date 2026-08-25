@@ -22,11 +22,9 @@ public void primeClassifyLandingLight(uint launchIndex) {
     PrimeRealtimeLightEvent lightEvent =
             primeClassifyRealtimeLightEvent(
                     recordIndex, record, surface, control);
-    primeStoreWavefrontSunFamilyProbability(
-            recordIndex, lightEvent.storedSunProbability);
 
     // GUIDE_DUAL owns the dense guide light event. Rare terminal states stay with the
-    // sampled-light family instead of creating a mostly empty NONE dispatch.
+    // regular dual-light family instead of creating a mostly empty NONE dispatch.
     uint queue = lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL
             ? PRIME_WAVEFRONT_TRACE_QUEUE_0
             : PRIME_WAVEFRONT_AREA_QUEUE;

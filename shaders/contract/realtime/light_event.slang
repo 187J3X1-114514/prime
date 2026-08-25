@@ -3,8 +3,7 @@ module "contract/realtime/light_event.slang";
 
 public static const uint PRIME_REALTIME_LIGHT_EVENT_NONE = 0u;
 public static const uint PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL = 1u;
-public static const uint PRIME_REALTIME_LIGHT_EVENT_SUN = 2u;
-public static const uint PRIME_REALTIME_LIGHT_EVENT_AREA = 3u;
+public static const uint PRIME_REALTIME_LIGHT_EVENT_DUAL = 2u;
 
 public struct PrimeRealtimeAreaSampleInput {
     public float3 position;

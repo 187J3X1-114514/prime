@@ -8,5 +8,4 @@ public struct PrimeSteadyTransportPhase : IPrimeRealtimeTransportPhase {
     uint transparentFirstHitBounce() { return 0u; }
     bool transparentPreviousUsedAreaNee(bool enabled, uint bounce) { return enabled; }
     uint ordinaryGuideHitBounce(uint primaryBounce) { return 0u; }
-    bool ordinaryMarksSecondaryArea(uint bounce, uint primaryBounce) { return true; }
 }

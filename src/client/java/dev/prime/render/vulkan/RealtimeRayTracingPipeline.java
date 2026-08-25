@@ -31,7 +31,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_MODULE_COUNT = RealtimeStandardGroups.MODULE_COUNT;
 
     static int dispatchCount(int scatterCount) {
-        return 4 * scatterCount + 10;
+        return 3 * scatterCount + 10;
     }
 
     static int[] primaryDirectInputImageIndices() {
@@ -57,7 +57,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         // the sibling light-event kernels own disjoint records and logical signal lanes.
         return switch (group) {
             case RealtimePrimaryGroups.DELTA_WALK,
-                    RealtimePrimaryGroups.LANDING_SAMPLED_LIGHT_ADVANCE,
+                    RealtimePrimaryGroups.LANDING_DUAL_LIGHT_ADVANCE,
                     RealtimePrimaryGroups.LANDING_GUIDE_ADVANCE,
                     RealtimeStandardGroups.NO_LIGHT_ADVANCE -> true;
             default -> false;
@@ -114,14 +114,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                     commandBuffer,
                     stack,
                     activeProgram,
-                    RealtimeStandardGroups.SUN_SHADE_ADVANCE,
-                    commandOffset,
-                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
-            this.traceQueued(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    RealtimeStandardGroups.AREA_SHADE_ADVANCE,
+                    RealtimeStandardGroups.DUAL_LIGHT_ADVANCE,
                     commandOffset,
                     ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
             if (bounce + 1 == input.scatterCount()) {

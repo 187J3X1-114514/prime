@@ -17,14 +17,13 @@ import "state/realtime/contract.slang";
 import "state/realtime/light.slang";
 import "state/realtime/ordinary.slang";
 
-public uint primeShadeLandingGuideDualLight(
+public void primeShadeLandingGuideDualLight(
         inout PrimeIntegratorContext context,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
-        SurfaceInteraction surface) {
+    SurfaceInteraction surface) {
     PrimeRealtimeLightEvent lightEvent;
     lightEvent.type = PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL;
-    lightEvent.storedSunProbability = 0u;
     PathState path = primeWavefrontPath(
             primeWavefrontPixel(recordIndex), record);
     float3 preparedThroughput = float3(0.0);
@@ -41,18 +40,16 @@ public uint primeShadeLandingGuideDualLight(
     if (preparedArea) {
         area = primeExecuteRealtimeAreaSample(context, lightData);
     }
-    PrimeRealtimeLightResult light =
-            primeShadeRealtimeAreaLightEvent(
-                    PrimeNoWavefrontSharcTraining(),
-                    context,
-                    recordIndex,
-                    record,
-                    surface,
-                    lightEvent,
-                    preparedArea,
-                    preparedThroughput,
-                    area);
-    return light.storedSunProbability;
+    primeShadeRealtimeDualLightEvent(
+            PrimeNoWavefrontSharcTraining(),
+            context,
+            recordIndex,
+            record,
+            surface,
+            lightEvent,
+            preparedArea,
+            preparedThroughput,
+            area);
 }
 
 public void primeShadeLandingGuideDualLightQueued(
@@ -62,10 +59,8 @@ public void primeShadeLandingGuideDualLightQueued(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
-    uint storedSunProbability = primeShadeLandingGuideDualLight(
+    primeShadeLandingGuideDualLight(
             context, recordIndex, record, surface);
-    primeStoreWavefrontSunFamilyProbability(
-            recordIndex, storedSunProbability);
     // Shadow traversal may reorder SER invocations, so reserve the bridge queue scalarly.
     primeAppendWavefrontContinuation(
             PrimePostTraceWavefrontContinuationAppender(),

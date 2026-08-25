@@ -26,14 +26,6 @@ public void primeReduceSharcTrainingChunk(
 
     uint jobCount = metadata & PRIME_SHARC_TRAINING_JOB_COUNT_MASK;
     bool terminal = (metadata & PRIME_SHARC_TRAINING_TERMINAL) != 0u;
-    uint previousStoredSunProbability = 0u;
-    if (jobCount != 0u) {
-        uint firstJobIndex = primeSharcTrainingJobIndex(trainingIndex, 0u);
-        previousStoredSunProbability =
-                primeWavefrontPaths[firstJobIndex]
-                        .transport.sourceAndPathControl.z;
-    }
-
     [loop]
     for (uint localBounce = 0u;
             localBounce < jobCount;
@@ -43,7 +35,7 @@ public void primeReduceSharcTrainingChunk(
         PrimeWavefrontTransportRecord record =
                 primeLoadWavefrontTransportRecord(jobIndex);
         PathState path = primeWavefrontPath(pixel, record);
-        path.sourceReserved = previousStoredSunProbability;
+        path.sourceReserved = 0u;
         path.previousLightNormal =
                 primeSharcTrainingJobPreviousLightNormal(jobIndex);
         SurfaceInteraction surface = primeLoadWavefrontSurface(jobIndex);
@@ -63,8 +55,6 @@ public void primeReduceSharcTrainingChunk(
             PrimeIntegratedSharcTraining().recordMiss(
                     context, path, integrator);
         }
-        previousStoredSunProbability =
-                primeLoadWavefrontSunFamilyProbability(jobIndex);
     }
 
     if (terminal) {
@@ -77,7 +67,7 @@ public void primeReduceSharcTrainingChunk(
     } else {
         primeWavefrontPaths[carrierIndex]
                 .transport.sourceAndPathControl.z =
-                        previousStoredSunProbability;
+                        0u;
     }
     primeWavefrontPaths[carrierIndex].psrPacked.x = 0u;
 }

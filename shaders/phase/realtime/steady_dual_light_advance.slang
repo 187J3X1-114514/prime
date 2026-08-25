@@ -1,5 +1,5 @@
 #language slang 2026
-module "phase/realtime/steady_area_shade_advance.slang";
+module "phase/realtime/steady_dual_light_advance.slang";
 
 import "prime_realtime_abi.slang";
 import "policy/realtime/sharc.slang";
@@ -17,7 +17,7 @@ public void primePhase()
     primeWavefrontSteadyConsume(
             PrimeNoWavefrontSharcTraining(),
             context,
-            PRIME_STEADY_EVENT_AREA,
+            PRIME_STEADY_EVENT_DUAL,
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
             launchIndex);
 }

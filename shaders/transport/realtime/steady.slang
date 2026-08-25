@@ -32,14 +32,10 @@ import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
 
 public static const uint PRIME_STEADY_EVENT_NONE = 0u;
-public static const uint PRIME_STEADY_EVENT_SUN = 1u;
-public static const uint PRIME_STEADY_EVENT_AREA = 2u;
+public static const uint PRIME_STEADY_EVENT_DUAL = 1u;
 
 public uint primeSteadyEventQueue(uint eventType) {
-    if (eventType == PRIME_STEADY_EVENT_SUN) {
-        return PRIME_WAVEFRONT_AREA_QUEUE;
-    }
-    if (eventType == PRIME_STEADY_EVENT_AREA) {
+    if (eventType == PRIME_STEADY_EVENT_DUAL) {
         return PRIME_WAVEFRONT_TRACE_QUEUE_0;
     }
     return PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1;
@@ -55,15 +51,11 @@ public void primeQueueSteadyEvent(
             primeClassifyRealtimeLightEvent(
                     recordIndex, record, surface, control);
     uint eventType = PRIME_STEADY_EVENT_NONE;
-    if (lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_SUN) {
-        eventType = PRIME_STEADY_EVENT_SUN;
-    } else if (lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_AREA) {
-        eventType = PRIME_STEADY_EVENT_AREA;
+    if (lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_DUAL) {
+        eventType = PRIME_STEADY_EVENT_DUAL;
     }
     primeStoreWavefrontSurface(recordIndex, surface);
-    primeStoreWavefrontSunFamilyProbability(
-            recordIndex, lightEvent.storedSunProbability);
-    // NONE, SUN and AREA are a per-lane partition, so the queue is not subgroup-uniform.
+    // NONE and DUAL are a per-lane partition, so the queue is not subgroup-uniform.
     primeAppendWavefrontContinuation(
             PrimeScalarWavefrontContinuationAppender(),
             primeSteadyEventQueue(eventType),
@@ -119,7 +111,6 @@ public bool primeTryReuseSteadyIndirect<IndirectReuse, SharcTraining>(
     record = primeWavefrontWithActive(record, false);
     primeStoreWavefrontTransportRecord(recordIndex, record);
     primeStoreWavefrontSurface(recordIndex, surface);
-    primeStoreWavefrontSunFamilyProbability(recordIndex, 0u);
     return true;
 }
 
@@ -152,31 +143,20 @@ public void primeWavefrontSharcSteadyClassify<IndirectReuse, SharcTraining>(
     primeQueueSteadyEvent(context, recordIndex, record, surface);
 }
 
-public uint primeShadeSteadyEvent<SharcTraining>(
+public void primeShadeSteadyEvent<SharcTraining>(
         SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint eventType,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
-        SurfaceInteraction surface,
-        uint storedSunProbability)
+        SurfaceInteraction surface)
     where SharcTraining : IPrimeWavefrontSharcTraining
 {
     PrimeRealtimeLightEvent lightEvent;
-    lightEvent.type = eventType == PRIME_STEADY_EVENT_SUN
-            ? PRIME_REALTIME_LIGHT_EVENT_SUN
-            : eventType == PRIME_STEADY_EVENT_AREA
-                    ? PRIME_REALTIME_LIGHT_EVENT_AREA
-                    : PRIME_REALTIME_LIGHT_EVENT_NONE;
-    lightEvent.storedSunProbability = storedSunProbability;
-    if (eventType == PRIME_STEADY_EVENT_SUN) {
-        PrimeRealtimeLightResult light =
-                primeShadeRealtimeSunLightEvent(
-                        sharcTraining,
-                        context, recordIndex, record, surface, lightEvent);
-        return light.storedSunProbability;
-    }
-    if (eventType != PRIME_STEADY_EVENT_AREA) {
+    lightEvent.type = eventType == PRIME_STEADY_EVENT_DUAL
+            ? PRIME_REALTIME_LIGHT_EVENT_DUAL
+            : PRIME_REALTIME_LIGHT_EVENT_NONE;
+    if (eventType != PRIME_STEADY_EVENT_DUAL) {
         uint control = asuint(record.rayDirectionAndDenoiserControl.w);
         if (surface.hitKind == PRIME_HIT_SURFACE
                 && !primeWavefrontTransparentBranch(control)) {
@@ -189,7 +169,7 @@ public uint primeShadeSteadyEvent<SharcTraining>(
                         context, path, surface, float3(0.0));
             }
         }
-        return 0u;
+        return;
     }
 
     PathState path = primeWavefrontPath(
@@ -208,18 +188,16 @@ public uint primeShadeSteadyEvent<SharcTraining>(
     if (preparedArea) {
         area = primeExecuteRealtimeAreaSample(context, lightData);
     }
-    PrimeRealtimeLightResult light =
-            primeShadeRealtimeAreaLightEvent(
-                    sharcTraining,
-                    context,
-                    recordIndex,
-                    record,
-                    surface,
-                    lightEvent,
-                    preparedArea,
-                    preparedThroughput,
-                    area);
-    return light.storedSunProbability;
+    primeShadeRealtimeDualLightEvent(
+            sharcTraining,
+            context,
+            recordIndex,
+            record,
+            surface,
+            lightEvent,
+            preparedArea,
+            preparedThroughput,
+            area);
 }
 
 public void primeWavefrontSteadyConsume<SharcTraining>(
@@ -235,14 +213,13 @@ public void primeWavefrontSteadyConsume<SharcTraining>(
             primeLoadWavefrontTransportRecord(recordIndex);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    uint storedSunProbability = primeShadeSteadyEvent(
+    primeShadeSteadyEvent(
             sharcTraining,
             context,
             eventType,
             recordIndex,
             record,
-            surface,
-            primeLoadWavefrontSunFamilyProbability(recordIndex));
+            surface);
     bool transparent = primeWavefrontTransparentBranch(control);
     if (!transparent && surface.hitKind == PRIME_HIT_NONE) {
         PathState path = primeWavefrontPath(
@@ -262,7 +239,6 @@ public void primeWavefrontSteadyConsume<SharcTraining>(
                     record,
                     surface,
                     control,
-                    storedSunProbability,
                     false)
             : primeAdvanceOrdinaryWavefrontRecord(
                     PrimeSteadyTransportPhase(),
@@ -271,7 +247,6 @@ public void primeWavefrontSteadyConsume<SharcTraining>(
                     record,
                     surface,
                     control,
-                    storedSunProbability,
                     false);
     if (!transparent && !continuation) {
         PrimeWavefrontTransportRecord finished =

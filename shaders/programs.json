@@ -227,29 +227,15 @@
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
       ]
     },
-    "realtime_sharc_training_light_sun": {
-      "source": "shaders/entry/realtime/sharc/training_light_sun.raygeneration.slang",
+    "realtime_sharc_training_dual_light": {
+      "source": "shaders/entry/realtime/sharc/training_dual_light.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_sharc_training_light_sun.rgen.spv"
+      "resource": "realtime_sharc_training_dual_light.rgen.spv"
     },
-    "realtime_sharc_training_light_sun_ser": {
-      "source": "shaders/entry/realtime/sharc/training_light_sun.raygeneration.slang",
+    "realtime_sharc_training_dual_light_ser": {
+      "source": "shaders/entry/realtime/sharc/training_dual_light.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_sharc_training_light_sun_ser.rgen.spv",
-      "definitions": [
-        "-DPRIME_ENABLE_SER=1",
-        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
-      ]
-    },
-    "realtime_sharc_training_light_area": {
-      "source": "shaders/entry/realtime/sharc/training_light_area.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_sharc_training_light_area.rgen.spv"
-    },
-    "realtime_sharc_training_light_area_ser": {
-      "source": "shaders/entry/realtime/sharc/training_light_area.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_sharc_training_light_area_ser.rgen.spv",
+      "resource": "realtime_sharc_training_dual_light_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
@@ -344,15 +330,15 @@
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
       ]
     },
-    "realtime_wavefront_landing_sampled_light_advance": {
-      "source": "shaders/entry/realtime/landing_sampled_light_advance.raygeneration.slang",
+    "realtime_wavefront_landing_dual_light_advance": {
+      "source": "shaders/entry/realtime/landing_dual_light_advance.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_landing_sampled_light_advance.rgen.spv"
+      "resource": "realtime_wavefront_landing_dual_light_advance.rgen.spv"
     },
-    "realtime_wavefront_landing_sampled_light_advance_ser": {
-      "source": "shaders/entry/realtime/landing_sampled_light_advance.raygeneration.slang",
+    "realtime_wavefront_landing_dual_light_advance_ser": {
+      "source": "shaders/entry/realtime/landing_dual_light_advance.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_landing_sampled_light_advance_ser.rgen.spv",
+      "resource": "realtime_wavefront_landing_dual_light_advance_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
@@ -377,15 +363,15 @@
       "stage": "raygeneration",
       "resource": "realtime_wavefront_noisy_output_resolve.rgen.spv"
     },
-    "realtime_wavefront_steady_area_shade_advance": {
-      "source": "shaders/entry/realtime/steady_area_shade_advance.raygeneration.slang",
+    "realtime_wavefront_steady_dual_light_advance": {
+      "source": "shaders/entry/realtime/steady_dual_light_advance.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_area_shade_advance.rgen.spv"
+      "resource": "realtime_wavefront_steady_dual_light_advance.rgen.spv"
     },
-    "realtime_wavefront_steady_area_shade_advance_ser": {
-      "source": "shaders/entry/realtime/steady_area_shade_advance.raygeneration.slang",
+    "realtime_wavefront_steady_dual_light_advance_ser": {
+      "source": "shaders/entry/realtime/steady_dual_light_advance.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_area_shade_advance_ser.rgen.spv",
+      "resource": "realtime_wavefront_steady_dual_light_advance_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
@@ -414,20 +400,6 @@
       "source": "shaders/entry/realtime/steady_no_light_advance.raygeneration.slang",
       "stage": "raygeneration",
       "resource": "realtime_wavefront_steady_no_light_advance_ser.rgen.spv",
-      "definitions": [
-        "-DPRIME_ENABLE_SER=1",
-        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
-      ]
-    },
-    "realtime_wavefront_steady_sun_shade_advance": {
-      "source": "shaders/entry/realtime/steady_sun_shade_advance.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_sun_shade_advance.rgen.spv"
-    },
-    "realtime_wavefront_steady_sun_shade_advance_ser": {
-      "source": "shaders/entry/realtime/steady_sun_shade_advance.raygeneration.slang",
-      "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_sun_shade_advance_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
@@ -501,12 +473,11 @@
         "realtime_wavefront_delta_walk",
         "realtime_wavefront_landing_light_classify",
         "realtime_wavefront_landing_guide_dual_light",
-        "realtime_wavefront_landing_sampled_light_advance",
+        "realtime_wavefront_landing_dual_light_advance",
         "realtime_wavefront_landing_guide_advance",
         "realtime_wavefront_steady_trace_classify",
         "realtime_wavefront_steady_no_light_advance",
-        "realtime_wavefront_steady_sun_shade_advance",
-        "realtime_wavefront_steady_area_shade_advance",
+        "realtime_wavefront_steady_dual_light_advance",
         "realtime_wavefront_branch_resolve",
         "realtime_wavefront_noisy_output_resolve"
       ],
@@ -562,10 +533,6 @@
         {
           "module": 12,
           "control": 0
-        },
-        {
-          "module": 13,
-          "control": 0
         }
       ]
     },
@@ -577,12 +544,11 @@
         "realtime_wavefront_delta_walk_ser",
         "realtime_wavefront_landing_light_classify_ser",
         "realtime_wavefront_landing_guide_dual_light_ser",
-        "realtime_wavefront_landing_sampled_light_advance_ser",
+        "realtime_wavefront_landing_dual_light_advance_ser",
         "realtime_wavefront_landing_guide_advance_ser",
         "realtime_wavefront_steady_trace_classify_ser",
         "realtime_wavefront_steady_no_light_advance_ser",
-        "realtime_wavefront_steady_sun_shade_advance_ser",
-        "realtime_wavefront_steady_area_shade_advance_ser",
+        "realtime_wavefront_steady_dual_light_advance_ser",
         "realtime_wavefront_branch_resolve_ser",
         "realtime_wavefront_noisy_output_resolve"
       ],
@@ -638,10 +604,6 @@
         {
           "module": 12,
           "control": 0
-        },
-        {
-          "module": 13,
-          "control": 0
         }
       ]
     },
@@ -653,7 +615,7 @@
         "realtime_wavefront_delta_walk",
         "realtime_wavefront_landing_light_classify",
         "realtime_wavefront_landing_guide_dual_light",
-        "realtime_wavefront_landing_sampled_light_advance",
+        "realtime_wavefront_landing_dual_light_advance",
         "realtime_wavefront_landing_guide_advance",
         "realtime_sharc_bridge_trace",
         "realtime_sharc_bridge_query",
@@ -683,7 +645,7 @@
         "realtime_wavefront_delta_walk_ser",
         "realtime_wavefront_landing_light_classify_ser",
         "realtime_wavefront_landing_guide_dual_light_ser",
-        "realtime_wavefront_landing_sampled_light_advance_ser",
+        "realtime_wavefront_landing_dual_light_advance_ser",
         "realtime_wavefront_landing_guide_advance_ser",
         "realtime_sharc_bridge_trace_ser",
         "realtime_sharc_bridge_query_ser",
@@ -712,8 +674,7 @@
         "realtime_sharc_training_path_walk",
         "realtime_sharc_training_light_classify",
         "realtime_sharc_training_light_none",
-        "realtime_sharc_training_light_sun",
-        "realtime_sharc_training_light_area",
+        "realtime_sharc_training_dual_light",
         "realtime_sharc_training_anchor_reduce"
       ],
       "groups": [
@@ -724,8 +685,7 @@
         { "module": 3, "control": 0 },
         { "module": 4, "control": 0 },
         { "module": 5, "control": 0 },
-        { "module": 6, "control": 0 },
-        { "module": 7, "control": 0 }
+        { "module": 6, "control": 0 }
       ]
     },
     "sharc.training.ser": {
@@ -735,8 +695,7 @@
         "realtime_sharc_training_path_walk_ser",
         "realtime_sharc_training_light_classify_ser",
         "realtime_sharc_training_light_none_ser",
-        "realtime_sharc_training_light_sun_ser",
-        "realtime_sharc_training_light_area_ser",
+        "realtime_sharc_training_dual_light_ser",
         "realtime_sharc_training_anchor_reduce_ser"
       ],
       "groups": [
@@ -747,8 +706,7 @@
         { "module": 3, "control": 0 },
         { "module": 4, "control": 0 },
         { "module": 5, "control": 0 },
-        { "module": 6, "control": 0 },
-        { "module": 7, "control": 0 }
+        { "module": 6, "control": 0 }
       ]
     },
     "offline.scalar": {

@@ -1,30 +1,19 @@
 #language slang 2026
 module "transport/realtime/light_event_classify.slang";
 
-import "transport/realtime/light.slang";
 import "contract/realtime/light_event.slang";
 
-import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "state/realtime/contract.slang";
 import "state/realtime/ordinary.slang";
 import "service/bsdf/contract/sample.slang";
-import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
-import "math/sampling.slang";
 import "service/bsdf/dispatch/traits.slang";
-import "transport/direct/selection.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
-import "policy/transport/light_family.slang";
-
-public struct PrimeRealtimeLightResult {
-    public uint storedSunProbability;
-};
 
 public struct PrimeRealtimeLightEvent {
     public uint type;
-    public uint storedSunProbability;
 };
 
 public PrimeRealtimeLightEvent primeClassifyRealtimeLightEvent(
@@ -34,7 +23,6 @@ public PrimeRealtimeLightEvent primeClassifyRealtimeLightEvent(
         uint control) {
     PrimeRealtimeLightEvent event;
     event.type = PRIME_REALTIME_LIGHT_EVENT_NONE;
-    event.storedSunProbability = 0u;
     if (surface.hitKind != PRIME_HIT_SURFACE) {
         return event;
     }
@@ -58,25 +46,11 @@ public PrimeRealtimeLightEvent primeClassifyRealtimeLightEvent(
         return event;
     }
 
-    IntegratorRecord integrator;
-    integrator.sunDirectionIntensity = float4(
-            primePush.sunDirection,
-            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
-    integrator.environmentRadiance = float4(0.0);
-    float sunProbability = primeMixedWavefrontSunProbability(
-            integrator, surface, viewDirection);
-    event.storedSunProbability =
-            primeStoredSunFamilyProbability(sunProbability);
-    PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    event.type = primeSecondarySamplesSunLight(
-            preparedSample, sunProbability)
-            ? PRIME_REALTIME_LIGHT_EVENT_SUN
-            : PRIME_REALTIME_LIGHT_EVENT_AREA;
+    event.type = PRIME_REALTIME_LIGHT_EVENT_DUAL;
     return event;
 }
 
 public bool primeRealtimeLightEventSamplesArea(PrimeRealtimeLightEvent event) {
     return event.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL
-            || event.type == PRIME_REALTIME_LIGHT_EVENT_AREA;
+            || event.type == PRIME_REALTIME_LIGHT_EVENT_DUAL;
 }

@@ -21,12 +21,12 @@ public final class RealtimeSharcRayTracingPipeline
     }
 
     static int trainingDispatchCount(int scatterCount) {
-        return 6 * chunkCount(scatterCount, TRAINING_WALK_CHUNK) + 2;
+        return 5 * chunkCount(scatterCount, TRAINING_WALK_CHUNK) + 2;
     }
 
     static int trainingDispatchCount(
             int scatterCount, int width, int height) {
-        return 6 * chunkCount(
+        return 5 * chunkCount(
                 scatterCount, trainingWalkDepth(width, height)) + 2;
     }
 
@@ -125,14 +125,7 @@ public final class RealtimeSharcRayTracingPipeline
                     commandBuffer,
                     stack,
                     trainingProgram,
-                    RealtimeSharcTrainingGroups.LIGHT_SUN,
-                    commandOffset,
-                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
-            this.traceQueued(
-                    commandBuffer,
-                    stack,
-                    trainingProgram,
-                    RealtimeSharcTrainingGroups.LIGHT_AREA,
+                    RealtimeSharcTrainingGroups.DUAL_LIGHT,
                     commandOffset,
                     ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
             this.queueBarrier(commandBuffer, stack);

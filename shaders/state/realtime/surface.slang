@@ -8,7 +8,6 @@ import "math/packed_geometry.slang";
 import "model/material/defaults.slang";
 import "service/trace/surface.slang";
 import "contract/path.slang";
-import "policy/transport/light_family.slang";
 
 public static const uint PRIME_WAVEFRONT_SURFACE_LANE_WORDS = 4u;
 
@@ -40,28 +39,9 @@ public uint primeWavefrontSurfaceWord(uint pathIndex) {
             + pathIndex * (PRIME_WAVEFRONT_SURFACE_RECORD_SIZE / 4u);
 }
 
-// The physical surface record owns these high bits between Light and Shade; SurfaceInteraction
-// continues to expose only the low-byte hit kind.
-public void primeStoreWavefrontSunFamilyProbability(
-        uint pathIndex,
-        uint storedProbability) {
-    uint word = primeWavefrontSurfaceWord(pathIndex)
-            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
-    primeWavefrontQueue[word] = primePackWavefrontSurfaceSunProbability(
-            primeWavefrontQueue[word], storedProbability);
-}
-
-public uint primeLoadWavefrontSunFamilyProbability(uint pathIndex) {
-    uint word = primeWavefrontSurfaceWord(pathIndex)
-            + PRIME_WAVEFRONT_SURFACE_LANE_WORDS;
-    return primeWavefrontSurfaceSunProbability(primeWavefrontQueue[word]);
-}
-
 public void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
     uint base = primeWavefrontSurfaceWord(pathIndex);
     if (surface.hitKind == PRIME_HIT_NONE) {
-        // Clear the complete packed hit-kind word; Light may reuse its high bits for sun-family
-        // probability on surface paths, and stale bits must not survive record reuse.
         primeWavefrontQueue[base + PRIME_WAVEFRONT_SURFACE_LANE_WORDS] =
                 PRIME_HIT_NONE;
         return;

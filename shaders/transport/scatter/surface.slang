@@ -44,7 +44,6 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
         inout PrimeDenoiserState denoiserState,
         inout PrimeOrdinarySample result,
         SurfaceInteraction surface,
-        uint storedSunProbability,
         bool skipRoulette,
         uint pathIndex)
     where Phase : IPrimeRealtimeTransportPhase
@@ -244,18 +243,6 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
                     surfaceLinearRoughness,
                     skipRoulette)) {
         return false;
-    }
-    if (areaNee.enabled()
-            && supportsSolidAngle
-            && denoiserState.hasPrimarySurface
-            && phase.ordinaryMarksSecondaryArea(
-                    path.bounce, denoiserState.primaryBounce)) {
-        areaNee.markSecondaryPath(
-                path,
-                integrator,
-                surface,
-                viewDirection,
-                storedSunProbability);
     }
     path.bounce++;
     return true;

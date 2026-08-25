@@ -8,7 +8,7 @@ final class RealtimePrimaryGroups {
     static final int DELTA_WALK = 3;
     static final int LANDING_LIGHT_CLASSIFY = 4;
     static final int LANDING_GUIDE_DUAL_LIGHT = 5;
-    static final int LANDING_SAMPLED_LIGHT_ADVANCE = 6;
+    static final int LANDING_DUAL_LIGHT_ADVANCE = 6;
     static final int LANDING_GUIDE_ADVANCE = 7;
 
     private RealtimePrimaryGroups() {}

@@ -1,11 +1,10 @@
 #language slang 2026
-module "phase/realtime/steady_sun_shade_advance.slang";
+module "phase/realtime/landing_dual_light_advance.slang";
 
 import "prime_realtime_abi.slang";
-import "policy/realtime/sharc.slang";
 import "service/trace/context.slang";
 import "state/realtime/queue.slang";
-import "transport/realtime/steady.slang";
+import "transport/realtime/landing_dual_light_advance.slang";
 
 public void primePhase()
 {
@@ -14,10 +13,5 @@ public void primePhase()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
-    primeWavefrontSteadyConsume(
-            PrimeNoWavefrontSharcTraining(),
-            context,
-            PRIME_STEADY_EVENT_SUN,
-            PRIME_WAVEFRONT_AREA_QUEUE,
-            launchIndex);
+    primeShadeAndAdvanceLandingDualLight(context, launchIndex);
 }

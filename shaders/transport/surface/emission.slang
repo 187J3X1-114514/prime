@@ -2,6 +2,7 @@
 module "transport/surface/emission.slang";
 
 import "prime_abi_types.slang";
+import "contract/path.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
 import "service/atmosphere/starmap.slang";
@@ -11,7 +12,6 @@ import "service/light/sample.slang";
 import "model/material/defaults.slang";
 import "service/trace/context.slang";
 import "transport/surface/access.slang";
-import "policy/transport/light_family.slang";
 
 public float3 primeEvaluateEnvironmentContribution(
         inout PrimeIntegratorContext context,
@@ -20,11 +20,8 @@ public float3 primeEvaluateEnvironmentContribution(
             integrator, path.physicalOrigin, path.rayDirection);
     LightEvaluation sun = primeEvaluateSun(
             integrator, path.physicalOrigin, path.rayDirection);
-    if (primeHasStoredLightFamilyProbability(path.sourceReserved)) {
-        sun.pdf = primeLightFamilyPdfValue(
-                sun.pdf, primeSunFamilyProbabilityFromStored(path.sourceReserved));
-    }
-    bool previousUsedSunNee = primePreviousSunNeeEnabled(path.flags);
+    bool previousUsedSunNee =
+            (path.flags & PRIME_PATH_PREVIOUS_NO_SUN_NEE) == 0u;
     float sunWeight = primePreviousCannotUseMis(path) || !previousUsedSunNee
             ? 1.0
             : primePowerHeuristic(
@@ -55,10 +52,6 @@ public float3 primeEvaluateLocalHitEmission(
             path.rayDirection,
             path.previousLightNormal,
             evaluateAreaPdf);
-    if (primeHasStoredLightFamilyProbability(path.sourceReserved)) {
-        hitAreaLight.pdf = primeLightFamilyPdfValue(
-                hitAreaLight.pdf, primeAreaFamilyProbabilityFromStored(path.sourceReserved));
-    }
     float hitAreaWeight = primeAreaHitMisWeightValue(
             previousUsedAreaNee,
             !evaluateAreaPdf,

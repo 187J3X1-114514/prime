@@ -226,8 +226,7 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
                                 preparedSample,
                                 PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                                 PRIME_SAMPLE_DIMENSION_PRIMARY),
-                        volumeStack,
-                        1.0));
+                        volumeStack));
         result.areaRequest = primePrepareOfflineArea(
                 context,
                 path,

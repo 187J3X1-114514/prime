@@ -23,16 +23,18 @@ public void primeClassifyLandingLight(uint launchIndex) {
             primeClassifyRealtimeLightEvent(
                     recordIndex, record, surface, control);
 
-    // GUIDE_DUAL owns the dense guide light event. Rare terminal states stay with the
-    // regular dual-light family instead of creating a mostly empty NONE dispatch.
-    uint queue = lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL
-            ? PRIME_WAVEFRONT_TRACE_QUEUE_0
-            : PRIME_WAVEFRONT_AREA_QUEUE;
-    // The event partition is lane-varying. A subgroup reservation would reserve only the
-    // elected lane's queue, then reuse its offset while other lanes write different queues.
+    // Publish each lane-varying partition through a fixed queue so subgroup compaction retains
+    // producer locality for the branch-heavy light-tree consumers.
+    bool guideDual =
+            lightEvent.type == PRIME_REALTIME_LIGHT_EVENT_GUIDE_DUAL;
     primeAppendWavefrontContinuation(
-            PrimeScalarWavefrontContinuationAppender(),
-            queue,
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRACE_QUEUE_0,
             recordIndex,
-            true);
+            guideDual);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_AREA_QUEUE,
+            recordIndex,
+            !guideDual);
 }

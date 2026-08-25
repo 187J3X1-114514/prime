@@ -334,10 +334,20 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void laneVaryingQueuePartitionsUseScalarReservation()
+    void fixedQueuePartitionsCompactOnlyBeforeSerReorder()
             throws IOException {
+        Set<Integer> landing = parse(wavefrontShader(
+                "realtime", "landing_light_classify", "_ser")).opcodes;
+        assertTrue(landing.contains(OP_GROUP_NON_UNIFORM_ELECT));
+        assertTrue(landing.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
+        assertTrue(landing.contains(OP_GROUP_NON_UNIFORM_BALLOT));
+        assertTrue(landing.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
+
         for (String suffix : List.of("", "_ser")) {
             for (String stage : List.of("landing_light_classify", "steady_trace_classify")) {
+                if (stage.equals("landing_light_classify") && suffix.equals("_ser")) {
+                    continue;
+                }
                 Set<Integer> opcodes = parse(
                         wavefrontShader("realtime", stage, suffix)).opcodes;
                 assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_ELECT),

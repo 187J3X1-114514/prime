@@ -93,7 +93,6 @@ abstract class VerifyGeneratedSlangAbi extends DefaultTask {
 				tracePayload: 'TracePayload',
 				surfaceInteraction: 'SurfaceInteraction',
 				nrdMotionPushConstants: 'NrdMotionPushConstants',
-				sharcFrameConstants: 'SharcFrameConstants',
 				sunShadowQueryConstants: 'SunShadowQueryConstants'
 		]
 		def missing = []

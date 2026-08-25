@@ -4,7 +4,6 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
-import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -21,18 +20,7 @@ public interface RealtimeIntegratorPipeline extends Destroyable {
             List<VulkanImage> materialOpticalPages,
             VulkanBuffer textureRecords,
             AtmospherePipeline atmosphere,
-            RawWavefrontFrame signals,
-            boolean sharcRequested);
-
-    long prepareFrame(
-            VkCommandBuffer commandBuffer,
-            RealtimeFramePlan plan,
-            TerrainScene.ResidentSceneView scene,
-            long textureRevision);
-
-    void submitted(long token);
-
-    void abandon(long token);
+            RawWavefrontFrame signals);
 
     void trace(
             VkCommandBuffer commandBuffer,
@@ -42,8 +30,6 @@ public interface RealtimeIntegratorPipeline extends Destroyable {
     int passCount();
 
     long sizedResourceBytes();
-
-    boolean sharcEffective();
 
     void releaseSizedResourcesAfterIdle();
 }

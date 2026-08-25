@@ -267,7 +267,6 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
             bsdf,
             preparedSample,
             discreteContinuation,
-            surfaceLinearRoughness,
             skipRoulette || primeTransparentRouletteBlocked(
                     primeTransparentTransportOwnsGuide(
                             false,

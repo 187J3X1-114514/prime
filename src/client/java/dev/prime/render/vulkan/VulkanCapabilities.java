@@ -1,7 +1,6 @@
 package dev.prime.render.vulkan;
 
 import dev.prime.render.WavefrontShaderPermutation;
-import java.util.Objects;
 
 public record VulkanCapabilities(
         boolean available,
@@ -21,18 +20,7 @@ public record VulkanCapabilities(
         boolean opacityMicromapSupported,
         int maxOpacity2StateSubdivisionLevel,
         int maxOpacity4StateSubdivisionLevel,
-        boolean fsrFp16Supported,
-        boolean sharcSupported,
-        String sharcUnavailableReason) {
-
-    public VulkanCapabilities {
-        sharcUnavailableReason = Objects.requireNonNull(
-                sharcUnavailableReason, "sharcUnavailableReason");
-        if (sharcSupported && !sharcUnavailableReason.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "Supported SHARC capability cannot have a failure reason");
-        }
-    }
+        boolean fsrFp16Supported) {
 
     public String wavefrontShaderSuffix() {
         return WavefrontShaderPermutation.suffix(
@@ -59,8 +47,6 @@ public record VulkanCapabilities(
                 false,
                 0,
                 0,
-                false,
-                false,
-                reason);
+                false);
     }
 }

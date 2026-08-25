@@ -1,3 +1,0 @@
-[submodule "third_party/sharc"]
-	path = third_party/sharc
-	url = https://github.com/NVIDIA-RTX/SHARC.git

@@ -45,14 +45,6 @@
       "maxFiles": 4,
       "maxBytes": 10925
     },
-    "entry/lighting/sharc_integrated_update.compute.slang": {
-      "maxFiles": 16,
-      "maxBytes": 128874
-    },
-    "entry/lighting/sharc_resolve.compute.slang": {
-      "maxFiles": 14,
-      "maxBytes": 106345
-    },
     "entry/lighting/sun_shadow.raygeneration.slang": {
       "maxFiles": 6,
       "maxBytes": 16766
@@ -152,42 +144,6 @@
     "entry/realtime/noisy_output_resolve.raygeneration.slang": {
       "maxFiles": 23,
       "maxBytes": 98112
-    },
-    "entry/realtime/sharc/bridge_query.raygeneration.slang": {
-      "maxFiles": 65,
-      "maxBytes": 347399
-    },
-    "entry/realtime/sharc/bridge_trace.raygeneration.slang": {
-      "maxFiles": 35,
-      "maxBytes": 128180
-    },
-    "entry/realtime/sharc/training_camera_delta_walk.raygeneration.slang": {
-      "maxFiles": 86,
-      "maxBytes": 275019
-    },
-    "entry/realtime/sharc/training_landing_advance.raygeneration.slang": {
-      "maxFiles": 103,
-      "maxBytes": 368090
-    },
-    "entry/realtime/sharc/training_light_classify.raygeneration.slang": {
-      "maxFiles": 84,
-      "maxBytes": 332259
-    },
-    "entry/realtime/sharc/training_light_none.raygeneration.slang": {
-      "maxFiles": 21,
-      "maxBytes": 69097
-    },
-    "entry/realtime/sharc/training_dual_light.raygeneration.slang": {
-      "maxFiles": 107,
-      "maxBytes": 448596
-    },
-    "entry/realtime/sharc/training_path_walk.raygeneration.slang": {
-      "maxFiles": 118,
-      "maxBytes": 468090
-    },
-    "entry/realtime/sharc/training_anchor_reduce.raygeneration.slang": {
-      "maxFiles": 65,
-      "maxBytes": 360031
     },
     "entry/realtime/steady_dual_light_advance.raygeneration.slang": {
       "maxFiles": 147,

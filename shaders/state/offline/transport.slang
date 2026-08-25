@@ -57,8 +57,6 @@ public PathState primeOfflinePath(
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
-    path.previousSharcRoughness = 0.0;
-    path.previousSharcEvent = 0u;
     return path;
 }
 

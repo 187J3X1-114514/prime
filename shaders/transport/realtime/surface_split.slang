@@ -241,7 +241,6 @@ public PrimeWavefrontContinuations primeInitializeTransparentWavefront<AreaNee>(
                     bsdf,
                     preparedSample,
                     branchDiscreteOnly,
-                    surfaceLinearRoughness,
                     true);
         }
         if (continuation) {

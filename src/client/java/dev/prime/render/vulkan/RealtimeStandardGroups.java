@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-/** Realtime transport topology without SHARC resources. */
+/** Realtime transport topology. */
 final class RealtimeStandardGroups {
     static final int TRACE_CLASSIFY = 8;
     static final int NO_LIGHT_ADVANCE = 9;

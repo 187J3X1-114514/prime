@@ -48,9 +48,6 @@ tradeoffs.
 - **SDR and HDR output:** both use the same Reinhard-Gamut display transform. HDR queries the active
   display's brightness capabilities, extends highlights through linear scRGB, and supports automatic
   or manual reference-white calibration.
-- **Bounced-light cache:** the optional SHARC cache remembers bounced lighting already calculated
-  nearby, usually making realtime path tracing faster and less noisy. It uses about 256 MiB of
-  additional VRAM and turns off automatically on unsupported GPUs.
 - **Offline Rendering Mode:** freezes the scene and accumulates raw, undenoised samples at native
   resolution. It preserves more detail, avoids realtime reconstruction artifacts, and targets a
   higher-quality final result, but usually looks noisier than the realtime image and needs longer
@@ -117,8 +114,6 @@ reuse the driver cache.
   NRD + FSR when it is unavailable.
 - **Reconstruction Quality Preset:** defaults to Performance. Raise it when the game is comfortably
   responsive, or lower it when frame rate is insufficient.
-- **SHARC Radiance Cache:** reuses bounced lighting already calculated nearby and should normally
-  remain enabled; disable it when video memory is limited.
 - **Terrain Worker Share:** defaults to 50% of Minecraft's maximum background workers. Lower it to
   reduce CPU contention while chunks load, or raise it to make Prime geometry appear sooner; at
   least one worker is always retained.

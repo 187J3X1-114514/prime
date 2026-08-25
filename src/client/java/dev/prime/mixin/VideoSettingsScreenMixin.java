@@ -59,7 +59,6 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$options = PrimeVideoOptions.create(
-                    ignored -> this.prime$updateDeltaWalkAvailability(),
                     this::prime$refreshDiagnosticOptions);
             list.addHeader(PRIME$HEADER);
             list.addBig(Button.builder(
@@ -69,10 +68,8 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$options.rendering().pathTracingEnabled());
             list.addBig(this.prime$options.rendering().screenshotMode());
-            list.addBig(this.prime$options.rendering().sharcEnabled());
             list.addBig(this.prime$options.rendering().scatterCount());
             list.addBig(this.prime$options.rendering().deltaWalkLimit());
-            this.prime$updateDeltaWalkAvailability();
             list.addBig(this.prime$options.rendering().terrainWorkerPercentage());
             list.addSmall(
                     this.prime$options.rendering().surfaceDetailMode(),
@@ -134,14 +131,12 @@ public abstract class VideoSettingsScreenMixin {
                     current.voxelTextureSurfaceStrengthSteps());
         }
         this.prime$refresh(this.prime$options.rendering().pathTracingEnabled(), true);
-        this.prime$refresh(this.prime$options.rendering().sharcEnabled(), true);
         this.prime$refresh(
                 this.prime$options.rendering().scatterCount(),
                 ScatterSettings.DEFAULT_COUNT);
         this.prime$refresh(
                 this.prime$options.rendering().deltaWalkLimit(),
                 DeltaWalkSettings.DEFAULT_LIMIT);
-        this.prime$updateDeltaWalkAvailability();
         this.prime$refresh(
                 this.prime$options.rendering().terrainWorkerPercentage(),
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);
@@ -223,21 +218,6 @@ public abstract class VideoSettingsScreenMixin {
                     runtime.nrdInputView());
         } finally {
             this.prime$refreshingDiagnostics = false;
-        }
-    }
-
-    @Unique
-    private void prime$updateDeltaWalkAvailability() {
-        if (this.prime$options == null) {
-            return;
-        }
-        OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
-        if (list == null) {
-            return;
-        }
-        AbstractWidget widget = list.findOption(this.prime$options.rendering().deltaWalkLimit());
-        if (widget != null) {
-            widget.active = !PrimeConfig.settings().sharcEnabled();
         }
     }
 

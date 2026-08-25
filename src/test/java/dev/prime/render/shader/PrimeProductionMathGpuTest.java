@@ -25,7 +25,6 @@ final class PrimeProductionMathGpuTest {
     private static final long QUEUED_PSR_SEED = 0x5053_5208_0000_0001L;
     private static final long SAMPLING_SEED = 0x5341_4D50_4C49_4E47L;
     private static final long BSDF_CONTRACT_SEED = 0x4253_4446_434F_5245L;
-    private static final long SHARC_TRAINING_SEED = 0x5348_4152_4354_4401L;
     private static final int[] SPECIAL_FLOAT_BITS = {
         0x0000_0000,
         0x0000_0001,
@@ -71,21 +70,6 @@ final class PrimeProductionMathGpuTest {
                 inputWords,
                 10,
                 TRANSPORT_SEED);
-    }
-
-    @Test
-    void sharcAnchorTrainingStateDirectionAndCollapsedTargetsPreserveTransport()
-            throws IOException {
-        int cases = CASES_PER_KIND;
-        int inputWords = 4;
-        ShaderPropertyBatch.assertProperties(
-                runner,
-                slangShader("prime_sharc_training_properties.comp.spv"),
-                sharcTrainingCases(cases, inputWords),
-                cases,
-                inputWords,
-                4,
-                SHARC_TRAINING_SEED);
     }
 
     @Test
@@ -1244,49 +1228,6 @@ final class PrimeProductionMathGpuTest {
                         0.0F);
                 putRandomUnitVec4(input, index, words, 13 + delta, random);
             }
-        }
-        return input;
-    }
-
-    private static ByteBuffer sharcTrainingCases(int cases, int words) {
-        ByteBuffer input = ShaderTestBuffer.inputs(cases, words);
-        SplittableRandom random = new SplittableRandom(SHARC_TRAINING_SEED);
-        for (int index = 0; index < cases; index++) {
-            int state = index & 3;
-            putInt(input, index, words, 0, 0, (index & 8) == 0 ? 0 : 1);
-            putInt(input, index, words, 0, 1, random.nextInt(320));
-            putInt(input, index, words, 0, 2, random.nextInt(320));
-            putInt(input, index, words, 0, 3, state);
-            float throughputX = (index & 15) == 0 ? 0.0F : random.nextFloat() * 8.0F;
-            float throughputY = (index & 31) == 0 ? 0.0F : random.nextFloat() * 8.0F;
-            float throughputZ = (index & 63) == 0 ? 0.0F : random.nextFloat() * 8.0F;
-            putVec4(
-                    input,
-                    index,
-                    words,
-                    1,
-                    throughputX,
-                    throughputY,
-                    throughputZ,
-                    0.0F);
-            putVec4(
-                    input,
-                    index,
-                    words,
-                    2,
-                    random.nextFloat() * 64.0F,
-                    random.nextFloat() * 64.0F,
-                    random.nextFloat() * 64.0F,
-                    0.0F);
-            putVec4(
-                    input,
-                    index,
-                    words,
-                    3,
-                    random.nextFloat() * 64.0F,
-                    random.nextFloat() * 64.0F,
-                    random.nextFloat() * 64.0F,
-                    0.0F);
         }
         return input;
     }

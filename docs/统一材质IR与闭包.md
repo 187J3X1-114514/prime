@@ -157,7 +157,7 @@ sample 与 albedo 由相互独立的 operation dispatcher 暴露，调用方只�
 
 因此 mixed opaque dielectric 可同时支持 diffuse solid-angle 与 discrete specular；透射闭包
 依据实际 roughness、相对 IOR 和 index matching 成为 discrete-only 或 solid-angle-only。
-NEE 查询 SOLID_ANGLE 支持，guide/deterministic 分支只判断是否 discrete-only；MIS、SHARC
+NEE 查询 SOLID_ANGLE 支持，guide/deterministic 分支只判断是否 discrete-only；MIS
 和前一路径状态只读取实际 sample 的 DISCRETE 事件。紧凑模块的 delta 标记在 Prime 适配边界
 映射为 discrete，仓库内不存在第二套事件实现。
 

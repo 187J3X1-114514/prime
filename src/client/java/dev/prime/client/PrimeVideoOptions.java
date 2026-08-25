@@ -21,7 +21,6 @@ import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.util.List;
 import java.util.Locale;
-import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.Options;
@@ -43,11 +42,10 @@ public final class PrimeVideoOptions {
     private PrimeVideoOptions() {
     }
 
-    public static OptionSet create(Consumer<Boolean> sharcChanged, Runnable diagnosticChanged) {
+    public static OptionSet create(Runnable diagnosticChanged) {
         return new OptionSet(
                 new Rendering(
                         pathTracingEnabled(),
-                        sharcEnabled(sharcChanged),
                         scatterCount(),
                         deltaWalkLimit(),
                         terrainWorkerPercentage(),
@@ -87,18 +85,6 @@ public final class PrimeVideoOptions {
                         Component.translatable("prime.options.path_tracing.tooltip")),
                 PrimeConfig.settings().pathTracingEnabled(),
                 PrimeVideoOptions::setPathTracingEnabled);
-    }
-
-    private static OptionInstance<Boolean> sharcEnabled(Consumer<Boolean> changed) {
-        return OptionInstance.createBoolean(
-                "prime.options.sharc",
-                OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.sharc.tooltip")),
-                PrimeConfig.settings().sharcEnabled(),
-                enabled -> {
-                    PrimeConfig.setSharcEnabled(enabled);
-                    changed.accept(enabled);
-                });
     }
 
     private static OptionInstance<Integer> scatterCount() {
@@ -569,7 +555,6 @@ public final class PrimeVideoOptions {
 
     public record Rendering(
             OptionInstance<Boolean> pathTracingEnabled,
-            OptionInstance<Boolean> sharcEnabled,
             OptionInstance<Integer> scatterCount,
             OptionInstance<Integer> deltaWalkLimit,
             OptionInstance<Integer> terrainWorkerPercentage,

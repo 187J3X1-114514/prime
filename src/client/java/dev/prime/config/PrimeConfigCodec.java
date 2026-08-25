@@ -21,7 +21,6 @@ import java.util.function.Function;
 /** Scalar codec and validation for the current Prime properties format. */
 final class PrimeConfigCodec {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
-    private static final String SHARC_ENABLED_KEY = "renderer.sharc";
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
     // Keep the legacy persisted key so existing configurations retain this value.
     private static final String DELTA_WALK_LIMIT_KEY = "renderer.primary_chain_limit";
@@ -48,7 +47,6 @@ final class PrimeConfigCodec {
     private static final String VANILLA_PBR_PRESETS_KEY = "material.vanilla_pbr_presets";
     private static final Set<String> CURRENT_KEYS = Set.of(
             PATH_TRACING_ENABLED_KEY,
-            SHARC_ENABLED_KEY,
             SCATTER_COUNT_KEY,
             DELTA_WALK_LIMIT_KEY,
             TERRAIN_WORKER_PERCENTAGE_KEY,
@@ -82,11 +80,6 @@ final class PrimeConfigCodec {
                 defaultSettings.pathTracingEnabled(),
                 PrimeConfigCodec::parseBoolean,
                 "path-tracing switch");
-        boolean sharc = reader.value(
-                SHARC_ENABLED_KEY,
-                defaultSettings.sharcEnabled(),
-                PrimeConfigCodec::parseBoolean,
-                "SHARC switch");
         int scatterCount = reader.value(
                 SCATTER_COUNT_KEY,
                 defaults.scatterCount(),
@@ -190,7 +183,6 @@ final class PrimeConfigCodec {
 
         PrimeSettings settings = new PrimeSettings(
                 pathTracing,
-                sharc,
                 surfaceDetail,
                 voxelStrength,
                 mode,
@@ -219,7 +211,6 @@ final class PrimeConfigCodec {
     static String encode(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         return PATH_TRACING_ENABLED_KEY + "=" + settings.pathTracingEnabled() + "\n"
-                + SHARC_ENABLED_KEY + "=" + settings.sharcEnabled() + "\n"
                 + SCATTER_COUNT_KEY + "=" + data.scatterCount() + "\n"
                 + DELTA_WALK_LIMIT_KEY + "=" + data.deltaWalkLimit() + "\n"
                 + TERRAIN_WORKER_PERCENTAGE_KEY + "="
@@ -252,9 +243,8 @@ final class PrimeConfigCodec {
     static void log(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 settings.pathTracingEnabled() ? "enabled" : "disabled",
-                settings.sharcEnabled() ? "enabled" : "disabled",
                 data.scatterCount(),
                 data.deltaWalkLimit(),
                 data.terrainWorkerPercentage(),

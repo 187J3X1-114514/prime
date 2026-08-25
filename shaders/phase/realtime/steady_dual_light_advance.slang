@@ -2,7 +2,6 @@
 module "phase/realtime/steady_dual_light_advance.slang";
 
 import "prime_realtime_abi.slang";
-import "policy/realtime/sharc.slang";
 import "service/trace/context.slang";
 import "state/realtime/queue.slang";
 import "transport/realtime/steady.slang";
@@ -15,7 +14,6 @@ public void primePhase()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_TRACE_QUEUE_0);
     }
     primeWavefrontSteadyConsume(
-            PrimeNoWavefrontSharcTraining(),
             context,
             PRIME_STEADY_EVENT_DUAL,
             PRIME_WAVEFRONT_TRACE_QUEUE_0,

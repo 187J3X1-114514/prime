@@ -43,6 +43,18 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void retiredRadianceCacheKeyIsIgnoredAndRemoved() throws Exception {
+        Properties properties = new Properties();
+        properties.load(new StringReader(PrimeConfig.serializedContents()));
+        properties.setProperty("renderer.sharc", "not-a-boolean");
+
+        PrimeConfigCodec.DecodeResult decoded = PrimeConfigCodec.decode(properties);
+
+        assertTrue(decoded.rewriteNeeded());
+        assertFalse(PrimeConfigCodec.encode(decoded.data()).contains("renderer.sharc="));
+    }
+
+    @Test
     void restoreDefaultsIncludesStandaloneSchedulingSettings() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
         PrimeConfig.setDeltaWalkLimit(DeltaWalkSettings.MAXIMUM_LIMIT);
@@ -277,11 +289,10 @@ final class PrimeConfigTest {
     void serializedContentsContainCurrentPersistentSettings() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
-        assertTrue(serialized.contains("renderer.sharc=true\n"));
+        assertFalse(serialized.contains("renderer.sharc="));
         assertTrue(serialized.contains("renderer.scatter_count=8\n"));
         assertTrue(serialized.contains("renderer.primary_chain_limit=8\n"));
         assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
-        assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertTrue(serialized.contains("material.surface_detail=normal\n"));
         assertTrue(serialized.contains("material.displacement_height=1\n"));
         assertEquals(

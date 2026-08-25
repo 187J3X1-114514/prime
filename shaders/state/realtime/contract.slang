@@ -23,7 +23,7 @@ public struct PrimeWavefrontTransportRecord {
     public float4 physicalOriginAndPreviousBsdfPdf;
     public uint4 sourceAndPathControl;
     public float4 rayDirectionAndDenoiserControl;
-    public float4 throughputAndSharcState;
+    public float4 throughputAndReserved;
     public uint4 medium0;
     public uint4 medium1;
 };
@@ -64,9 +64,6 @@ public static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT = 18u;
 public static const uint PRIME_WAVEFRONT_BYTE_MASK = 0xffu;
 public static const uint PRIME_WAVEFRONT_MEDIUM_COUNT_MASK = 0x3u;
 public static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
-public static const uint PRIME_WAVEFRONT_SHARC_SHIFT = 24u;
-public static const uint PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK = 0x3fu;
-public static const uint PRIME_WAVEFRONT_SHARC_EVENT_SHIFT = 6u;
 public static const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 public static const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
 // Transparent full-mode paths use the otherwise-unused top path-control bit to request the old

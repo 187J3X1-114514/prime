@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-/** Group order shared by the standard realtime and SHARC-query primary prefix. */
+/** Group order for the visible-primary realtime prefix. */
 final class RealtimePrimaryGroups {
     static final int CAMERA_TRACE = 0;
     static final int VISIBLE_DIRECT = 1;

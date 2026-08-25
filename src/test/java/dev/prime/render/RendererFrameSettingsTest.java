@@ -36,7 +36,6 @@ final class RendererFrameSettingsTest {
     private static RendererSettings settings(long revision, PostProcessingMode mode) {
         return new RendererSettings(
                 true,
-                true,
                 SurfaceDetailMode.DEFAULT,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 mode,

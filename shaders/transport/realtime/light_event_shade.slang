@@ -4,7 +4,6 @@ module "transport/realtime/light_event_shade.slang";
 import "transport/realtime/light_event_classify.slang";
 import "contract/realtime/light_event.slang";
 
-import "policy/realtime/sharc.slang";
 import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "model/atmosphere/sky.slang";
@@ -69,8 +68,7 @@ public AreaLightSample primeExecuteRealtimeAreaSample(
     return area;
 }
 
-public void primeShadeRealtimeDualLightEvent<SharcTraining>(
-        SharcTraining sharcTraining,
+public void primeShadeRealtimeDualLightEvent(
         inout PrimeIntegratorContext context,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
@@ -78,9 +76,7 @@ public void primeShadeRealtimeDualLightEvent<SharcTraining>(
         PrimeRealtimeLightEvent event,
         bool preparedArea,
         float3 preparedThroughput,
-        AreaLightSample area)
-    where SharcTraining : IPrimeWavefrontSharcTraining
-{
+        AreaLightSample area) {
     if (!preparedArea) {
         return;
     }
@@ -149,9 +145,6 @@ public void primeShadeRealtimeDualLightEvent<SharcTraining>(
             area,
             volumeStack);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    if (!primeWavefrontTransparentBranch(control)) {
-        sharcTraining.recordHit(context, path, surface, direct);
-    }
     float3 contribution = path.throughput * direct;
     if (any(contribution > float3(0.0))) {
         primeAccumulateDeferredDirectLight(

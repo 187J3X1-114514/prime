@@ -240,7 +240,6 @@ public bool primeIntegrateWavefrontSurface<Phase, SunNee, AreaNee, IndirectReuse
                     bsdf,
                     preparedSample,
                     discreteOnlyInterface,
-                    surfaceLinearRoughness,
                     skipRoulette)) {
         return false;
     }

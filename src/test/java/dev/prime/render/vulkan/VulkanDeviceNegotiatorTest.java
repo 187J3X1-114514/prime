@@ -55,16 +55,4 @@ final class VulkanDeviceNegotiatorTest {
         assertFalse(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
                 required, required, required, required - 1));
     }
-
-    @Test
-    void sharcRequiresNativeFp16StorageAndBufferInt64Atomics() {
-        assertTrue(VulkanDeviceNegotiator.supportsSharc(true, true, true));
-        assertFalse(VulkanDeviceNegotiator.supportsSharc(false, true, true));
-        assertFalse(VulkanDeviceNegotiator.supportsSharc(true, false, true));
-        assertFalse(VulkanDeviceNegotiator.supportsSharc(true, true, false));
-        assertEquals(
-                "Missing SHARC Vulkan capabilities: storageBuffer16BitAccess, "
-                        + "shaderBufferInt64Atomics",
-                VulkanDeviceNegotiator.sharcUnavailableReason(false, true, false));
-    }
 }

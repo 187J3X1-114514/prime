@@ -3,7 +3,6 @@ module "transport/realtime/steady.slang";
 
 import "policy/realtime/steady.slang";
 import "policy/realtime/queue.slang";
-import "policy/realtime/sharc.slang";
 import "prime_abi.slang";
 import "prime_realtime_abi.slang";
 import "prime_abi_types.slang";
@@ -77,98 +76,17 @@ public void primeWavefrontSteadyClassify(
     primeQueueSteadyEvent(context, recordIndex, record, surface);
 }
 
-public bool primeTryReuseSteadyIndirect<IndirectReuse, SharcTraining>(
-        IndirectReuse indirectReuse,
-        SharcTraining sharcTraining,
-        inout PrimeIntegratorContext context,
-        uint recordIndex,
-        inout PrimeWavefrontTransportRecord record,
-        SurfaceInteraction surface)
-    where IndirectReuse : IPrimeIndirectReuse
-    where SharcTraining : IPrimeWavefrontSharcTraining
-{
-    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    if (surface.hitKind != PRIME_HIT_SURFACE
-            || primeWavefrontTransparentBranch(control)) {
-        return false;
-    }
-    uint2 pixel = primeWavefrontPixel(recordIndex);
-    PathState path = primeWavefrontPath(pixel, record);
-    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
-    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
-        return false;
-    }
-    PrimeIndirectReuseResult reuse = indirectReuse.query(
-            context, path, surface, true);
-    if (!reuse.hit) {
-        return false;
-    }
-    if (any(reuse.contribution > float3(0.0))) {
-        primeAccumulateDeferredDirectLight(
-                context, pixel, control, reuse.contribution);
-    }
-    sharcTraining.finish(path);
-    record = primeWavefrontWithActive(record, false);
-    primeStoreWavefrontTransportRecord(recordIndex, record);
-    primeStoreWavefrontSurface(recordIndex, surface);
-    return true;
-}
-
-public void primeWavefrontSharcSteadyClassify<IndirectReuse, SharcTraining>(
-        IndirectReuse indirectReuse,
-        SharcTraining sharcTraining,
-        inout PrimeIntegratorContext context,
-        uint launchIndex)
-    where IndirectReuse : IPrimeIndirectReuse
-    where SharcTraining : IPrimeWavefrontSharcTraining
-{
-    uint recordIndex = primeWavefrontQueuedPath(
-            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0, launchIndex);
-    PrimeWavefrontTransportRecord record =
-            primeLoadWavefrontTransportRecord(recordIndex);
-    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    SurfaceInteraction surface = primeFusedWavefrontTrace(
-            context,
-            recordIndex,
-            primeWavefrontTransparentBranch(control));
-    if (primeTryReuseSteadyIndirect(
-            indirectReuse,
-            sharcTraining,
-            context,
-            recordIndex,
-            record,
-            surface)) {
-        return;
-    }
-    primeQueueSteadyEvent(context, recordIndex, record, surface);
-}
-
-public void primeShadeSteadyEvent<SharcTraining>(
-        SharcTraining sharcTraining,
+public void primeShadeSteadyEvent(
         inout PrimeIntegratorContext context,
         uint eventType,
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
-        SurfaceInteraction surface)
-    where SharcTraining : IPrimeWavefrontSharcTraining
-{
+        SurfaceInteraction surface) {
     PrimeRealtimeLightEvent lightEvent;
     lightEvent.type = eventType == PRIME_STEADY_EVENT_DUAL
             ? PRIME_REALTIME_LIGHT_EVENT_DUAL
             : PRIME_REALTIME_LIGHT_EVENT_NONE;
     if (eventType != PRIME_STEADY_EVENT_DUAL) {
-        uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-        if (surface.hitKind == PRIME_HIT_SURFACE
-                && !primeWavefrontTransparentBranch(control)) {
-            PathState path = primeWavefrontPath(
-                    primeWavefrontPixel(recordIndex), record);
-            PrimeOpenPbrVolumeStack volumeStack =
-                    primeWavefrontVolumeStack(record);
-            if (primeApplySegmentMedium(context, path, surface, volumeStack)) {
-                sharcTraining.recordHit(
-                        context, path, surface, float3(0.0));
-            }
-        }
         return;
     }
 
@@ -189,7 +107,6 @@ public void primeShadeSteadyEvent<SharcTraining>(
         area = primeExecuteRealtimeAreaSample(context, lightData);
     }
     primeShadeRealtimeDualLightEvent(
-            sharcTraining,
             context,
             recordIndex,
             record,
@@ -200,38 +117,24 @@ public void primeShadeSteadyEvent<SharcTraining>(
             area);
 }
 
-public void primeWavefrontSteadyConsume<SharcTraining>(
-        SharcTraining sharcTraining,
+public void primeWavefrontSteadyConsume(
         inout PrimeIntegratorContext context,
         uint eventType,
         uint sourceQueue,
-        uint launchIndex)
-    where SharcTraining : IPrimeWavefrontSharcTraining
-{
+        uint launchIndex) {
     uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     primeShadeSteadyEvent(
-            sharcTraining,
             context,
             eventType,
             recordIndex,
             record,
             surface);
     bool transparent = primeWavefrontTransparentBranch(control);
-    if (!transparent && surface.hitKind == PRIME_HIT_NONE) {
-        PathState path = primeWavefrontPath(
-                primeWavefrontPixel(recordIndex), record);
-        IntegratorRecord integrator;
-        integrator.sunDirectionIntensity = float4(
-                primePush.sunDirection,
-                ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
-        integrator.environmentRadiance = float4(0.0);
-        sharcTraining.recordMiss(context, path, integrator);
-    }
-        bool continuation = transparent
+    bool continuation = transparent
             ? primeAdvanceTransparentWavefrontRecord(
                     PrimeSteadyTransportPhase(),
                     context,
@@ -248,12 +151,6 @@ public void primeWavefrontSteadyConsume<SharcTraining>(
                     surface,
                     control,
                     false);
-    if (!transparent && !continuation) {
-        PrimeWavefrontTransportRecord finished =
-                primeLoadWavefrontTransportRecord(recordIndex);
-        sharcTraining.finish(primeWavefrontPath(
-                primeWavefrontPixel(recordIndex), finished));
-    }
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,

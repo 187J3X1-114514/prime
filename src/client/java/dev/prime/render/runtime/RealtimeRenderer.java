@@ -21,7 +21,6 @@ import dev.prime.render.vulkan.MaterialTexturePages;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
-import dev.prime.render.vulkan.RealtimeSharcRayTracingPipeline;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
@@ -48,7 +47,6 @@ final class RealtimeRenderer implements Destroyable {
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private MaterialSettings.Snapshot materialSettings;
-    private boolean sharcRequested;
     private boolean destroyed;
 
     RealtimeRenderer(
@@ -59,7 +57,7 @@ final class RealtimeRenderer implements Destroyable {
         this.backend = Objects.requireNonNull(backend, "backend");
         this.ngxContext = ngxContext;
         this.reconstructionRegistry = new ReconstructionBackendRegistry(context, ngxContext);
-        this.pipeline = this.createPipeline(false);
+        this.pipeline = new RealtimeRayTracingPipeline(context, backend);
         this.executor = new RealtimeFrameExecutor(context);
         this.exposureDiagnostics = new DisplayExposureDiagnostics(context);
     }
@@ -119,11 +117,6 @@ final class RealtimeRenderer implements Destroyable {
                 this.sampleIndex(),
                 this.pipeline.passCount(),
                 this.pipeline.sizedResourceBytes(),
-                this.sharcRequested,
-                this.pipeline.sharcEffective(),
-                this.sharcRequested && !this.context.capabilities().sharcSupported()
-                        ? this.context.capabilities().sharcUnavailableReason()
-                        : "",
                 this.exposureDiagnostics.latest());
     }
 
@@ -138,8 +131,7 @@ final class RealtimeRenderer implements Destroyable {
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
-            List<TraceBackend.SceneTexture> sceneTextures,
-            boolean sharcRequested) {
+            List<TraceBackend.SceneTexture> sceneTextures) {
         VulkanReconstructionResources current = this.resources;
         boolean resourcesMatch = current != null && current.matches(selection);
         if (resourcesMatch) {
@@ -153,8 +145,7 @@ final class RealtimeRenderer implements Destroyable {
                     materialTextures.opticalPages(),
                     materialTextures.textureRecords(),
                     atmosphere,
-                    current.processor().rawFrame(),
-                    sharcRequested);
+                    current.processor().rawFrame());
             return false;
         }
         VulkanReconstructionResources replacementResources = null;
@@ -174,8 +165,7 @@ final class RealtimeRenderer implements Destroyable {
                     materialTextures.opticalPages(),
                     materialTextures.textureRecords(),
                     atmosphere,
-                    replacementResources.processor().rawFrame(),
-                    sharcRequested);
+                    replacementResources.processor().rawFrame());
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacementResources, exception);
             throw exception;
@@ -224,11 +214,6 @@ final class RealtimeRenderer implements Destroyable {
         }
 
         RealtimeRenderSettings settings = input.settings();
-        boolean sharcChanged = this.sharcRequested != settings.sharcEnabled();
-        if (sharcChanged) {
-            this.selectPipeline(settings.sharcEnabled());
-        }
-        this.sharcRequested = settings.sharcEnabled();
         PostProcessingMode requestedMode = input.controls().rawOutput()
                 ? PostProcessingMode.DISABLED
                 : settings.postProcessing();
@@ -246,11 +231,10 @@ final class RealtimeRenderer implements Destroyable {
                 input.scene().tlas(),
                 input.atlasView(),
                 input.atlasSampler(),
-                input.sceneTextures(),
-                settings.sharcEnabled());
+                input.sceneTextures());
         boolean materialChanged = !settings.material().equals(this.materialSettings);
         this.materialSettings = settings.material();
-        boolean reconfigured = resized || materialChanged || sharcChanged;
+        boolean reconfigured = resized || materialChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return;
@@ -417,9 +401,6 @@ final class RealtimeRenderer implements Destroyable {
             int accumulatedSamples,
             int integratorPassCount,
             long integratorResourceBytes,
-            boolean sharcRequested,
-            boolean sharcEffective,
-            String sharcUnavailableReason,
             DisplayExposureDiagnostics.Snapshot exposure) {}
 
     void releaseSizedResourcesAfterIdle() {
@@ -436,7 +417,7 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeIntegratorPipeline replacementPipeline = null;
         VulkanReconstructionResources replacementResources = null;
         try {
-            replacementPipeline = this.createPipeline(this.sharcRequested);
+            replacementPipeline = new RealtimeRayTracingPipeline(this.context, this.backend);
             VulkanReconstructionResources current = this.resources;
             if (current != null) {
                 replacementResources = this.reconstructionRegistry.createResources(
@@ -456,25 +437,6 @@ final class RealtimeRenderer implements Destroyable {
         if (previousResources != null) {
             this.context.defer(previousResources);
         }
-    }
-
-    private void selectPipeline(boolean sharcRequested) {
-        boolean useSharc = sharcRequested && this.context.capabilities().sharcSupported();
-        if (useSharc == (this.pipeline instanceof RealtimeSharcRayTracingPipeline)) {
-            return;
-        }
-        RealtimeIntegratorPipeline replacement = this.createPipeline(sharcRequested);
-        RealtimeIntegratorPipeline previous = this.pipeline;
-        this.pipeline = replacement;
-        this.sampleState = this.sampleState.invalidated();
-        this.context.defer(previous);
-    }
-
-    private RealtimeIntegratorPipeline createPipeline(boolean sharcRequested) {
-        if (sharcRequested && this.context.capabilities().sharcSupported()) {
-            return new RealtimeSharcRayTracingPipeline(this.context, this.backend);
-        }
-        return new RealtimeRayTracingPipeline(this.context, this.backend);
     }
 
     @Override

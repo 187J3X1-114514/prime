@@ -27,19 +27,6 @@ public bool primeIsSolidAngleSample(BsdfSample bsdf) {
             && !primeIsDiscreteSample(bsdf);
 }
 
-public static const uint PRIME_SHARC_EVENT_DISCRETE = 0u;
-public static const uint PRIME_SHARC_EVENT_DIFFUSE = 1u;
-public static const uint PRIME_SHARC_EVENT_GLOSSY = 2u;
-
-public uint primeSharcEvent(BsdfSample bsdf) {
-    if (primeIsDiscreteSample(bsdf)) {
-        return PRIME_SHARC_EVENT_DISCRETE;
-    }
-    return (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u
-            ? PRIME_SHARC_EVENT_DIFFUSE
-            : PRIME_SHARC_EVENT_GLOSSY;
-}
-
 public bool primeApplyPathScatter(
         inout PrimeIntegratorContext context,
         inout PathState path,
@@ -83,14 +70,11 @@ public bool primeAdvancePathWithoutRoulette(
         inout PathState path,
         SurfaceInteraction surface,
         BsdfSample bsdf,
-        uint previousLightNormal,
-        float surfaceLinearRoughness) {
+        uint previousLightNormal) {
     if (!primeApplyPathScatter(context, path, surface, bsdf)) {
         return false;
     }
     path.previousLightNormal = previousLightNormal;
-    path.previousSharcRoughness = surfaceLinearRoughness;
-    path.previousSharcEvent = primeSharcEvent(bsdf);
     return true;
 }
 

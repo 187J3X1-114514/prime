@@ -1,31 +1,11 @@
 package dev.prime.render.vulkan;
 
-import com.mojang.blaze3d.vulkan.Destroyable;
-import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
-import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
-import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.shader.ShaderAbi;
-import dev.prime.render.vulkan.terrain.TerrainScene;
-import java.nio.ByteBuffer;
-import java.nio.LongBuffer;
-import java.util.List;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.KHRRayTracingPipeline;
-import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDescriptorBufferInfo;
-import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
-import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Standard realtime renderer without SHARC resources. */
+/** Standard realtime renderer. */
 public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipelineSupport {
     static final int RAYGEN_GROUP_COUNT = RealtimeStandardGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeStandardGroups.MODULE_COUNT;
@@ -70,7 +50,6 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 backend,
                 RealtimeStandardGroups.standardSchedule(
                         context.capabilities().wavefrontShaderSuffix()),
-                null,
                 dispatchCount(dev.prime.render.ScatterSettings.DEFAULT_COUNT),
                 "Prime realtime ray tracing pipeline",
                 "Prime realtime shader binding table");
@@ -139,7 +118,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     private void standardBarrierBefore(
             VkCommandBuffer commandBuffer, MemoryStack stack, int group) {
         if (standardBarrierPublishesImagesBefore(group)) {
-            this.nextStepBarrier(commandBuffer, stack, false);
+            this.nextStepBarrier(commandBuffer, stack);
         } else {
             this.queueBarrier(commandBuffer, stack);
         }

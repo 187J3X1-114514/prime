@@ -2,7 +2,6 @@
 module "phase/realtime/steady_trace_classify.slang";
 
 import "prime_realtime_abi.slang";
-import "policy/realtime/sharc.slang";
 import "service/trace/context.slang";
 import "state/realtime/queue.slang";
 import "transport/realtime/steady.slang";

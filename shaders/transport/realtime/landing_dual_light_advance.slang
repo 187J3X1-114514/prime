@@ -7,7 +7,6 @@ import "contract/path.slang";
 import "policy/realtime/landing.slang";
 import "state/realtime/surface.slang";
 import "state/realtime/queue.slang";
-import "policy/realtime/sharc.slang";
 import "service/light/sample.slang";
 import "service/trace/context.slang";
 import "state/realtime/contract.slang";
@@ -52,7 +51,6 @@ public void primeShadeLandingDualLight(
         area = primeExecuteRealtimeAreaSample(context, lightData);
     }
     primeShadeRealtimeDualLightEvent(
-            PrimeNoWavefrontSharcTraining(),
             context,
             recordIndex,
             record,

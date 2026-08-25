@@ -76,7 +76,5 @@ public PathState primeCameraPath(uint2 pixel, uint pathIndex, float2 cameraSampl
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
-    path.previousSharcRoughness = 0.0;
-    path.previousSharcEvent = 0u;
     return path;
 }

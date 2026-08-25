@@ -6,7 +6,6 @@ import java.util.Objects;
 
 /** Immutable settings consumed only by the interactive renderer. */
 public record RealtimeRenderSettings(
-        boolean sharcEnabled,
         PostProcessingMode postProcessing,
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
@@ -27,7 +26,6 @@ public record RealtimeRenderSettings(
     public static RealtimeRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new RealtimeRenderSettings(
-                settings.sharcEnabled(),
                 settings.postProcessingMode(),
                 settings.reconstructionQuality(),
                 settings.lighting(),

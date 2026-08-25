@@ -34,7 +34,6 @@ public bool primeAdvanceRealtimePath(
         BsdfSample bsdf,
         PrimePreparedSampleBase bounceSample,
         bool discreteOnlyInterface,
-        float surfaceLinearRoughness,
         bool skipRoulette) {
     uint previousLightNormal = discreteOnlyInterface
             ? 0u
@@ -44,8 +43,7 @@ public bool primeAdvanceRealtimePath(
             path,
             surface,
             bsdf,
-            previousLightNormal,
-            surfaceLinearRoughness)) {
+            previousLightNormal)) {
         return false;
     }
     if (skipRoulette) {
@@ -73,8 +71,7 @@ public bool primeAdvanceRealtimePath(
         SurfaceInteraction surface,
         BsdfSample bsdf,
         PrimePreparedSampleBase bounceSample,
-        bool discreteOnlyInterface,
-        float surfaceLinearRoughness) {
+        bool discreteOnlyInterface) {
     return primeAdvanceRealtimePath(
             context,
             path,
@@ -82,6 +79,5 @@ public bool primeAdvanceRealtimePath(
             bsdf,
             bounceSample,
             discreteOnlyInterface,
-            surfaceLinearRoughness,
             false);
 }

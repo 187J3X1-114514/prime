@@ -48,7 +48,6 @@ public final class RealtimeFrameExecutor {
         Objects.requireNonNull(processor, "processor");
         Objects.requireNonNull(processorFrame, "processorFrame");
         long atmosphereFrame = 0L;
-        long pipelineFrame = 0L;
         MaterialTexturePages.FrameToken materialFrame = null;
         DisplayExposureDiagnostics.Capture exposureCapture = null;
         VulkanFrameSubmission submission =
@@ -76,11 +75,6 @@ public final class RealtimeFrameExecutor {
             var encoder = this.context.commandEncoder();
             VkCommandBuffer commandBuffer =
                     encoder.allocateAndBeginTransientCommandBuffer();
-            pipelineFrame = pipeline.prepareFrame(
-                    commandBuffer,
-                    plan,
-                    scene,
-                    textureRevision);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer, () -> debugLabel);
             VulkanImageTransitions.prepareOutputForComposite(
@@ -133,9 +127,7 @@ public final class RealtimeFrameExecutor {
             // A normal return transfers command/resource ownership and advances Prime histories.
             submission.submitted();
             exposureDiagnostics.submitted(exposureCapture);
-            long submittedPipelineFrame = pipelineFrame;
-            RuntimeException commitFailure = ResourceCleanup.run(
-                    () -> pipeline.submitted(submittedPipelineFrame), null);
+            RuntimeException commitFailure = null;
             long submittedAtmosphereFrame = atmosphereFrame;
             commitFailure = ResourceCleanup.run(
                     () -> atmosphere.submitted(submittedAtmosphereFrame),
@@ -151,12 +143,6 @@ public final class RealtimeFrameExecutor {
         } catch (RuntimeException exception) {
             if (!submission.wasAcceptedByMinecraftHostSubmission()) {
                 RuntimeException failure = submission.abandon(exception);
-                if (pipelineFrame != 0L) {
-                    long abandonedPipelineFrame = pipelineFrame;
-                    failure = ResourceCleanup.run(
-                            () -> pipeline.abandon(abandonedPipelineFrame),
-                            failure);
-                }
                 if (atmosphereFrame != 0L) {
                     long abandonedAtmosphereFrame = atmosphereFrame;
                     failure = ResourceCleanup.run(

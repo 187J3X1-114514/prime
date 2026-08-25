@@ -68,7 +68,6 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             result,
             denoiserState.diffusePath,
             primeEvaluateDeltaHitEmission(context, path, surface));
-    float surfaceLinearRoughness = primeSurfaceLinearRoughness(surface);
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     float3 scatterSample = primeSobolSample3D(
@@ -108,8 +107,7 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             path,
             surface,
             bsdf,
-            0u,
-            surfaceLinearRoughness)) {
+            0u)) {
         return false;
     }
     path.bounce++;
@@ -183,7 +181,6 @@ public bool primeAdvanceTransparentDeltaWalk(
             guideEnabled ? diffusePath : transmissionBranch,
             primeEvaluateDeltaHitEmission(context, path, surface));
     float3 viewDirection = -path.rayDirection;
-    float surfaceLinearRoughness = primeSurfaceLinearRoughness(surface);
     float3 guidePreviousPosition = path.physicalOrigin;
     float3 guideThroughput = path.throughput;
     uint forkBounce = path.bounce;
@@ -235,8 +232,7 @@ public bool primeAdvanceTransparentDeltaWalk(
             path,
             surface,
             bsdf,
-            0u,
-            surfaceLinearRoughness)) {
+            0u)) {
         return false;
     }
     path.bounce++;

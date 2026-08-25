@@ -24,15 +24,6 @@ public uint primePackWavefrontPathControl(PathState path) {
                     << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
 }
 
-public uint primePackWavefrontSharcState(PathState path) {
-    uint roughness = uint(round(
-            clamp(path.previousSharcRoughness, 0.0, 1.0)
-                    * float(PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK)));
-    return ((path.previousSharcEvent << PRIME_WAVEFRONT_SHARC_EVENT_SHIFT)
-                    | roughness)
-            << PRIME_WAVEFRONT_SHARC_SHIFT;
-}
-
 public bool primeWavefrontActive(PrimeWavefrontTransportRecord record) {
     uint denoiserControl =
             asuint(record.rayDirectionAndDenoiserControl.w);
@@ -188,8 +179,7 @@ public PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
                     << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
     record.rayDirectionAndDenoiserControl =
             float4(path.rayDirection, asfloat(denoiserControl));
-    record.throughputAndSharcState =
-            float4(path.throughput, asfloat(primePackWavefrontSharcState(path)));
+    record.throughputAndReserved = float4(path.throughput, 0.0);
     return record;
 }
 

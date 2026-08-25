@@ -33,7 +33,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def wavefrontSurfaceRecord = schema.structs.wavefrontSurfaceRecord
 		def push = schema.structs.pushConstants
 		def nrdMotionPush = schema.structs.nrdMotionPushConstants
-		def sharcFrame = schema.structs.sharcFrameConstants
 		def sunShadowQuery = schema.structs.sunShadowQueryConstants
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
@@ -52,7 +51,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 96
 				|| surfaceInteraction.size != 96 || wavefrontSurfaceRecord.size != 96
 				|| push.size != 128
-				|| nrdMotionPush.size != 144 || sharcFrame.size != 112
+				|| nrdMotionPush.size != 144
 				|| sunShadowQuery.size != 48
 				|| schema.sceneTextureCount != 64
 				|| schema.materialPageCount != 16
@@ -223,7 +222,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('WavefrontSurfaceRecord', wavefrontSurfaceRecord)
 		validateStruct('PushConstants', push)
 		validateStruct('NrdMotionPushConstants', nrdMotionPush)
-		validateStruct('SharcFrameConstants', sharcFrame)
 		validateStruct('SunShadowQueryConstants', sunShadowQuery)
 
 		def constantName = { String value ->
@@ -246,7 +244,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			WAVEFRONT_SURFACE: wavefrontSurfaceRecord,
 			PUSH: push,
 			NRD_MOTION_PUSH: nrdMotionPush,
-			SHARC_FRAME: sharcFrame,
 			SUN_SHADOW_QUERY: sunShadowQuery
 		].each { prefix, definition ->
 			definition.fields.each { field ->
@@ -302,7 +299,6 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_SURFACE_RECORD_SIZE = ${wavefrontSurfaceRecord.size};
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
     public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
-    public static final int SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
     public static final int SUN_SHADOW_QUERY_CONSTANT_SIZE = ${sunShadowQuery.size};
     public static final int DESCRIPTOR_TLAS = ${schema.sharedDescriptors.tlas};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.sharedDescriptors.blockAtlas};
@@ -340,7 +336,6 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_STARMAP = ${schema.sharedDescriptors.starmap};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
     public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
-    public static final int DESCRIPTOR_SHARC_FRAME = ${schema.realtimeDescriptors.sharcFrame};
     public static final int OFFLINE_DESCRIPTOR_RUNNING_MEAN = ${schema.offlineDescriptors.runningMean};
     public static final int OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDescriptors.wavefrontPaths};
     public static final int OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
@@ -491,7 +486,6 @@ static const uint PRIME_TRACE_PAYLOAD_SIZE = ${tracePayload.size};
 static const uint PRIME_SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
 static const uint PRIME_PUSH_CONSTANT_SIZE = ${push.size};
 static const uint PRIME_NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
-static const uint PRIME_SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
 static const uint PRIME_SUN_SHADOW_QUERY_CONSTANT_SIZE = ${sunShadowQuery.size};
 static const uint PRIME_SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
 static const uint PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
@@ -625,11 +619,6 @@ public struct NrdMotionPushConstants
 ${slangStructFields(nrdMotionPush)}
 };
 
-public struct SharcFrameConstants
-{
-${slangStructFields(sharcFrame)}
-};
-
 public struct SunShadowQueryConstants
 {
 ${slangStructFields(sunShadowQuery)}
@@ -701,15 +690,6 @@ import "prime_abi_types.slang";
 
 // Generated from shaders/abi.json. The Vulkan range and shader block share this layout.
 public [[vk::push_constant]] ConstantBuffer<NrdMotionPushConstants> primeMotionPush;
-"""
-		new File(slangDir, 'prime_sharc_abi.slang').text = """\
-#language slang 2026
-module "prime_sharc_abi.slang";
-
-import "prime_abi_types.slang";
-
-[[vk::binding(${schema.realtimeDescriptors.sharcFrame}, 1)]]
-public ConstantBuffer<SharcFrameConstants> primeSharcFrame;
 """
 		new File(slangDir, 'prime_realtime_abi.slang').text = """\
 #language slang 2026

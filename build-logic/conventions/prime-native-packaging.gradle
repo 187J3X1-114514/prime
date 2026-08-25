@@ -6,10 +6,6 @@ jar {
 	from('THIRD_PARTY_LICENSES') {
 		into 'META-INF/licenses'
 	}
-	from('third_party/sharc/License.md') {
-		into 'META-INF/licenses'
-		rename { 'SHARC-LICENSE.md' }
-	}
 }
 
 def distributionVersion = providers.provider { project.version.toString() }
@@ -53,7 +49,6 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'META-INF/licenses/FIDELITYFX-SDK-LICENSE.txt',
 			'META-INF/licenses/NRD-LICENSE.txt',
 			'META-INF/licenses/DLSS-SDK-LICENSE.txt',
-			'META-INF/licenses/SHARC-LICENSE.md',
 			'META-INF/licenses/ROBOCUTE-NOTICE.txt',
 			'META-INF/licenses/NASA-DEEP-STAR-MAPS-2020-NOTICE.md',
 			'prime/starmap/starmap_2020_8k.json',

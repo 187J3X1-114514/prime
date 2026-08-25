@@ -81,7 +81,6 @@ public final class PrimeConfig {
     static RendererSettings rendererSettings(PrimeSettings current, long revision) {
         return new RendererSettings(
                 current.pathTracingEnabled(),
-                current.sharcEnabled(),
                 current.surfaceDetailMode(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
@@ -98,10 +97,6 @@ public final class PrimeConfig {
 
     public static void setPathTracingEnabled(boolean enabled) {
         update(settings.withPathTracingEnabled(enabled));
-    }
-
-    public static void setSharcEnabled(boolean enabled) {
-        update(settings.withSharcEnabled(enabled));
     }
 
     public static int scatterCount() {
@@ -239,7 +234,6 @@ public final class PrimeConfig {
     static PrimeSettings restoredDefaults(PrimeSettings current) {
         return current
                 .withPathTracingEnabled(true)
-                .withSharcEnabled(true)
                 .withSurfaceDetailMode(SurfaceDetailMode.DEFAULT)
                 .withVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS)
                 .withPostProcessingMode(PostProcessingMode.DEFAULT)

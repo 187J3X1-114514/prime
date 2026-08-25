@@ -126,28 +126,6 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
             }
         }
 
-        def allowedIncludes = [
-                'entry/lighting/sharc_resolve.compute.slang': [
-                        'phase/lighting/sharc_resolve_bridge.h'],
-                'entry/lighting/sharc_integrated_update.compute.slang': [
-                        'phase/lighting/sharc_integrated_update_bridge.h'],
-                'phase/lighting/sharc_resolve_bridge.h': [
-                        'service/sharc/vendor_bridge.h'],
-                'phase/lighting/sharc_integrated_update_bridge.h': [
-                        'service/sharc/vendor_bridge.h',
-                        'service/sharc/training_records.h'],
-                'policy/realtime/sharc_query.slang': [
-                        'service/sharc/vendor_bridge.h',
-                        'service/sharc/eligibility.h'],
-                'policy/realtime/sharc_training.slang': [
-                        'service/sharc/vendor_bridge.h',
-                        'service/sharc/eligibility.h',
-                        'service/sharc/training_records.h'],
-                'service/sharc/vendor_bridge.h': [
-                        'service/sharc/training_core.h', 'SharcCommon.h'],
-                'service/sharc/training_records.h': [
-                        'service/sharc/training_core.h']
-        ].collectEntries { source, targets -> [(source): targets as Set] }
         dependencyKinds.each { sourcePath, kinds ->
             def source = new File(sourcePath)
             def sourceRelative = shaderRelative(source)
@@ -155,12 +133,9 @@ abstract class VerifyPrimeShaderArchitecture extends DefaultTask {
             kinds.findAll { targetPath, included -> included }.each { targetPath, ignored ->
                 def target = new File(targetPath)
                 def targetName = shaderRelative(target) ?: target.name
-                if (!(allowedIncludes[sourceRelative] ?: Collections.emptySet())
-                        .contains(targetName)) {
-                    throw new GradleException(
-                            "Production include is not isolated to the SHARC bridge: "
-                                    + "${sourceRelative} -> ${targetName}")
-                }
+                throw new GradleException(
+                        "Production shader dependencies must use modules: "
+                                + "${sourceRelative} -> ${targetName}")
             }
         }
 

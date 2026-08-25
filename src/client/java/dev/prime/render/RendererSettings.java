@@ -9,7 +9,6 @@ import java.util.Objects;
 /** Immutable renderer configuration captured once at the client frame boundary. */
 public record RendererSettings(
         boolean pathTracingEnabled,
-        boolean sharcEnabled,
         SurfaceDetailMode surfaceDetailMode,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -24,7 +23,6 @@ public record RendererSettings(
         long revision) {
     public RendererSettings(
             boolean pathTracingEnabled,
-            boolean sharcEnabled,
             SurfaceDetailMode surfaceDetailMode,
             int voxelTextureSurfaceStrengthSteps,
             PostProcessingMode postProcessingMode,
@@ -35,7 +33,7 @@ public record RendererSettings(
             DisplaySettings.Snapshot display,
             long revision) {
         this(
-                pathTracingEnabled, sharcEnabled,
+                pathTracingEnabled,
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
@@ -46,7 +44,6 @@ public record RendererSettings(
 
     public RendererSettings(
             boolean pathTracingEnabled,
-            boolean sharcEnabled,
             SurfaceDetailMode surfaceDetailMode,
             int voxelTextureSurfaceStrengthSteps,
             PostProcessingMode postProcessingMode,
@@ -58,7 +55,7 @@ public record RendererSettings(
             int scatterCount,
             long revision) {
         this(
-                pathTracingEnabled, sharcEnabled,
+                pathTracingEnabled,
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
@@ -69,7 +66,6 @@ public record RendererSettings(
 
     public RendererSettings(
             boolean pathTracingEnabled,
-            boolean sharcEnabled,
             SurfaceDetailMode surfaceDetailMode,
             int voxelTextureSurfaceStrengthSteps,
             PostProcessingMode postProcessingMode,
@@ -82,7 +78,7 @@ public record RendererSettings(
             int terrainWorkerPercentage,
             long revision) {
         this(
-                pathTracingEnabled, sharcEnabled,
+                pathTracingEnabled,
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,

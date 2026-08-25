@@ -86,7 +86,6 @@ def shaderIncludeReport = layout.buildDirectory.file(
 		'reports/prime-shaders/include-graph.txt')
 def shaderSourceRoot = file('shaders')
 def shaderTestIncludeRoot = file('src/test/slang')
-def sharcIncludeRoot = file('third_party/sharc/include')
 def removedShaderReferencePaths = [
 		file('shaders/bsdf/core'),
 		file('shaders/bsdf/adapter/prime_bsdf_specializations.slang')
@@ -98,7 +97,6 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	inputs.files(
 			fileTree('shaders'),
 			fileTree('src/test/slang'),
-			fileTree('third_party/sharc/include'),
 			shaderAbiSlangRoot)
 	outputs.file(shaderIncludeReport)
 
@@ -113,7 +111,6 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 		def includeRoots = [
 				shaderRoot,
 				shaderTestIncludeRoot,
-				sharcIncludeRoot,
 				shaderAbiSlangRoot.get().asFile
 		]
 		includeRoots.each { root ->
@@ -233,7 +230,6 @@ def compileSlangTestShaders = tasks.register(
 	includeDirectories.from(
 			file('src/test/slang'),
 			file('shaders'),
-			file('third_party/sharc/include'),
 			shaderAbiSlangRoot)
 	outputDirectory = compiledSlangTestShaderRoot
 	debugLevel = '-g0'
@@ -246,7 +242,6 @@ def compileSlangTestShaders = tasks.register(
 
 def productionShaderIncludes = [
 		file('shaders'),
-		file('third_party/sharc/include'),
 		shaderAbiSlangRoot.get().asFile
 ]
 def productionShaderDebug = providers.gradleProperty('primeShaderFullDebug')
@@ -268,7 +263,7 @@ def verifyShaderArchitecture = tasks.register(
 	description = 'Verifies the manifest and production Slang visibility graph.'
 	dependsOn generateShaderAbi
 	shaderDirectory = shaderSourceRoot
-	includeDirectories.from(sharcIncludeRoot, shaderAbiSlangRoot)
+	includeDirectories.from(shaderAbiSlangRoot)
 	programManifest = shaderProgramManifest
 	closureBudget = layout.projectDirectory.file('shaders/closure-budgets.json')
 	reportFile = shaderArchitectureReport

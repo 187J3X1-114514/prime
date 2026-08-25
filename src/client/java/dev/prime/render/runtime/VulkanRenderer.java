@@ -432,14 +432,6 @@ public final class VulkanRenderer implements AutoCloseable {
                                 : "n/a",
                 realtime != null ? count(realtime.integratorPassCount()) : "n/a",
                 realtime != null ? bytes(realtime.integratorResourceBytes()) : "n/a"));
-        String sharcStatus = realtime == null
-                ? "n/a"
-                : realtime.sharcEffective()
-                        ? "enabled; cache 268,435,456 bytes"
-                        : !realtime.sharcRequested()
-                                ? "disabled by user"
-                                : "unavailable: " + realtime.sharcUnavailableReason();
-        lines.add("SHARC: " + sharcStatus);
         lines.add(String.format(
                 Locale.ROOT,
                 "Scene: TLAS instances %s; area-light emitters %s; light-tree nodes %s",

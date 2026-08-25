@@ -33,7 +33,7 @@ public PathState primeWavefrontPath(
     path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
     path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
             & PRIME_WAVEFRONT_PATH_FLAGS_MASK;
-    path.throughput = record.throughputAndSharcState.xyz;
+    path.throughput = record.throughputAndReserved.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.etaScale = primeUnpackWavefrontEtaScale(
             (pathControl >> PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
@@ -42,12 +42,6 @@ public PathState primeWavefrontPath(
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
-    uint packedSharc = asuint(record.throughputAndSharcState.w)
-            >> PRIME_WAVEFRONT_SHARC_SHIFT;
-    path.previousSharcRoughness = float(
-            packedSharc & PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK)
-            / float(PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK);
-    path.previousSharcEvent = packedSharc >> PRIME_WAVEFRONT_SHARC_EVENT_SHIFT;
     return path;
 }
 

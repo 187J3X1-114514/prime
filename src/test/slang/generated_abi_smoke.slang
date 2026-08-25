@@ -13,7 +13,6 @@ import "prime_abi_types.slang";
 [[vk::binding(10, 0)]] StructuredBuffer<TracePayload> tracePayloads;
 [[vk::binding(11, 0)]] StructuredBuffer<SurfaceInteraction> surfaceInteractions;
 [[vk::binding(12, 0)]] StructuredBuffer<NrdMotionPushConstants> nrdMotionRecords;
-[[vk::binding(13, 0)]] StructuredBuffer<SharcFrameConstants> sharcFrameRecords;
 [[vk::binding(14, 0)]] RWStructuredBuffer<uint> outputValues;
 [[vk::binding(15, 0)]] StructuredBuffer<SunShadowQueryConstants> sunShadowQueries;
 
@@ -36,11 +35,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     value ^= asuint(lightCells[index].probabilityMass);
     value ^= sectionLightHeaders[index].emitterCount;
     value ^= asuint(integratorRecords[index].environmentRadiance.w);
-    value ^= pathStates[index].previousSharcEvent;
+    value ^= pathStates[index].sampleEpoch;
     value ^= tracePayloads[index].adjacentInterfaceControl;
     value ^= surfaceInteractions[index].adjacentInterfaceControl;
     value ^= asuint(nrdMotionRecords[index].currentJitterPixels.y);
-    value ^= sharcFrameRecords[index].trainingHeight;
     value ^= sunShadowQueries[index].valid;
     value ^= asuint(primePush.inverseViewProjection[3][3]);
     value ^= primePush.path.w;

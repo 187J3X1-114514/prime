@@ -1,8 +1,10 @@
 #language slang 2026
-module "transport/realtime/fixed_direct.slang";
+module "transport/realtime/landing_direct.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "prime_realtime_abi.slang";
+import "contract/light.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
 import "math/sampling.slang";
@@ -21,11 +23,10 @@ import "transport/direct/primary.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
 
-public void primeEvaluateFixedDirect(
-        inout PrimeIntegratorContext context,
-        uint sourceQueue,
-        uint launchIndex) {
-    uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
+public void primeEvaluateLandingDirect(
+        inout PrimeIntegratorContext context, uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_PRIMARY_QUEUE, launchIndex);
     PrimeStagedLightSelection selection =
             primeLoadStagedLightSelection(recordIndex);
     if (!primeStagedDirectEnabled(selection)) {
@@ -33,12 +34,12 @@ public void primeEvaluateFixedDirect(
     }
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
-    if (!primeApplySegmentMedium(
-            context, path, surface, volumeStack)) {
+    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
     }
 
@@ -46,14 +47,21 @@ public void primeEvaluateFixedDirect(
             path.sampleSeed,
             primeSampleIndex(),
             primePathBounce(path.control) + 1u);
-    float3 areaSample = primeSobolSample3D(
-            preparedSample,
-            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    bool guideDual = primeWavefrontGuideEnabled(control)
+            && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
+    float cellSample = guideDual
+            ? primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY).y
+            : primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY).y;
     AreaLightSample area = primeSampleAreaLightSelection(
             surface.position,
             selection.area,
-            areaSample.y,
+            cellSample,
             primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
@@ -64,6 +72,39 @@ public void primeEvaluateFixedDirect(
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = float4(0.0);
     float3 viewDirection = -path.rayDirection;
+    if (guideDual) {
+        PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
+                context,
+                integrator,
+                surface,
+                viewDirection,
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                volumeStack,
+                false);
+        PrimeDirectLightingSplit nonsun =
+                primeEstimatePrimaryDirectPreparedAreaLight(
+                        context,
+                        surface,
+                        viewDirection,
+                        area,
+                        volumeStack,
+                        false);
+        primeAccumulateTransparentPrimaryDirect(
+                context,
+                pixel,
+                primeWavefrontTransmissionBranch(control),
+                path.throughput
+                        * (sun.lighting.diffuse * sun.visibility
+                                + nonsun.diffuse),
+                path.throughput
+                        * (sun.lighting.specular * sun.visibility
+                                + nonsun.specular));
+        return;
+    }
+
     float3 direct = primeEstimateDirectSun(
             context,
             integrator,
@@ -83,9 +124,6 @@ public void primeEvaluateFixedDirect(
     float3 contribution = path.throughput * direct;
     if (any(contribution > float3(0.0))) {
         primeAccumulateDeferredDirectLight(
-                context,
-                pixel,
-                asuint(record.rayDirectionAndDenoiserControl.w),
-                contribution);
+                context, pixel, control, contribution);
     }
 }

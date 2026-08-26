@@ -1,5 +1,6 @@
 #define PRIME_ENABLE_SER 1
 import "prime_abi_types.slang";
+import "contract/light_sample.slang";
 import "service/light/sample.slang";
 import "service/bsdf/support/volume_transition.slang";
 import "service/trace/context.slang";

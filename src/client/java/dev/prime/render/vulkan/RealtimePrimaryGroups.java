@@ -6,10 +6,9 @@ final class RealtimePrimaryGroups {
     static final int VISIBLE_DIRECT = 1;
     static final int SURFACE_SPLIT = 2;
     static final int DELTA_WALK = 3;
-    static final int LANDING_LIGHT_CLASSIFY = 4;
-    static final int LANDING_GUIDE_DUAL_LIGHT = 5;
-    static final int LANDING_DUAL_LIGHT_ADVANCE = 6;
-    static final int LANDING_GUIDE_ADVANCE = 7;
+    static final int LANDING_LIGHT_SELECT = 4;
+    static final int LANDING_DIRECT = 5;
+    static final int LANDING_SCATTER = 6;
 
     private RealtimePrimaryGroups() {}
 }

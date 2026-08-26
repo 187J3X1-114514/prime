@@ -113,21 +113,17 @@
       "maxFiles": 52,
       "maxBytes": 217584
     },
-    "entry/realtime/landing_guide_advance.raygeneration.slang": {
+    "entry/realtime/landing_light_select.raygeneration.slang": {
+      "maxFiles": 78,
+      "maxBytes": 258259
+    },
+    "entry/realtime/landing_direct.raygeneration.slang": {
+      "maxFiles": 106,
+      "maxBytes": 410968
+    },
+    "entry/realtime/landing_scatter.raygeneration.slang": {
       "maxFiles": 144,
-      "maxBytes": 612139
-    },
-    "entry/realtime/landing_light_classify.raygeneration.slang": {
-      "maxFiles": 74,
-      "maxBytes": 330917
-    },
-    "entry/realtime/landing_guide_dual_light.raygeneration.slang": {
-      "maxFiles": 116,
-      "maxBytes": 468894
-    },
-    "entry/realtime/landing_dual_light_advance.raygeneration.slang": {
-      "maxFiles": 159,
-      "maxBytes": 632686
+      "maxBytes": 557545
     },
     "entry/realtime/delta_walk.raygeneration.slang": {
       "maxFiles": 96,

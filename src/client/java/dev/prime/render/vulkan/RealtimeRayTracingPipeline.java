@@ -15,7 +15,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 wavefrontPrefixRounds);
         // Landing owns prefix round zero. Every additional fixed wavefront round has four
         // narrow stages; admission and the register tail replace all remaining dispatches.
-        return 4 * (wavefrontPrefixRounds - 1) + 12;
+        return 4 * (wavefrontPrefixRounds - 1) + 11;
     }
 
     static int[] primaryDirectInputImageIndices() {
@@ -39,8 +39,8 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static boolean standardBarrierPublishesImagesBefore(int group) {
         return switch (group) {
             case RealtimePrimaryGroups.DELTA_WALK,
-                    RealtimePrimaryGroups.LANDING_DUAL_LIGHT_ADVANCE,
-                    RealtimePrimaryGroups.LANDING_GUIDE_ADVANCE,
+                    RealtimePrimaryGroups.LANDING_DIRECT,
+                    RealtimePrimaryGroups.LANDING_SCATTER,
                     RealtimeStandardGroups.DIRECT_0,
                     RealtimeStandardGroups.DIRECT_1,
                     RealtimeStandardGroups.SCATTER_0,

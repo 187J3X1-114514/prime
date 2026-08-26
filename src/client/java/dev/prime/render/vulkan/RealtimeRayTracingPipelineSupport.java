@@ -259,7 +259,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 commandBuffer, stack, activeProgram, width, height, group);
     }
 
-    /** Records groups 0..7, from visible-primary tracing through steady-queue publication. */
+    /** Records groups 0..6, from visible-primary tracing through steady-queue publication. */
     protected final void recordPrimaryPrefix(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
@@ -294,7 +294,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 commandBuffer,
                 stack,
                 program,
-                RealtimePrimaryGroups.LANDING_LIGHT_CLASSIFY,
+                RealtimePrimaryGroups.LANDING_LIGHT_SELECT,
                 commandOffset,
                 ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
         this.nextStepBarrier(commandBuffer, stack);
@@ -302,25 +302,17 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 commandBuffer,
                 stack,
                 program,
-                RealtimePrimaryGroups.LANDING_DUAL_LIGHT_ADVANCE,
+                RealtimePrimaryGroups.LANDING_DIRECT,
                 commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
-        this.queueBarrier(commandBuffer, stack);
-        this.traceQueued(
-                commandBuffer,
-                stack,
-                program,
-                RealtimePrimaryGroups.LANDING_GUIDE_DUAL_LIGHT,
-                commandOffset,
-                ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
+                ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
         this.nextStepBarrier(commandBuffer, stack);
         this.traceQueued(
                 commandBuffer,
                 stack,
                 program,
-                RealtimePrimaryGroups.LANDING_GUIDE_ADVANCE,
+                RealtimePrimaryGroups.LANDING_SCATTER,
                 commandOffset,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+                ShaderAbi.WAVEFRONT_PRIMARY_QUEUE);
     }
 
     protected final void recordOutputTail(

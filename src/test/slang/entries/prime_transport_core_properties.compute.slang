@@ -1,6 +1,7 @@
 #include "core/prime_test_abi.slang"
 import "service/bsdf/contract/sample.slang";
 import "math/color_space.slang";
+import "math/light_receiver.slang";
 import "math/light_tree.slang";
 import "math/transport.slang";
 import "math/packed_geometry.slang";

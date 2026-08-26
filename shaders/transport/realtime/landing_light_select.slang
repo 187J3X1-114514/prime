@@ -1,7 +1,8 @@
 #language slang 2026
-module "transport/realtime/fixed_light_select.slang";
+module "transport/realtime/landing_light_select.slang";
 
 import "prime_abi_types.slang";
+import "prime_realtime_abi.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
 import "math/sampling.slang";
@@ -19,8 +20,9 @@ import "state/realtime/surface.slang";
 import "transport/direct/selection.slang";
 import "bsdf/compact/contract/volume.slang";
 
-public void primeSelectFixedLight(uint sourceQueue, uint launchIndex) {
-    uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
+public void primeSelectLandingLight(uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_PRIMARY_QUEUE, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
@@ -34,18 +36,26 @@ public void primeSelectFixedLight(uint sourceQueue, uint launchIndex) {
                 surface, viewDirection, volumeStack, primeUsesAirGap());
         if (primeClosureSupports(
                 closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
-            selection.area = primeInvalidAreaLightSelection();
+            uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+            bool guideDual = primeWavefrontGuideEnabled(control)
+                    && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
             PrimePreparedSampleBase preparedSample = primePreparePathSample(
                     path.sampleSeed,
                     primeSampleIndex(),
                     primePathBounce(path.control) + 1u);
+            float treeSample = guideDual
+                    ? primeSobolSample2D(
+                            preparedSample,
+                            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                            PRIME_SAMPLE_DIMENSION_PRIMARY).x
+                    : primeSobolSample3D(
+                            preparedSample,
+                            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                            PRIME_SAMPLE_DIMENSION_PRIMARY).x;
             selection.area = primeSelectAreaLight(
                     surface.position,
                     primeAreaLightReceiverNormal(surface, viewDirection),
-                    primeSobolSample3D(
-                            preparedSample,
-                            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                            PRIME_SAMPLE_DIMENSION_PRIMARY).x);
+                    treeSample);
         }
     }
     primeStoreStagedLightSelection(recordIndex, selection);

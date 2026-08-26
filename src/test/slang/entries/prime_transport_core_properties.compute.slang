@@ -135,8 +135,10 @@ void primeCheckRoulette(
             || primeRussianRouletteApplies(0, 1)
             || !primeRussianRouletteApplies(1, 1)
             || !primeRussianRouletteApplies(2, 1)
-            || primeTwoStageRouletteCompletedScatters(0u) != 1u
-            || primeTwoStageRouletteCompletedScatters(1u) != 2u) {
+            || primeRealtimeRouletteScatterIndex(0u) != 1u
+            || primeRealtimeRouletteScatterIndex(1u) != 2u
+            || primeRealtimeCompletedBounceCount(0u) != 1u
+            || primeRealtimeCompletedBounceCount(7u) != 8u) {
         result.mask |= PRIME_TEST_FAILURE_RANGE;
     }
     if (!primeTransparentRouletteBlocked(true, true, false)

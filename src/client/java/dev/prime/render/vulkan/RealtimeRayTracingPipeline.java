@@ -10,12 +10,12 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_GROUP_COUNT = RealtimeStandardGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeStandardGroups.MODULE_COUNT;
 
-    static int dispatchCount(int wavefrontPrefixRounds) {
-        dev.prime.render.WavefrontPrefixSettings.validateRounds(
-                wavefrontPrefixRounds);
-        // Landing owns prefix round zero. Every additional fixed wavefront round has four
+    static int dispatchCount(int minimumBounces) {
+        dev.prime.render.MinimumBounceSettings.validateCount(
+                minimumBounces);
+        // Landing owns the primary-surface bounce. Every additional minimum bounce has four
         // narrow stages; admission and the register tail replace all remaining dispatches.
-        return 4 * (wavefrontPrefixRounds - 1) + 11;
+        return 4 * (minimumBounces - 1) + 11;
     }
 
     static int[] primaryDirectInputImageIndices() {
@@ -55,7 +55,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 backend,
                 RealtimeStandardGroups.standardSchedule(
                         context.capabilities().wavefrontShaderSuffix()),
-                dispatchCount(dev.prime.render.WavefrontPrefixSettings.MAXIMUM_ROUNDS),
+                dispatchCount(dev.prime.render.MinimumBounceSettings.MAXIMUM_COUNT),
                 "Prime realtime ray tracing pipeline",
                 "Prime realtime shader binding table");
     }
@@ -75,10 +75,10 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 input.height(),
                 RealtimePrimaryGroups.CAMERA_TRACE);
         this.recordPrimaryPrefix(commandBuffer, stack, activeProgram, commandOffset);
-        int wavefrontPrefixRounds = input.wavefrontPrefixRounds();
+        int minimumBounces = input.minimumBounces();
         boolean sourceOne = false;
         this.queueBarrier(commandBuffer, stack);
-        for (int round = 1; round < wavefrontPrefixRounds; round++) {
+        for (int round = 1; round < minimumBounces; round++) {
             int sourceQueue = sourceOne
                     ? ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
                     : ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0;
@@ -144,7 +144,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 input.height(),
                 RealtimeStandardGroups.BRANCH_RESOLVE,
                 RealtimeStandardGroups.NOISY_OUTPUT_RESOLVE);
-        return dispatchCount(wavefrontPrefixRounds);
+        return dispatchCount(minimumBounces);
     }
 
     private void standardBarrierBefore(

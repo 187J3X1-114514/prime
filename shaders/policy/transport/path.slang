@@ -1,10 +1,15 @@
 #language slang 2026
 module "policy/transport/path.slang";
 
-// Steady bounce zero begins after the first non-delta scatter. Delta-chain length deliberately
-// does not participate in roulette or in the steady dispatch limit.
-public uint primeTwoStageRouletteCompletedScatters(uint steadyBounce) {
-    return steadyBounce + 1u;
+// The local secondary counter resets after the primary non-delta scatter. Adding one reconstructs
+// the primary-inclusive scatter index used by realtime roulette.
+public uint primeRealtimeRouletteScatterIndex(uint secondaryBounce) {
+    return secondaryBounce + 1u;
+}
+
+// Stored secondary state excludes the completed primary scatter from its local counter.
+public uint primeRealtimeCompletedBounceCount(uint secondaryBounce) {
+    return secondaryBounce + 1u;
 }
 
 // A shared transparent observation blocks roulette until it has a stable solid-angle guide.

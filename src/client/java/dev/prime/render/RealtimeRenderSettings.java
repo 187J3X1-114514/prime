@@ -11,18 +11,18 @@ public record RealtimeRenderSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
-        int scatterCount,
-        int deltaWalkLimit,
-        int wavefrontPrefixRounds) {
+        int additionalSpecularBounces,
+        int minimumBounces,
+        int maximumBounces) {
     public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
-        ScatterSettings.validateCount(scatterCount);
-        DeltaWalkSettings.validateLimit(deltaWalkLimit);
-        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
+        SpecularBounceSettings.validateCount(additionalSpecularBounces);
+        MinimumBounceSettings.validateCount(minimumBounces);
+        MaximumBounceSettings.validateCount(maximumBounces);
     }
 
     public static RealtimeRenderSettings capture(RendererSettings settings) {
@@ -33,8 +33,8 @@ public record RealtimeRenderSettings(
                 settings.lighting(),
                 settings.material(),
                 settings.display(),
-                settings.scatterCount(),
-                settings.deltaWalkLimit(),
-                settings.wavefrontPrefixRounds());
+                settings.additionalSpecularBounces(),
+                settings.minimumBounces(),
+                settings.maximumBounces());
     }
 }

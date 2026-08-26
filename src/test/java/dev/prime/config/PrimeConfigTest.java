@@ -7,10 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.HdrOutput;
-import dev.prime.render.DeltaWalkSettings;
-import dev.prime.render.ScatterSettings;
+import dev.prime.render.MaximumBounceSettings;
+import dev.prime.render.MinimumBounceSettings;
+import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
-import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -44,6 +44,32 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void legacyBounceKeysMigrateWithoutChangingTheirValues() throws Exception {
+        Properties properties = new Properties();
+        properties.load(new StringReader(PrimeConfig.serializedContents()));
+        properties.remove("renderer.additional_specular_bounces");
+        properties.remove("renderer.minimum_bounces");
+        properties.remove("renderer.maximum_bounces");
+        properties.setProperty("renderer.primary_chain_limit", "13");
+        properties.setProperty("renderer.wavefront_prefix_rounds", "6");
+        properties.setProperty("renderer.scatter_count", "21");
+
+        PrimeConfigCodec.DecodeResult decoded = PrimeConfigCodec.decode(properties);
+        String encoded = PrimeConfigCodec.encode(decoded.data());
+
+        assertTrue(decoded.rewriteNeeded());
+        assertEquals(13, decoded.data().additionalSpecularBounces());
+        assertEquals(6, decoded.data().minimumBounces());
+        assertEquals(21, decoded.data().maximumBounces());
+        assertTrue(encoded.contains("renderer.additional_specular_bounces=13\n"));
+        assertTrue(encoded.contains("renderer.minimum_bounces=6\n"));
+        assertTrue(encoded.contains("renderer.maximum_bounces=21\n"));
+        assertFalse(encoded.contains("renderer.primary_chain_limit="));
+        assertFalse(encoded.contains("renderer.wavefront_prefix_rounds="));
+        assertFalse(encoded.contains("renderer.scatter_count="));
+    }
+
+    @Test
     void retiredRadianceCacheKeyIsIgnoredAndRemoved() throws Exception {
         Properties properties = new Properties();
         properties.load(new StringReader(PrimeConfig.serializedContents()));
@@ -57,29 +83,29 @@ final class PrimeConfigTest {
 
     @Test
     void restoreDefaultsIncludesStandaloneSchedulingSettings() {
-        PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
-        PrimeConfig.setDeltaWalkLimit(DeltaWalkSettings.MAXIMUM_LIMIT);
-        PrimeConfig.setWavefrontPrefixRounds(WavefrontPrefixSettings.MAXIMUM_ROUNDS);
+        PrimeConfig.setMaximumBounces(MaximumBounceSettings.MAXIMUM_COUNT);
+        PrimeConfig.setAdditionalSpecularBounces(SpecularBounceSettings.MAXIMUM_COUNT);
+        PrimeConfig.setMinimumBounces(MinimumBounceSettings.MAXIMUM_COUNT);
         PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
         PrimeConfig.setHdrEnabled(true);
         PrimeConfig.setReferenceWhiteNits(400);
 
         PrimeConfig.restoreDefaults();
 
-        assertEquals(ScatterSettings.DEFAULT_COUNT, PrimeConfig.scatterCount());
+        assertEquals(MaximumBounceSettings.DEFAULT_COUNT, PrimeConfig.maximumBounces());
         assertEquals(
-                ScatterSettings.DEFAULT_COUNT,
-                PrimeConfig.rendererSettings().scatterCount());
-        assertEquals(DeltaWalkSettings.DEFAULT_LIMIT, PrimeConfig.deltaWalkLimit());
+                MaximumBounceSettings.DEFAULT_COUNT,
+                PrimeConfig.rendererSettings().maximumBounces());
+        assertEquals(SpecularBounceSettings.DEFAULT_COUNT, PrimeConfig.additionalSpecularBounces());
         assertEquals(
-                DeltaWalkSettings.DEFAULT_LIMIT,
-                PrimeConfig.rendererSettings().deltaWalkLimit());
+                SpecularBounceSettings.DEFAULT_COUNT,
+                PrimeConfig.rendererSettings().additionalSpecularBounces());
         assertEquals(
-                WavefrontPrefixSettings.DEFAULT_ROUNDS,
-                PrimeConfig.wavefrontPrefixRounds());
+                MinimumBounceSettings.DEFAULT_COUNT,
+                PrimeConfig.minimumBounces());
         assertEquals(
-                WavefrontPrefixSettings.DEFAULT_ROUNDS,
-                PrimeConfig.rendererSettings().wavefrontPrefixRounds());
+                MinimumBounceSettings.DEFAULT_COUNT,
+                PrimeConfig.rendererSettings().minimumBounces());
         assertEquals(
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 PrimeConfig.terrainWorkerPercentage());
@@ -298,8 +324,12 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertFalse(serialized.contains("renderer.sharc="));
-        assertTrue(serialized.contains("renderer.scatter_count=8\n"));
-        assertTrue(serialized.contains("renderer.primary_chain_limit=8\n"));
+        assertTrue(serialized.contains("renderer.additional_specular_bounces=8\n"));
+        assertTrue(serialized.contains("renderer.minimum_bounces=2\n"));
+        assertTrue(serialized.contains("renderer.maximum_bounces=8\n"));
+        assertFalse(serialized.contains("renderer.primary_chain_limit="));
+        assertFalse(serialized.contains("renderer.wavefront_prefix_rounds="));
+        assertFalse(serialized.contains("renderer.scatter_count="));
         assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
         assertTrue(serialized.contains("material.surface_detail=normal\n"));
         assertTrue(serialized.contains("material.displacement_height=1\n"));
@@ -341,49 +371,49 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void scatterCountAcceptsOnlyTheSharedRuntimeRange() {
-        assertEquals(1, PrimeConfigCodec.parseScatterCount("1"));
-        assertEquals(64, PrimeConfigCodec.parseScatterCount("64"));
+    void maximumBouncesAcceptsOnlyTheSharedRuntimeRange() {
+        assertEquals(1, PrimeConfigCodec.parseMaximumBounces("1"));
+        assertEquals(64, PrimeConfigCodec.parseMaximumBounces("64"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseScatterCount("0"));
+                () -> PrimeConfigCodec.parseMaximumBounces("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseScatterCount("65"));
+                () -> PrimeConfigCodec.parseMaximumBounces("65"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseScatterCount("12.0"));
+                () -> PrimeConfigCodec.parseMaximumBounces("12.0"));
     }
 
     @Test
-    void deltaWalkLimitAcceptsOnlyItsRuntimeRange() {
-        assertEquals(1, PrimeConfigCodec.parseDeltaWalkLimit("1"));
-        assertEquals(8, PrimeConfigCodec.parseDeltaWalkLimit("8"));
-        assertEquals(64, PrimeConfigCodec.parseDeltaWalkLimit("64"));
+    void additionalSpecularBouncesAcceptsOnlyItsRuntimeRange() {
+        assertEquals(1, PrimeConfigCodec.parseAdditionalSpecularBounces("1"));
+        assertEquals(8, PrimeConfigCodec.parseAdditionalSpecularBounces("8"));
+        assertEquals(64, PrimeConfigCodec.parseAdditionalSpecularBounces("64"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseDeltaWalkLimit("0"));
+                () -> PrimeConfigCodec.parseAdditionalSpecularBounces("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseDeltaWalkLimit("65"));
+                () -> PrimeConfigCodec.parseAdditionalSpecularBounces("65"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseDeltaWalkLimit("8.0"));
+                () -> PrimeConfigCodec.parseAdditionalSpecularBounces("8.0"));
     }
 
     @Test
-    void wavefrontPrefixRoundsAcceptOnlyTheFixedRuntimeRange() {
-        assertEquals(2, PrimeConfigCodec.parseWavefrontPrefixRounds("2"));
-        assertEquals(4, PrimeConfigCodec.parseWavefrontPrefixRounds("4"));
+    void minimumBouncesAcceptOnlyTheFixedRuntimeRange() {
+        assertEquals(1, PrimeConfigCodec.parseMinimumBounces("1"));
+        assertEquals(8, PrimeConfigCodec.parseMinimumBounces("8"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseWavefrontPrefixRounds("1"));
+                () -> PrimeConfigCodec.parseMinimumBounces("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseWavefrontPrefixRounds("5"));
+                () -> PrimeConfigCodec.parseMinimumBounces("9"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfigCodec.parseWavefrontPrefixRounds("2.0"));
+                () -> PrimeConfigCodec.parseMinimumBounces("2.0"));
     }
 
     @Test

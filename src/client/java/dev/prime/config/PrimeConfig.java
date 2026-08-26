@@ -6,11 +6,11 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.DeltaWalkSettings;
+import dev.prime.render.MaximumBounceSettings;
+import dev.prime.render.MinimumBounceSettings;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.ScatterSettings;
+import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
-import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -23,9 +23,9 @@ public final class PrimeConfig {
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
-    private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
-    private static int deltaWalkLimit = DeltaWalkSettings.DEFAULT_LIMIT;
-    private static int wavefrontPrefixRounds = WavefrontPrefixSettings.DEFAULT_ROUNDS;
+    private static int additionalSpecularBounces = SpecularBounceSettings.DEFAULT_COUNT;
+    private static int minimumBounces = MinimumBounceSettings.DEFAULT_COUNT;
+    private static int maximumBounces = MaximumBounceSettings.DEFAULT_COUNT;
     private static int terrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private static boolean hdrEnabled;
     private static int referenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
@@ -59,9 +59,9 @@ public final class PrimeConfig {
 
     private static void applyLoaded(PrimeConfigData loaded, boolean rewriteNeeded) {
         settings = loaded.settings();
-        scatterCount = loaded.scatterCount();
-        deltaWalkLimit = loaded.deltaWalkLimit();
-        wavefrontPrefixRounds = loaded.wavefrontPrefixRounds();
+        additionalSpecularBounces = loaded.additionalSpecularBounces();
+        minimumBounces = loaded.minimumBounces();
+        maximumBounces = loaded.maximumBounces();
         terrainWorkerPercentage = loaded.terrainWorkerPercentage();
         hdrEnabled = loaded.hdrEnabled();
         HdrOutput.setRequested(hdrEnabled);
@@ -92,9 +92,9 @@ public final class PrimeConfig {
                 current.lighting(),
                 current.material(),
                 current.display(),
-                scatterCount,
-                deltaWalkLimit,
-                wavefrontPrefixRounds,
+                additionalSpecularBounces,
+                minimumBounces,
+                maximumBounces,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -103,40 +103,40 @@ public final class PrimeConfig {
         update(settings.withPathTracingEnabled(enabled));
     }
 
-    public static int scatterCount() {
-        return scatterCount;
+    public static int additionalSpecularBounces() {
+        return additionalSpecularBounces;
     }
 
-    public static void setScatterCount(int count) {
-        int replacement = ScatterSettings.validateCount(count);
-        if (replacement != scatterCount) {
-            scatterCount = replacement;
+    public static void setAdditionalSpecularBounces(int bounces) {
+        int replacement = SpecularBounceSettings.validateCount(bounces);
+        if (replacement != additionalSpecularBounces) {
+            additionalSpecularBounces = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
     }
 
-    public static int deltaWalkLimit() {
-        return deltaWalkLimit;
+    public static int minimumBounces() {
+        return minimumBounces;
     }
 
-    public static void setDeltaWalkLimit(int limit) {
-        int replacement = DeltaWalkSettings.validateLimit(limit);
-        if (replacement != deltaWalkLimit) {
-            deltaWalkLimit = replacement;
+    public static void setMinimumBounces(int bounces) {
+        int replacement = MinimumBounceSettings.validateCount(bounces);
+        if (replacement != minimumBounces) {
+            minimumBounces = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
     }
 
-    public static int wavefrontPrefixRounds() {
-        return wavefrontPrefixRounds;
+    public static int maximumBounces() {
+        return maximumBounces;
     }
 
-    public static void setWavefrontPrefixRounds(int rounds) {
-        int replacement = WavefrontPrefixSettings.validateRounds(rounds);
-        if (replacement != wavefrontPrefixRounds) {
-            wavefrontPrefixRounds = replacement;
+    public static void setMaximumBounces(int bounces) {
+        int replacement = MaximumBounceSettings.validateCount(bounces);
+        if (replacement != maximumBounces) {
+            maximumBounces = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
@@ -241,9 +241,9 @@ public final class PrimeConfig {
 
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
-        setScatterCount(ScatterSettings.DEFAULT_COUNT);
-        setDeltaWalkLimit(DeltaWalkSettings.DEFAULT_LIMIT);
-        setWavefrontPrefixRounds(WavefrontPrefixSettings.DEFAULT_ROUNDS);
+        setAdditionalSpecularBounces(SpecularBounceSettings.DEFAULT_COUNT);
+        setMinimumBounces(MinimumBounceSettings.DEFAULT_COUNT);
+        setMaximumBounces(MaximumBounceSettings.DEFAULT_COUNT);
         setTerrainWorkerPercentage(TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         setHdrEnabled(false);
         setReferenceWhiteNits(HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
@@ -291,9 +291,9 @@ public final class PrimeConfig {
     private static PrimeConfigData currentData() {
         return new PrimeConfigData(
                 settings,
-                scatterCount,
-                deltaWalkLimit,
-                wavefrontPrefixRounds,
+                additionalSpecularBounces,
+                minimumBounces,
+                maximumBounces,
                 terrainWorkerPercentage,
                 hdrEnabled,
                 referenceWhiteNits);

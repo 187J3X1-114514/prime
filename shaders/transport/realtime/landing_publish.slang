@@ -9,7 +9,7 @@ import "state/realtime/contract.slang";
 import "state/realtime/light.slang";
 import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
-import "state/realtime/steady_transition.slang";
+import "state/realtime/secondary_transition.slang";
 import "state/realtime/transparent.slang";
 import "state/realtime/transport.slang";
 import "transport/realtime/delta_walk_guide.slang";
@@ -70,7 +70,7 @@ public void primePublishLandingContinuation(
         if (transparent) {
             record = primeSealLandingGuide(recordIndex, record, control);
         }
-        record = primeEnterSteadyRecord(record);
+        record = primeEnterSecondaryRecord(record);
         primeStoreWavefrontTransportRecord(recordIndex, record);
     }
     primeAppendWavefrontContinuation(

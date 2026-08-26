@@ -63,15 +63,15 @@ final class TracePipelinesContractTest {
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
         assertEquals(20, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(15, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(11, RealtimeRayTracingPipeline.dispatchCount(1));
         assertEquals(15, RealtimeRayTracingPipeline.dispatchCount(2));
-        assertEquals(19, RealtimeRayTracingPipeline.dispatchCount(3));
-        assertEquals(23, RealtimeRayTracingPipeline.dispatchCount(4));
+        assertEquals(39, RealtimeRayTracingPipeline.dispatchCount(8));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> RealtimeRayTracingPipeline.dispatchCount(1));
+                () -> RealtimeRayTracingPipeline.dispatchCount(0));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> RealtimeRayTracingPipeline.dispatchCount(5));
+                () -> RealtimeRayTracingPipeline.dispatchCount(9));
         assertEquals(24, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
@@ -160,8 +160,8 @@ final class TracePipelinesContractTest {
         assertEquals(
                 "/prime/shaders/realtime_wavefront_tail_ser.rgen.spv",
                 realtime.moduleResource(12));
-        assertEquals(15, RealtimeRayTracingPipeline.dispatchCount(2));
-        assertEquals(23, RealtimeRayTracingPipeline.dispatchCount(4));
+        assertEquals(11, RealtimeRayTracingPipeline.dispatchCount(1));
+        assertEquals(39, RealtimeRayTracingPipeline.dispatchCount(8));
     }
 
     @Test

@@ -6,14 +6,14 @@ import java.util.Objects;
 public record OfflineRenderSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
-        int scatterCount,
+        int maximumBounces,
         int russianRouletteStart) {
     public static final int DEFAULT_RUSSIAN_ROULETTE_START = 1;
 
     public OfflineRenderSettings {
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
-        ScatterSettings.validateCount(scatterCount);
+        MaximumBounceSettings.validateCount(maximumBounces);
         if (russianRouletteStart != DEFAULT_RUSSIAN_ROULETTE_START) {
             throw new IllegalArgumentException(
                     "Offline transport begins roulette at the second scatter");
@@ -25,7 +25,7 @@ public record OfflineRenderSettings(
         return new OfflineRenderSettings(
                 settings.lighting(),
                 settings.material(),
-                settings.scatterCount(),
+                settings.maximumBounces(),
                 DEFAULT_RUSSIAN_ROULETTE_START);
     }
 }

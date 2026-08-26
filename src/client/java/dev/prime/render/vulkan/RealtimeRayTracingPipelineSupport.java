@@ -208,7 +208,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             long commandOffset = queueCommandOffset(width, height);
             this.bind(commandBuffer, stack, pushConstants, this.program);
             this.initializeQueues(
-                    commandBuffer, stack, commandOffset, input.deltaWalkLimit());
+                    commandBuffer, stack, commandOffset, input.additionalSpecularBounces());
             this.lastRecordedPassCount = this.recordTransport(
                     commandBuffer, stack, this.program, input, commandOffset);
         }
@@ -259,7 +259,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 commandBuffer, stack, activeProgram, width, height, group);
     }
 
-    /** Records groups 0..6, from visible-primary tracing through steady-queue publication. */
+    /** Records groups 0..6, from visible-primary tracing through secondary-queue publication. */
     protected final void recordPrimaryPrefix(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
@@ -362,7 +362,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             long commandOffset,
-            int deltaWalkLimit) {
+            int additionalSpecularBounces) {
         WavefrontCommands.initializeQueues(
                 commandBuffer,
                 stack,
@@ -370,7 +370,7 @@ abstract class RealtimeRayTracingPipelineSupport implements RealtimeIntegratorPi
                 commandOffset,
                 ShaderAbi.WAVEFRONT_QUEUE_COUNT,
                 ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE,
-                deltaWalkLimit);
+                additionalSpecularBounces);
     }
 
     protected final void queueBarrier(

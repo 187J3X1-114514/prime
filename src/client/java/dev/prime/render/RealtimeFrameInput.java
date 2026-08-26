@@ -22,9 +22,9 @@ public record RealtimeFrameInput(
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode quality,
         TransparentGuideMode transparentGuideMode,
-        int scatterCount,
-        int deltaWalkLimit,
-        int wavefrontPrefixRounds,
+        int additionalSpecularBounces,
+        int minimumBounces,
+        int maximumBounces,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
@@ -45,7 +45,7 @@ public record RealtimeFrameInput(
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode quality,
             TransparentGuideMode transparentGuideMode,
-            int scatterCount,
+            int maximumBounces,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             boolean shInput,
@@ -55,8 +55,8 @@ public record RealtimeFrameInput(
                 camera, frameTimeNanos, sceneRevision, residentSceneRevision,
                 textureRevision, width, height, displayWidth, displayHeight, astronomy,
                 cameraInWater, postProcessingMode, quality, transparentGuideMode,
-                scatterCount, DeltaWalkSettings.DEFAULT_LIMIT,
-                WavefrontPrefixSettings.DEFAULT_ROUNDS, lighting, material,
+                SpecularBounceSettings.DEFAULT_COUNT, MinimumBounceSettings.DEFAULT_COUNT,
+                maximumBounces, lighting, material,
                 shInput, display, forceReset);
     }
 
@@ -75,8 +75,8 @@ public record RealtimeFrameInput(
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode quality,
             TransparentGuideMode transparentGuideMode,
-            int scatterCount,
-            int deltaWalkLimit,
+            int maximumBounces,
+            int additionalSpecularBounces,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             boolean shInput,
@@ -86,8 +86,8 @@ public record RealtimeFrameInput(
                 camera, frameTimeNanos, sceneRevision, residentSceneRevision,
                 textureRevision, width, height, displayWidth, displayHeight, astronomy,
                 cameraInWater, postProcessingMode, quality, transparentGuideMode,
-                scatterCount, deltaWalkLimit, WavefrontPrefixSettings.DEFAULT_ROUNDS,
-                lighting, material, shInput, display, forceReset);
+                additionalSpecularBounces, MinimumBounceSettings.DEFAULT_COUNT,
+                maximumBounces, lighting, material, shInput, display, forceReset);
     }
 
     public RealtimeFrameInput {
@@ -97,14 +97,14 @@ public record RealtimeFrameInput(
         Objects.requireNonNull(quality, "quality");
         Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         IntegratorSettings.packPathControl(
-                scatterCount,
+                maximumBounces,
                 0,
                 astronomy.settings(),
                 cameraInWater,
                 transparentGuideMode);
-        ScatterSettings.validateCount(scatterCount);
-        DeltaWalkSettings.validateLimit(deltaWalkLimit);
-        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
+        SpecularBounceSettings.validateCount(additionalSpecularBounces);
+        MinimumBounceSettings.validateCount(minimumBounces);
+        MaximumBounceSettings.validateCount(maximumBounces);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -162,9 +162,9 @@ public record RealtimeFrameInput(
                 this.height,
                 this.astronomy,
                 packedRayCone,
-                this.scatterCount,
-                this.deltaWalkLimit,
-                this.wavefrontPrefixRounds,
+                this.additionalSpecularBounces,
+                this.minimumBounces,
+                this.maximumBounces,
                 sampleIndex,
                 sampleEpoch,
                 jitterPhase,

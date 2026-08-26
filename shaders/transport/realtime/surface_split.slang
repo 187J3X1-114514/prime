@@ -40,7 +40,7 @@ import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
 import "state/realtime/signal.slang";
 import "state/realtime/surface.slang";
-import "state/realtime/steady_transition.slang";
+import "state/realtime/secondary_transition.slang";
 import "state/realtime/transparent.slang";
 import "state/realtime/transport.slang";
 import "bsdf/compact/contract/volume.slang";
@@ -228,7 +228,7 @@ public uint primeInitializeTransparentWavefront(
         bool deltaWalk = continuation
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u;
         if (continuation && !deltaWalk) {
-            primeEnterSteadyAfterNee(branchPath);
+            primeEnterSecondaryAfterNee(branchPath);
         }
         PrimeWavefrontPathRecord record =
                 primeMakeTransparentWavefrontRecord(branchPath,
@@ -244,7 +244,7 @@ public uint primeInitializeTransparentWavefront(
                 guideProbeFallback,
                 continuation);
         if (continuation && !deltaWalk) {
-            record.transport = primeEnterSteadyRecord(record.transport);
+            record.transport = primeEnterSecondaryRecord(record.transport);
         }
         uint pathIndex = primeWavefrontIndex(pixel, branch);
         primeWavefrontPaths[pathIndex] = record;
@@ -318,7 +318,7 @@ public void primeSplitVisibleSurface<AreaNee>(
                 && (primePathFlags(path.control)
                         & PRIME_PATH_PREVIOUS_DISCRETE) != 0u;
         if (continuation && !deltaWalk) {
-            primeEnterSteadyAfterNee(path);
+            primeEnterSecondaryAfterNee(path);
         }
         PrimeWavefrontPathRecord updated = primeMakeWavefrontRecord(
                 path,
@@ -327,7 +327,7 @@ public void primeSplitVisibleSurface<AreaNee>(
                 result.guides,
                 continuation);
         if (continuation && !deltaWalk) {
-            updated.transport = primeEnterSteadyRecord(updated.transport);
+            updated.transport = primeEnterSecondaryRecord(updated.transport);
         }
         primeWavefrontPaths[recordIndex] = updated;
         primeStoreWavefrontIntermediate(pixel, result);

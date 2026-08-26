@@ -48,7 +48,7 @@ public void primeQueueDeltaWalkLanding(
 public void primeProcessDeltaWalkBranch(
         inout PrimeIntegratorContext context,
         uint recordIndex,
-        uint limit) {
+        uint maximumTransitions) {
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     if (!primeWavefrontActive(record)) {
@@ -59,7 +59,7 @@ public void primeProcessDeltaWalkBranch(
     // sampling, or performs exactly one additional delta transition.
     uint transitions = 1u;
     [loop]
-    for (uint step = 0u; step < limit; ++step) {
+    for (uint step = 0u; step < maximumTransitions; ++step) {
         uint control = asuint(record.rayDirectionAndDenoiserControl.w);
         bool transparent = primeWavefrontTransparentBranch(control);
         SurfaceInteraction surface = primeFusedWavefrontTrace(
@@ -74,7 +74,7 @@ public void primeProcessDeltaWalkBranch(
         }
 
         // Limit one permits the transition already completed by PRIMARY and its landing trace.
-        if (transitions >= limit) {
+        if (transitions >= maximumTransitions) {
             bool guidePending = transparent
                     && primeWavefrontGuideEnabled(control)
                     && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u
@@ -98,7 +98,7 @@ public void primeProcessDeltaWalkBranch(
                         surface,
                         control,
                         transitions,
-                        limit)
+                        maximumTransitions)
                 : primeAdvanceOrdinaryDeltaWalk(
                         context,
                         recordIndex,
@@ -118,7 +118,7 @@ public void primeWavefrontDeltaWalk(
     uint taskIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_TRACE_QUEUE_0, launchIndex);
     uint2 pixel = primeWavefrontPixel(taskIndex);
-    uint limit = primeDeltaWalkLimit();
+    uint maximumTransitions = primeAdditionalSpecularBounces();
     PrimeWavefrontTransportRecord first =
             primeLoadWavefrontTransportRecord(primeWavefrontIndex(pixel, 0u));
     bool branchedPrimary = primeWavefrontTransparentBranch(
@@ -127,6 +127,6 @@ public void primeWavefrontDeltaWalk(
     [loop]
     for (uint branch = 0u; branch < branchCount; ++branch) {
         primeProcessDeltaWalkBranch(
-                context, primeWavefrontIndex(pixel, branch), limit);
+                context, primeWavefrontIndex(pixel, branch), maximumTransitions);
     }
 }

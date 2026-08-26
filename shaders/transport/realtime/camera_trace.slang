@@ -9,7 +9,6 @@ import "service/atmosphere/trace.slang";
 import "service/camera/projection.slang";
 import "service/reconstruct/nrd/common.slang";
 import "math/packed_geometry.slang";
-import "policy/runtime/config.slang";
 import "contract/realtime/guide.slang";
 import "policy/queue/wavefront.slang";
 
@@ -33,21 +32,15 @@ public void primeTraceRealtimeCamera(
         inout PrimeIntegratorContext context, uint2 launchIndex) {
     uint2 pixel = launchIndex;
     float2 cameraSample = primeRealtimeCameraSample(pixel);
-    uint maximumBounces = primeMaximumBounces();
-    bool continuation = maximumBounces != 0u;
     uint pathIndex = primeWavefrontIndex(pixel, 0u);
-    uint primaryHitKind = PRIME_HIT_NONE;
-    if (continuation) {
-        float3 traceDirection = primeCameraRayDirection(pixel, cameraSample);
-        SurfaceInteraction surface = primeTraceSurfaceClassified(
-                PrimeSurfaceTracePolicy(),
-                primePush.cameraPosition,
-                traceDirection,
-                uint2(PRIME_NO_PRIMITIVE_INDEX),
-                0u);
-        primaryHitKind = surface.hitKind;
-        primeStoreWavefrontSurface(pathIndex, surface);
-    }
+    float3 traceDirection = primeCameraRayDirection(pixel, cameraSample);
+    SurfaceInteraction surface = primeTraceSurfaceClassified(
+            PrimeSurfaceTracePolicy(),
+            primePush.cameraPosition,
+            traceDirection,
+            uint2(PRIME_NO_PRIMITIVE_INDEX),
+            0u);
+    primeStoreWavefrontSurface(pathIndex, surface);
 
     // Build large transport records after SER so they do not enter the reorder spill set.
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
@@ -62,15 +55,13 @@ public void primeTraceRealtimeCamera(
             volumeStack,
             denoiserState,
             result.guides,
-            continuation);
+            true);
     primeWavefrontPaths[pathIndex] = record;
     primeStoreWavefrontArea(pixel, result.guides);
     primeStoreWavefrontIntermediate(pixel, result);
     // SER may repack invocations. Queue publication after it must not use subgroup collectives.
-    if (continuation) {
-        primeAppendWavefrontPath(PRIME_WAVEFRONT_PRIMARY_QUEUE, pathIndex);
-        if (primaryHitKind == PRIME_HIT_SURFACE) {
-            primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, pathIndex);
-        }
+    primeAppendWavefrontPath(PRIME_WAVEFRONT_PRIMARY_QUEUE, pathIndex);
+    if (surface.hitKind == PRIME_HIT_SURFACE) {
+        primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, pathIndex);
     }
 }

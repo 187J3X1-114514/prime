@@ -9,6 +9,7 @@ import "math/sampling.slang";
 import "model/atmosphere/sky.slang";
 import "model/realtime/transport.slang";
 import "policy/runtime/config.slang";
+import "policy/transport/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/bsdf/dispatch/sample.slang";
 import "service/bsdf/dispatch/traits.slang";
@@ -232,7 +233,8 @@ public void primeRunRealtimeTailPath(
 
     [loop]
     while (continuation
-            && primePathBounce(path.control) < primeMaximumBounces()) {
+            && primeRealtimeCompletedBounceCount(
+                    primePathBounce(path.control)) < primeMaximumBounces()) {
         SurfaceInteraction surface = primeTraceRealtimeTailSurface(
                 path, pathClass);
         continuation = primeIntegrateRealtimeTailSurface(

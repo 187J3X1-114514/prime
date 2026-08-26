@@ -7,12 +7,12 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.DeltaWalkSettings;
-import dev.prime.render.ScatterSettings;
-import dev.prime.render.SurfaceDetailMode;
-import dev.prime.render.WavefrontPrefixSettings;
+import dev.prime.render.MaximumBounceSettings;
+import dev.prime.render.MinimumBounceSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
+import dev.prime.render.SpecularBounceSettings;
+import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
@@ -69,9 +69,9 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$options.rendering().pathTracingEnabled());
             list.addBig(this.prime$options.rendering().screenshotMode());
-            list.addBig(this.prime$options.rendering().scatterCount());
-            list.addBig(this.prime$options.rendering().deltaWalkLimit());
-            list.addBig(this.prime$options.rendering().wavefrontPrefixRounds());
+            list.addBig(this.prime$options.rendering().additionalSpecularBounces());
+            list.addBig(this.prime$options.rendering().minimumBounces());
+            list.addBig(this.prime$options.rendering().maximumBounces());
             list.addBig(this.prime$options.rendering().terrainWorkerPercentage());
             list.addSmall(
                     this.prime$options.rendering().surfaceDetailMode(),
@@ -134,14 +134,14 @@ public abstract class VideoSettingsScreenMixin {
         }
         this.prime$refresh(this.prime$options.rendering().pathTracingEnabled(), true);
         this.prime$refresh(
-                this.prime$options.rendering().scatterCount(),
-                ScatterSettings.DEFAULT_COUNT);
+                this.prime$options.rendering().additionalSpecularBounces(),
+                SpecularBounceSettings.DEFAULT_COUNT);
         this.prime$refresh(
-                this.prime$options.rendering().deltaWalkLimit(),
-                DeltaWalkSettings.DEFAULT_LIMIT);
+                this.prime$options.rendering().minimumBounces(),
+                MinimumBounceSettings.DEFAULT_COUNT);
         this.prime$refresh(
-                this.prime$options.rendering().wavefrontPrefixRounds(),
-                WavefrontPrefixSettings.DEFAULT_ROUNDS);
+                this.prime$options.rendering().maximumBounces(),
+                MaximumBounceSettings.DEFAULT_COUNT);
         this.prime$refresh(
                 this.prime$options.rendering().terrainWorkerPercentage(),
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);

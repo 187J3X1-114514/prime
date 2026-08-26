@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 final class WavefrontCommandsTest {
     @Test
-    void queueZeroFourthWordCarriesPersistentDeltaWalkLimit() {
+    void queueZeroFourthWordCarriesPersistentAdditionalSpecularBounces() {
         int queues = 6;
         int stride = 16;
         ByteBuffer commands = ByteBuffer.allocateDirect(queues * stride)

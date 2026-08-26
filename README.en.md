@@ -114,6 +114,12 @@ reuse the driver cache.
   NRD + FSR when it is unavailable.
 - **Reconstruction Quality Preset:** defaults to Performance. Raise it when the game is comfortably
   responsive, or lower it when frame rate is insufficient.
+- **Additional Specular Bounces:** controls the realtime delta reflection/transmission chain before
+  the primary surface, from 1–64; the default is 8.
+- **Minimum Bounces:** controls the fixed no-roulette realtime Wavefront rounds, from 1–8; the
+  default is 2.
+- **Maximum Bounces:** controls regular transport from 1–64; the default is 8. In realtime, values
+  below Minimum Bounces do not shorten the fixed Wavefront. Offline uses this total directly.
 - **Terrain Worker Share:** defaults to 50% of Minecraft's maximum background workers. Lower it to
   reduce CPU contention while chunks load, or raise it to make Prime geometry appear sooner; at
   least one worker is always retained.

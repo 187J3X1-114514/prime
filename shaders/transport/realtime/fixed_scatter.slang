@@ -3,8 +3,8 @@ module "transport/realtime/fixed_scatter.slang";
 
 import "prime_abi_types.slang";
 import "policy/queue/wavefront.slang";
+import "policy/realtime/fixed.slang";
 import "policy/realtime/queue.slang";
-import "policy/realtime/steady.slang";
 import "service/trace/context.slang";
 import "state/realtime/contract.slang";
 import "state/realtime/light.slang";
@@ -24,7 +24,7 @@ public void primeScatterFixedPath(
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     bool continuation = primeWavefrontTransparentBranch(control)
             ? primeAdvanceTransparentWavefrontRecord(
-                    PrimeSteadyTransportPhase(),
+                    PrimeFixedTransportPhase(),
                     context,
                     recordIndex,
                     record,
@@ -32,7 +32,7 @@ public void primeScatterFixedPath(
                     control,
                     true)
             : primeAdvanceOrdinaryWavefrontRecord(
-                    PrimeSteadyTransportPhase(),
+                    PrimeFixedTransportPhase(),
                     context,
                     recordIndex,
                     record,

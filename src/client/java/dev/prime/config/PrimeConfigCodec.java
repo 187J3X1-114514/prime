@@ -6,10 +6,10 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.DeltaWalkSettings;
-import dev.prime.render.ScatterSettings;
+import dev.prime.render.MaximumBounceSettings;
+import dev.prime.render.MinimumBounceSettings;
+import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
-import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -22,11 +22,14 @@ import java.util.function.Function;
 /** Scalar codec and validation for the current Prime properties format. */
 final class PrimeConfigCodec {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
-    private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
-    // Keep the legacy persisted key so existing configurations retain this value.
-    private static final String DELTA_WALK_LIMIT_KEY = "renderer.primary_chain_limit";
-    private static final String WAVEFRONT_PREFIX_ROUNDS_KEY =
+    private static final String ADDITIONAL_SPECULAR_BOUNCES_KEY =
+            "renderer.additional_specular_bounces";
+    private static final String MINIMUM_BOUNCES_KEY = "renderer.minimum_bounces";
+    private static final String MAXIMUM_BOUNCES_KEY = "renderer.maximum_bounces";
+    private static final String LEGACY_SPECULAR_BOUNCES_KEY = "renderer.primary_chain_limit";
+    private static final String LEGACY_MINIMUM_BOUNCES_KEY =
             "renderer.wavefront_prefix_rounds";
+    private static final String LEGACY_MAXIMUM_BOUNCES_KEY = "renderer.scatter_count";
     private static final String TERRAIN_WORKER_PERCENTAGE_KEY = "terrain.worker_percentage";
     private static final String SURFACE_DETAIL_MODE_KEY = "material.surface_detail";
     private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
@@ -50,9 +53,9 @@ final class PrimeConfigCodec {
     private static final String VANILLA_PBR_PRESETS_KEY = "material.vanilla_pbr_presets";
     private static final Set<String> CURRENT_KEYS = Set.of(
             PATH_TRACING_ENABLED_KEY,
-            SCATTER_COUNT_KEY,
-            DELTA_WALK_LIMIT_KEY,
-            WAVEFRONT_PREFIX_ROUNDS_KEY,
+            ADDITIONAL_SPECULAR_BOUNCES_KEY,
+            MINIMUM_BOUNCES_KEY,
+            MAXIMUM_BOUNCES_KEY,
             TERRAIN_WORKER_PERCENTAGE_KEY,
             SURFACE_DETAIL_MODE_KEY,
             VOXEL_TEXTURE_SURFACE_STRENGTH_KEY,
@@ -84,21 +87,24 @@ final class PrimeConfigCodec {
                 defaultSettings.pathTracingEnabled(),
                 PrimeConfigCodec::parseBoolean,
                 "path-tracing switch");
-        int scatterCount = reader.value(
-                SCATTER_COUNT_KEY,
-                defaults.scatterCount(),
-                PrimeConfigCodec::parseScatterCount,
-                "scatter count");
-        int deltaWalkLimit = reader.value(
-                DELTA_WALK_LIMIT_KEY,
-                defaults.deltaWalkLimit(),
-                PrimeConfigCodec::parseDeltaWalkLimit,
-                "delta-walk limit");
-        int wavefrontPrefixRounds = reader.value(
-                WAVEFRONT_PREFIX_ROUNDS_KEY,
-                defaults.wavefrontPrefixRounds(),
-                PrimeConfigCodec::parseWavefrontPrefixRounds,
-                "wavefront-prefix rounds");
+        int additionalSpecularBounces = reader.migratedValue(
+                ADDITIONAL_SPECULAR_BOUNCES_KEY,
+                LEGACY_SPECULAR_BOUNCES_KEY,
+                defaults.additionalSpecularBounces(),
+                PrimeConfigCodec::parseAdditionalSpecularBounces,
+                "additional specular bounce count");
+        int minimumBounces = reader.migratedValue(
+                MINIMUM_BOUNCES_KEY,
+                LEGACY_MINIMUM_BOUNCES_KEY,
+                defaults.minimumBounces(),
+                PrimeConfigCodec::parseMinimumBounces,
+                "minimum bounce count");
+        int maximumBounces = reader.migratedValue(
+                MAXIMUM_BOUNCES_KEY,
+                LEGACY_MAXIMUM_BOUNCES_KEY,
+                defaults.maximumBounces(),
+                PrimeConfigCodec::parseMaximumBounces,
+                "maximum bounce count");
         int terrainWorkers = reader.value(
                 TERRAIN_WORKER_PERCENTAGE_KEY,
                 defaults.terrainWorkerPercentage(),
@@ -209,9 +215,9 @@ final class PrimeConfigCodec {
         return new DecodeResult(
                 new PrimeConfigData(
                         settings,
-                        scatterCount,
-                        deltaWalkLimit,
-                        wavefrontPrefixRounds,
+                        additionalSpecularBounces,
+                        minimumBounces,
+                        maximumBounces,
                         terrainWorkers,
                         hdr,
                         referenceWhite),
@@ -221,10 +227,10 @@ final class PrimeConfigCodec {
     static String encode(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         return PATH_TRACING_ENABLED_KEY + "=" + settings.pathTracingEnabled() + "\n"
-                + SCATTER_COUNT_KEY + "=" + data.scatterCount() + "\n"
-                + DELTA_WALK_LIMIT_KEY + "=" + data.deltaWalkLimit() + "\n"
-                + WAVEFRONT_PREFIX_ROUNDS_KEY + "="
-                + data.wavefrontPrefixRounds() + "\n"
+                + ADDITIONAL_SPECULAR_BOUNCES_KEY + "="
+                + data.additionalSpecularBounces() + "\n"
+                + MINIMUM_BOUNCES_KEY + "=" + data.minimumBounces() + "\n"
+                + MAXIMUM_BOUNCES_KEY + "=" + data.maximumBounces() + "\n"
                 + TERRAIN_WORKER_PERCENTAGE_KEY + "="
                 + data.terrainWorkerPercentage() + "\n"
                 + SURFACE_DETAIL_MODE_KEY + "="
@@ -255,11 +261,11 @@ final class PrimeConfigCodec {
     static void log(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, scatter count {}, primary delta-chain limit {}, wavefront-prefix rounds {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, additional specular bounces {}, minimum bounces {}, maximum bounces {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 settings.pathTracingEnabled() ? "enabled" : "disabled",
-                data.scatterCount(),
-                data.deltaWalkLimit(),
-                data.wavefrontPrefixRounds(),
+                data.additionalSpecularBounces(),
+                data.minimumBounces(),
+                data.maximumBounces(),
                 data.terrainWorkerPercentage(),
                 settings.surfaceDetailMode().id(),
                 formatVoxelSurfaceStrength(settings.voxelTextureSurfaceStrengthSteps()),
@@ -315,29 +321,30 @@ final class PrimeConfigCodec {
         throw new IllegalArgumentException("Boolean setting must be true or false");
     }
 
-    static int parseScatterCount(String value) {
+    static int parseMaximumBounces(String value) {
         try {
-            return ScatterSettings.validateCount(Integer.parseInt(value));
+            return MaximumBounceSettings.validateCount(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("Scatter count must be an integer", exception);
+            throw new IllegalArgumentException(
+                    "Maximum bounce count must be an integer", exception);
         }
     }
 
-    static int parseDeltaWalkLimit(String value) {
+    static int parseAdditionalSpecularBounces(String value) {
         try {
-            return DeltaWalkSettings.validateLimit(Integer.parseInt(value));
+            return SpecularBounceSettings.validateCount(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(
-                    "Delta-walk limit must be an integer", exception);
+                    "Additional specular bounce count must be an integer", exception);
         }
     }
 
-    static int parseWavefrontPrefixRounds(String value) {
+    static int parseMinimumBounces(String value) {
         try {
-            return WavefrontPrefixSettings.validateRounds(Integer.parseInt(value));
+            return MinimumBounceSettings.validateCount(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(
-                    "Wavefront-prefix rounds must be an integer", exception);
+                    "Minimum bounce count must be an integer", exception);
         }
     }
 
@@ -564,7 +571,28 @@ final class PrimeConfigCodec {
                 T fallback,
                 Function<String, T> parser,
                 String label) {
+            return this.parse(this.properties.getProperty(key), fallback, parser, label);
+        }
+
+        private <T> T migratedValue(
+                String key,
+                String legacyKey,
+                T fallback,
+                Function<String, T> parser,
+                String label) {
             String encoded = this.properties.getProperty(key);
+            if (encoded == null) {
+                this.rewriteNeeded = true;
+                encoded = this.properties.getProperty(legacyKey);
+            }
+            return this.parse(encoded, fallback, parser, label);
+        }
+
+        private <T> T parse(
+                String encoded,
+                T fallback,
+                Function<String, T> parser,
+                String label) {
             if (encoded == null) {
                 this.rewriteNeeded = true;
                 return fallback;

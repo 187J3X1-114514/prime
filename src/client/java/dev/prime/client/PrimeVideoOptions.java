@@ -8,11 +8,11 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.DeltaWalkSettings;
+import dev.prime.render.MaximumBounceSettings;
+import dev.prime.render.MinimumBounceSettings;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.ScatterSettings;
+import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
-import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
@@ -47,9 +47,9 @@ public final class PrimeVideoOptions {
         return new OptionSet(
                 new Rendering(
                         pathTracingEnabled(),
-                        scatterCount(),
-                        deltaWalkLimit(),
-                        wavefrontPrefixRounds(),
+                        additionalSpecularBounces(),
+                        minimumBounces(),
+                        maximumBounces(),
                         terrainWorkerPercentage(),
                         surfaceDetailMode(),
                         voxelTextureSurfaceStrength(),
@@ -89,46 +89,46 @@ public final class PrimeVideoOptions {
                 PrimeVideoOptions::setPathTracingEnabled);
     }
 
-    private static OptionInstance<Integer> scatterCount() {
+    private static OptionInstance<Integer> additionalSpecularBounces() {
         return new OptionInstance<>(
-                "prime.options.scatter_count",
+                "prime.options.additional_specular_bounces",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.scatter_count.tooltip")),
-                (caption, count) -> Options.genericValueLabel(
-                        caption, Component.literal(Integer.toString(count))),
+                        "prime.options.additional_specular_bounces.tooltip")),
+                (caption, bounces) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(bounces))),
                 new OptionInstance.IntRange(
-                        ScatterSettings.MINIMUM_COUNT,
-                        ScatterSettings.MAXIMUM_COUNT),
-                PrimeConfig.scatterCount(),
-                PrimeConfig::setScatterCount);
+                        SpecularBounceSettings.MINIMUM_COUNT,
+                        SpecularBounceSettings.MAXIMUM_COUNT),
+                PrimeConfig.additionalSpecularBounces(),
+                PrimeConfig::setAdditionalSpecularBounces);
     }
 
-    private static OptionInstance<Integer> deltaWalkLimit() {
+    private static OptionInstance<Integer> minimumBounces() {
         return new OptionInstance<>(
-                "prime.options.delta_walk_limit",
+                "prime.options.minimum_bounces",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.delta_walk_limit.tooltip")),
-                (caption, limit) -> Options.genericValueLabel(
-                        caption, Component.literal(Integer.toString(limit))),
+                        "prime.options.minimum_bounces.tooltip")),
+                (caption, bounces) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(bounces))),
                 new OptionInstance.IntRange(
-                        DeltaWalkSettings.MINIMUM_LIMIT,
-                        DeltaWalkSettings.MAXIMUM_LIMIT),
-                PrimeConfig.deltaWalkLimit(),
-                PrimeConfig::setDeltaWalkLimit);
+                        MinimumBounceSettings.MINIMUM_COUNT,
+                        MinimumBounceSettings.MAXIMUM_COUNT),
+                PrimeConfig.minimumBounces(),
+                PrimeConfig::setMinimumBounces);
     }
 
-    private static OptionInstance<Integer> wavefrontPrefixRounds() {
+    private static OptionInstance<Integer> maximumBounces() {
         return new OptionInstance<>(
-                "prime.options.wavefront_prefix_rounds",
+                "prime.options.maximum_bounces",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.wavefront_prefix_rounds.tooltip")),
-                (caption, rounds) -> Options.genericValueLabel(
-                        caption, Component.literal(Integer.toString(rounds))),
+                        "prime.options.maximum_bounces.tooltip")),
+                (caption, bounces) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(bounces))),
                 new OptionInstance.IntRange(
-                        WavefrontPrefixSettings.MINIMUM_ROUNDS,
-                        WavefrontPrefixSettings.MAXIMUM_ROUNDS),
-                PrimeConfig.wavefrontPrefixRounds(),
-                PrimeConfig::setWavefrontPrefixRounds);
+                        MaximumBounceSettings.MINIMUM_COUNT,
+                        MaximumBounceSettings.MAXIMUM_COUNT),
+                PrimeConfig.maximumBounces(),
+                PrimeConfig::setMaximumBounces);
     }
 
     private static OptionInstance<Integer> terrainWorkerPercentage() {
@@ -150,10 +150,8 @@ public final class PrimeVideoOptions {
                 "prime.options.material.surface_detail",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
                         "prime.options.material.surface_detail.tooltip")),
-                (caption, mode) -> Options.genericValueLabel(
-                        caption,
-                        Component.translatable(
-                                "prime.options.material.surface_detail." + mode.id())),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.material.surface_detail." + mode.id()),
                 new OptionInstance.Enum<>(
                         SURFACE_DETAIL_MODES,
                         Codec.STRING.xmap(
@@ -571,9 +569,9 @@ public final class PrimeVideoOptions {
 
     public record Rendering(
             OptionInstance<Boolean> pathTracingEnabled,
-            OptionInstance<Integer> scatterCount,
-            OptionInstance<Integer> deltaWalkLimit,
-            OptionInstance<Integer> wavefrontPrefixRounds,
+            OptionInstance<Integer> additionalSpecularBounces,
+            OptionInstance<Integer> minimumBounces,
+            OptionInstance<Integer> maximumBounces,
             OptionInstance<Integer> terrainWorkerPercentage,
             OptionInstance<SurfaceDetailMode> surfaceDetailMode,
             OptionInstance<Integer> voxelTextureSurfaceStrength,

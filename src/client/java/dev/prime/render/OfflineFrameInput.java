@@ -15,7 +15,7 @@ public record OfflineFrameInput(
         boolean cameraInWater,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
-        int scatterCount,
+        int maximumBounces,
         long sampleCount,
         DisplaySettings.Snapshot display) {
     public OfflineFrameInput(
@@ -32,7 +32,7 @@ public record OfflineFrameInput(
             DisplaySettings.Snapshot display) {
         this(
                 camera, width, height, sceneRevision, textureRevision, astronomy,
-                cameraInWater, lighting, material, ScatterSettings.DEFAULT_COUNT,
+                cameraInWater, lighting, material, MaximumBounceSettings.DEFAULT_COUNT,
                 sampleCount, display);
     }
 
@@ -42,7 +42,7 @@ public record OfflineFrameInput(
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
-        ScatterSettings.validateCount(scatterCount);
+        MaximumBounceSettings.validateCount(maximumBounces);
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
                     "Offline extent must be positive");
@@ -72,7 +72,7 @@ public record OfflineFrameInput(
                                 this.camera.projection().m11(),
                                 this.width,
                                 this.height),
-                        this.scatterCount,
+                        this.maximumBounces,
                         sampleIndex,
                         sampleEpoch,
                         0,

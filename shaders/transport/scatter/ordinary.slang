@@ -50,14 +50,13 @@ public bool primeAdvanceRealtimePath(
     if (skipRoulette) {
         return true;
     }
-    // Two-stage realtime has already completed its non-delta bridge scatter before steady bounce
-    // zero. Count that scatter for RR without folding primary delta depth into the steady bounce
-    // domain or reducing its independent dispatch limit.
-    uint rouletteCompletedScatters =
-            primeTwoStageRouletteCompletedScatters(
+    // The primary non-delta scatter precedes the local secondary counter. Delta-chain depth does
+    // not participate in roulette or reduce the independently configured secondary transport.
+    uint rouletteScatterIndex =
+            primeRealtimeRouletteScatterIndex(
                     primePathBounce(path.control));
     if (!primeRussianRouletteApplies(
-            rouletteCompletedScatters, PRIME_RUSSIAN_ROULETTE_START)) {
+            rouletteScatterIndex, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
     float rouletteSample = primeHashSample1D(

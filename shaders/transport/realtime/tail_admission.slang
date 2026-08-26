@@ -17,8 +17,8 @@ import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
 import "state/realtime/transport.slang";
 
-// The fixed prefix has already scattered this path. Apply exactly the roulette decision that the
-// old per-bounce advance would have made, then compact only survivors into the register tail.
+// The fixed prefix has already scattered this path. Apply its deferred roulette decision, then
+// compact only paths with remaining bounce budget into the register tail.
 public void primeAdmitRealtimeTailPath(uint sourceQueue, uint launchIndex) {
     uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
     PrimeWavefrontTransportRecord record =
@@ -26,7 +26,9 @@ public void primeAdmitRealtimeTailPath(uint sourceQueue, uint launchIndex) {
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     PathState path = primeWavefrontPath(
             primeWavefrontPixel(recordIndex), record);
-    bool continuation = primePathBounce(path.control) < primeMaximumBounces();
+    uint secondaryBounce = primePathBounce(path.control);
+    bool continuation = primeRealtimeCompletedBounceCount(secondaryBounce)
+            < primeMaximumBounces();
     bool rouletteBlocked = false;
     if (primeWavefrontTransparentBranch(control)) {
         bool guideEnabled = primeWavefrontGuideEnabled(control);
@@ -39,15 +41,15 @@ public void primeAdmitRealtimeTailPath(uint sourceQueue, uint launchIndex) {
         rouletteBlocked = primeTransparentRouletteBlocked(
                 pathOwnsGuide, guideEnabled, hasGuide);
     }
-    uint completedScatters = primePathBounce(path.control);
+    uint rouletteScatterIndex = secondaryBounce;
     if (continuation
             && !rouletteBlocked
             && primeRussianRouletteApplies(
-                    completedScatters, PRIME_RUSSIAN_ROULETTE_START)) {
+                    rouletteScatterIndex, PRIME_RUSSIAN_ROULETTE_START)) {
         PrimePreparedSampleBase preparedSample = primePreparePathSample(
                 path.sampleSeed,
                 primeSampleIndex(),
-                completedScatters);
+                rouletteScatterIndex);
         float survival = primeRussianRouletteSurvival(
                 path.throughput, path.etaScale);
         float rouletteSample = primeHashSample1D(

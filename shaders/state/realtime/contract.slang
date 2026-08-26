@@ -86,7 +86,7 @@ public uint primeWavefrontQueueCapacity(uint queue) {
     bool wideQueue = queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0
             || queue == PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_1
             || queue == PRIME_WAVEFRONT_AREA_QUEUE;
-    // Two-stage steady AREA events alias queue zero and may contain both transparent branches.
+    // AREA events alias queue zero and may contain both transparent branches.
     wideQueue = wideQueue || queue == PRIME_WAVEFRONT_TRACE_QUEUE_0;
     uint entriesPerPixel = wideQueue
             ? PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL
@@ -134,7 +134,7 @@ public uint primeWavefrontQueueWord(uint queue, uint entry) {
     return indexWords + 8u * pixelCount + entry;
 }
 
-public uint primeDeltaWalkLimit() {
+public uint primeAdditionalSpecularBounces() {
     return primeWavefrontQueue[
             primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_TRACE_QUEUE_0) + 3u]
             & 0xffu;

@@ -75,8 +75,8 @@ Minecraft render layer。
 ### 高视距地形流送的分配与 TLAS 成本
 
 在较小 Java 堆、高视距且持续跑图时，Section→cluster 中间存储和全 resident TLAS 更新仍可能
-造成高分配率、GC 停顿和帧率下降。已完成紧凑 light tree、有界 CPU segment、跨世界统一
-in-flight 上限和 64 MiB 上传/compaction 背压，但仍需实机测量稳态分配、GC、TLAS build 与
+造成高分配率、GC 停顿和帧率下降。当前使用紧凑 light tree、有界 CPU segment、跨世界统一
+in-flight 上限和 64 MiB 上传/compaction 背压；仍需实机测量稳态分配、GC、TLAS build 与
 长期帧时间。增大 `-Xmx` 只能临时延后问题。
 
 后续优化不得丢弃 geometry、放宽无界队列、在热路径调用 `System.gc()`，也不得用增加 TLAS

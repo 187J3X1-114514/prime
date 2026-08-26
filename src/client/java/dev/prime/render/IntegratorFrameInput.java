@@ -16,9 +16,9 @@ public record IntegratorFrameInput(
         int height,
         AstronomyState astronomy,
         int packedRayCone,
-        int scatterCount,
-        int deltaWalkLimit,
-        int wavefrontPrefixRounds,
+        int additionalSpecularBounces,
+        int minimumBounces,
+        int maximumBounces,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -34,7 +34,7 @@ public record IntegratorFrameInput(
             int height,
             AstronomyState astronomy,
             int packedRayCone,
-            int scatterCount,
+            int maximumBounces,
             int sampleIndex,
             int sampleEpoch,
             int jitterPhase,
@@ -45,8 +45,9 @@ public record IntegratorFrameInput(
             MaterialSettings.Snapshot material,
             boolean shInput) {
         this(
-                camera, width, height, astronomy, packedRayCone, scatterCount,
-                DeltaWalkSettings.DEFAULT_LIMIT, WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                camera, width, height, astronomy, packedRayCone,
+                SpecularBounceSettings.DEFAULT_COUNT, MinimumBounceSettings.DEFAULT_COUNT,
+                maximumBounces,
                 sampleIndex, sampleEpoch, jitterPhase,
                 cameraInWater, postProcessingMode, transparentGuideMode, lighting, material,
                 shInput);
@@ -58,8 +59,8 @@ public record IntegratorFrameInput(
             int height,
             AstronomyState astronomy,
             int packedRayCone,
-            int scatterCount,
-            int deltaWalkLimit,
+            int maximumBounces,
+            int additionalSpecularBounces,
             int sampleIndex,
             int sampleEpoch,
             int jitterPhase,
@@ -70,8 +71,9 @@ public record IntegratorFrameInput(
             MaterialSettings.Snapshot material,
             boolean shInput) {
         this(
-                camera, width, height, astronomy, packedRayCone, scatterCount,
-                deltaWalkLimit, WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                camera, width, height, astronomy, packedRayCone,
+                additionalSpecularBounces, MinimumBounceSettings.DEFAULT_COUNT,
+                maximumBounces,
                 sampleIndex, sampleEpoch, jitterPhase, cameraInWater,
                 postProcessingMode, transparentGuideMode, lighting, material, shInput);
     }
@@ -113,14 +115,14 @@ public record IntegratorFrameInput(
                 material.vanillaPbrPresets());
         IntegratorSettings.packSampleEpoch(sampleEpoch);
         IntegratorSettings.packPathControl(
-                scatterCount,
+                maximumBounces,
                 jitterPhase,
                 astronomy.settings(),
                 cameraInWater,
                 transparentGuideMode);
-        ScatterSettings.validateCount(scatterCount);
-        DeltaWalkSettings.validateLimit(deltaWalkLimit);
-        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
+        SpecularBounceSettings.validateCount(additionalSpecularBounces);
+        MinimumBounceSettings.validateCount(minimumBounces);
+        MaximumBounceSettings.validateCount(maximumBounces);
         IntegratorSettings.packMaterialLightingControl(
                 lighting.sunQuarterSteps(),
                 lighting.starQuarterSteps(),

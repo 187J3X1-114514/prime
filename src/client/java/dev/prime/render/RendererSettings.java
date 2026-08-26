@@ -17,9 +17,9 @@ public record RendererSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
-        int scatterCount,
-        int deltaWalkLimit,
-        int wavefrontPrefixRounds,
+        int additionalSpecularBounces,
+        int minimumBounces,
+        int maximumBounces,
         int terrainWorkerPercentage,
         long revision) {
     public RendererSettings(
@@ -37,9 +37,9 @@ public record RendererSettings(
                 pathTracingEnabled,
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
-                astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
-                DeltaWalkSettings.DEFAULT_LIMIT,
-                WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                astronomy, lighting, material, display, SpecularBounceSettings.DEFAULT_COUNT,
+                MinimumBounceSettings.DEFAULT_COUNT,
+                MaximumBounceSettings.DEFAULT_COUNT,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -54,15 +54,15 @@ public record RendererSettings(
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             DisplaySettings.Snapshot display,
-            int scatterCount,
+            int maximumBounces,
             long revision) {
         this(
                 pathTracingEnabled,
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
-                astronomy, lighting, material, display, scatterCount,
-                DeltaWalkSettings.DEFAULT_LIMIT,
-                WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                astronomy, lighting, material, display, SpecularBounceSettings.DEFAULT_COUNT,
+                MinimumBounceSettings.DEFAULT_COUNT,
+                maximumBounces,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -77,16 +77,16 @@ public record RendererSettings(
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             DisplaySettings.Snapshot display,
-            int scatterCount,
+            int maximumBounces,
             int terrainWorkerPercentage,
             long revision) {
         this(
                 pathTracingEnabled,
                 surfaceDetailMode,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
-                astronomy, lighting, material, display, scatterCount,
-                DeltaWalkSettings.DEFAULT_LIMIT,
-                WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                astronomy, lighting, material, display, SpecularBounceSettings.DEFAULT_COUNT,
+                MinimumBounceSettings.DEFAULT_COUNT,
+                maximumBounces,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -101,9 +101,9 @@ public record RendererSettings(
         display = Objects.requireNonNull(display, "display");
         surfaceDetailMode = Objects.requireNonNull(surfaceDetailMode, "surfaceDetailMode");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
-        ScatterSettings.validateCount(scatterCount);
-        DeltaWalkSettings.validateLimit(deltaWalkLimit);
-        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
+        SpecularBounceSettings.validateCount(additionalSpecularBounces);
+        MinimumBounceSettings.validateCount(minimumBounces);
+        MaximumBounceSettings.validateCount(maximumBounces);
         TerrainWorkerSettings.validatePercentage(terrainWorkerPercentage);
         if (revision < 0L) {
             throw new IllegalArgumentException("Renderer settings revision must not be negative");

@@ -55,7 +55,7 @@ entry。优先级由“减少的可见代码与编译扇出 / 新增的队列、
 
 首选的源码级特化轴是：
 
-1. 已有 wavefront 阶段以及 NONE/DUAL 等已分类光照模式；
+1. 已有 Trace、Light Select、Direct、Scatter 等窄 Wavefront 阶段及其队列身份；
 2. discrete-only 与一般 solid-angle 路径；
 3. opaque 与需要完整透射/foliage 能力的复杂材质；
 4. 普通路径与首接口条件分支；
@@ -86,11 +86,11 @@ TraceRay 复用而长期保存宽 BSDF 聚合状态；若这会延长 live range
 ## 已落地结构
 
 生产源码只允许位于 `contract`、`math`、`model`、`bsdf/compact`、`service`、`transport`、
-`state`、`policy`、`phase` 与 `entry`。40 个 entry 各自只导入一个 phase；phase 不互相导入，
+`state`、`policy`、`phase` 与 `entry`。42 个 entry 各自只导入一个 phase；phase 不互相导入，
 state 不依赖 transport。旧 `core`、`material`、`lighting`、`integrator`、`realtime`、`rt`、
 `post` 顶层以及全功能 BSDF/integrator/wavefront umbrella 均已删除，门禁拒绝恢复。
 
-`shaders/programs.json` 是 54 个实际 artifact、资源名及 realtime/offline schedule 的唯一
+`shaders/programs.json` 是 58 个实际 artifact、资源名及 realtime/offline schedule 的唯一
 清单。每个 artifact 是独立的 `@CacheableTask`，以精确传递闭包、编译参数、manifest 项、Slang
 版本和 canonical workspace path 为输入；共享 Build Service 限制 slangc 并发。构建产物只保留
 实际 scalar/SER artifact，不复制 `_ser` alias。
@@ -104,7 +104,7 @@ delta-walk 只导入 opaque/dielectric 的专用离散状态、能量与采样�
 entry 到达 foliage、NEE、通用 operation dispatcher、有限立体角 microfacet 分布以及一般
 evaluate/sample 模块；通用采样器的 delta 分支反向复用同一离散实现，避免数学与随机映射分叉。
 
-opaque/complex 的 18-group 运行时编译岛尚未启用。它会改变 queue/group 与 GPU command，只有
+材质类别不形成独立运行时 queue/group。引入这类编译岛会改变 GPU command 与队列流量，只有
 在用户实机上证明 frame/transport time 的 95% 置信上界、寄存器、occupancy 和显存均不回退时
 才可进入生产；编译收益不能抵偿帧性能。Slang module 预编译也只在稳定图上、且前端重复工作
 超过冷编译 CPU 时间 10% 后考虑。

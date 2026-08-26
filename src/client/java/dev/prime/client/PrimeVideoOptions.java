@@ -12,6 +12,7 @@ import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
@@ -48,6 +49,7 @@ public final class PrimeVideoOptions {
                         pathTracingEnabled(),
                         scatterCount(),
                         deltaWalkLimit(),
+                        wavefrontPrefixRounds(),
                         terrainWorkerPercentage(),
                         surfaceDetailMode(),
                         voxelTextureSurfaceStrength(),
@@ -113,6 +115,20 @@ public final class PrimeVideoOptions {
                         DeltaWalkSettings.MAXIMUM_LIMIT),
                 PrimeConfig.deltaWalkLimit(),
                 PrimeConfig::setDeltaWalkLimit);
+    }
+
+    private static OptionInstance<Integer> wavefrontPrefixRounds() {
+        return new OptionInstance<>(
+                "prime.options.wavefront_prefix_rounds",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.wavefront_prefix_rounds.tooltip")),
+                (caption, rounds) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(rounds))),
+                new OptionInstance.IntRange(
+                        WavefrontPrefixSettings.MINIMUM_ROUNDS,
+                        WavefrontPrefixSettings.MAXIMUM_ROUNDS),
+                PrimeConfig.wavefrontPrefixRounds(),
+                PrimeConfig::setWavefrontPrefixRounds);
     }
 
     private static OptionInstance<Integer> terrainWorkerPercentage() {
@@ -557,6 +573,7 @@ public final class PrimeVideoOptions {
             OptionInstance<Boolean> pathTracingEnabled,
             OptionInstance<Integer> scatterCount,
             OptionInstance<Integer> deltaWalkLimit,
+            OptionInstance<Integer> wavefrontPrefixRounds,
             OptionInstance<Integer> terrainWorkerPercentage,
             OptionInstance<SurfaceDetailMode> surfaceDetailMode,
             OptionInstance<Integer> voxelTextureSurfaceStrength,

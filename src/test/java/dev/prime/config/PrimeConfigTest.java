@@ -10,6 +10,7 @@ import dev.prime.render.HdrOutput;
 import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -58,6 +59,7 @@ final class PrimeConfigTest {
     void restoreDefaultsIncludesStandaloneSchedulingSettings() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
         PrimeConfig.setDeltaWalkLimit(DeltaWalkSettings.MAXIMUM_LIMIT);
+        PrimeConfig.setWavefrontPrefixRounds(WavefrontPrefixSettings.MAXIMUM_ROUNDS);
         PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
         PrimeConfig.setHdrEnabled(true);
         PrimeConfig.setReferenceWhiteNits(400);
@@ -72,6 +74,12 @@ final class PrimeConfigTest {
         assertEquals(
                 DeltaWalkSettings.DEFAULT_LIMIT,
                 PrimeConfig.rendererSettings().deltaWalkLimit());
+        assertEquals(
+                WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                PrimeConfig.wavefrontPrefixRounds());
+        assertEquals(
+                WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                PrimeConfig.rendererSettings().wavefrontPrefixRounds());
         assertEquals(
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 PrimeConfig.terrainWorkerPercentage());
@@ -361,6 +369,21 @@ final class PrimeConfigTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfigCodec.parseDeltaWalkLimit("8.0"));
+    }
+
+    @Test
+    void wavefrontPrefixRoundsAcceptOnlyTheFixedRuntimeRange() {
+        assertEquals(2, PrimeConfigCodec.parseWavefrontPrefixRounds("2"));
+        assertEquals(4, PrimeConfigCodec.parseWavefrontPrefixRounds("4"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfigCodec.parseWavefrontPrefixRounds("1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfigCodec.parseWavefrontPrefixRounds("5"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfigCodec.parseWavefrontPrefixRounds("2.0"));
     }
 
     @Test

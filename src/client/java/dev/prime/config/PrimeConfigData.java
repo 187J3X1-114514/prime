@@ -3,6 +3,7 @@ package dev.prime.config;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
+import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.terrain.TerrainWorkerSettings;
 import java.util.Objects;
 
@@ -11,6 +12,7 @@ record PrimeConfigData(
         PrimeSettings settings,
         int scatterCount,
         int deltaWalkLimit,
+        int wavefrontPrefixRounds,
         int terrainWorkerPercentage,
         boolean hdrEnabled,
         int referenceWhiteNits) {
@@ -18,6 +20,8 @@ record PrimeConfigData(
         Objects.requireNonNull(settings, "settings");
         scatterCount = ScatterSettings.validateCount(scatterCount);
         deltaWalkLimit = DeltaWalkSettings.validateLimit(deltaWalkLimit);
+        wavefrontPrefixRounds = WavefrontPrefixSettings.validateRounds(
+                wavefrontPrefixRounds);
         terrainWorkerPercentage =
                 TerrainWorkerSettings.validatePercentage(terrainWorkerPercentage);
         referenceWhiteNits = HdrOutput.validateReferenceWhiteNits(referenceWhiteNits);
@@ -28,6 +32,7 @@ record PrimeConfigData(
                 PrimeSettings.defaults(),
                 ScatterSettings.DEFAULT_COUNT,
                 DeltaWalkSettings.DEFAULT_LIMIT,
+                WavefrontPrefixSettings.DEFAULT_ROUNDS,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 false,
                 HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);

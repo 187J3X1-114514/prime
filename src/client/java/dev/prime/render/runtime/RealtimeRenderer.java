@@ -282,6 +282,7 @@ final class RealtimeRenderer implements Destroyable {
                 selection.transparentGuideMode(),
                 settings.scatterCount(),
                 settings.deltaWalkLimit(),
+                settings.wavefrontPrefixRounds(),
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),

@@ -17,5 +17,6 @@ public void primePhase()
             context,
             PRIME_STEADY_EVENT_DUAL,
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
-            launchIndex);
+            launchIndex,
+            true);
 }

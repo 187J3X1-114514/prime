@@ -121,7 +121,8 @@ public void primeWavefrontSteadyConsume(
         inout PrimeIntegratorContext context,
         uint eventType,
         uint sourceQueue,
-        uint launchIndex) {
+        uint launchIndex,
+        bool skipRoulette) {
     uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
@@ -142,7 +143,7 @@ public void primeWavefrontSteadyConsume(
                     record,
                     surface,
                     control,
-                    false)
+                    skipRoulette)
             : primeAdvanceOrdinaryWavefrontRecord(
                     PrimeSteadyTransportPhase(),
                     context,
@@ -150,7 +151,7 @@ public void primeWavefrontSteadyConsume(
                     record,
                     surface,
                     control,
-                    false);
+                    skipRoulette);
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0,

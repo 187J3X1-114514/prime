@@ -269,6 +269,34 @@
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
       ]
     },
+    "realtime_wavefront_tail_admission": {
+      "source": "shaders/entry/realtime/tail_admission.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_wavefront_tail_admission.rgen.spv"
+    },
+    "realtime_wavefront_tail_admission_ser": {
+      "source": "shaders/entry/realtime/tail_admission.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_wavefront_tail_admission_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_wavefront_tail": {
+      "source": "shaders/entry/realtime/tail.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_wavefront_tail.rgen.spv"
+    },
+    "realtime_wavefront_tail_ser": {
+      "source": "shaders/entry/realtime/tail.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_wavefront_tail_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
     "realtime_wavefront_surface_split": {
       "source": "shaders/entry/realtime/surface_split.raygeneration.slang",
       "stage": "raygeneration",
@@ -342,6 +370,8 @@
         "realtime_wavefront_steady_trace_classify",
         "realtime_wavefront_steady_no_light_advance",
         "realtime_wavefront_steady_dual_light_advance",
+        "realtime_wavefront_tail_admission",
+        "realtime_wavefront_tail",
         "realtime_wavefront_branch_resolve",
         "realtime_wavefront_noisy_output_resolve"
       ],
@@ -397,6 +427,14 @@
         {
           "module": 12,
           "control": 0
+        },
+        {
+          "module": 13,
+          "control": 0
+        },
+        {
+          "module": 14,
+          "control": 0
         }
       ]
     },
@@ -413,6 +451,8 @@
         "realtime_wavefront_steady_trace_classify_ser",
         "realtime_wavefront_steady_no_light_advance_ser",
         "realtime_wavefront_steady_dual_light_advance_ser",
+        "realtime_wavefront_tail_admission_ser",
+        "realtime_wavefront_tail_ser",
         "realtime_wavefront_branch_resolve_ser",
         "realtime_wavefront_noisy_output_resolve"
       ],
@@ -467,6 +507,14 @@
         },
         {
           "module": 12,
+          "control": 0
+        },
+        {
+          "module": 13,
+          "control": 0
+        },
+        {
+          "module": 14,
           "control": 0
         }
       ]

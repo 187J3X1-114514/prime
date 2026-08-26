@@ -9,6 +9,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -24,6 +25,8 @@ final class PrimeConfigCodec {
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
     // Keep the legacy persisted key so existing configurations retain this value.
     private static final String DELTA_WALK_LIMIT_KEY = "renderer.primary_chain_limit";
+    private static final String WAVEFRONT_PREFIX_ROUNDS_KEY =
+            "renderer.wavefront_prefix_rounds";
     private static final String TERRAIN_WORKER_PERCENTAGE_KEY = "terrain.worker_percentage";
     private static final String SURFACE_DETAIL_MODE_KEY = "material.surface_detail";
     private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
@@ -49,6 +52,7 @@ final class PrimeConfigCodec {
             PATH_TRACING_ENABLED_KEY,
             SCATTER_COUNT_KEY,
             DELTA_WALK_LIMIT_KEY,
+            WAVEFRONT_PREFIX_ROUNDS_KEY,
             TERRAIN_WORKER_PERCENTAGE_KEY,
             SURFACE_DETAIL_MODE_KEY,
             VOXEL_TEXTURE_SURFACE_STRENGTH_KEY,
@@ -90,6 +94,11 @@ final class PrimeConfigCodec {
                 defaults.deltaWalkLimit(),
                 PrimeConfigCodec::parseDeltaWalkLimit,
                 "delta-walk limit");
+        int wavefrontPrefixRounds = reader.value(
+                WAVEFRONT_PREFIX_ROUNDS_KEY,
+                defaults.wavefrontPrefixRounds(),
+                PrimeConfigCodec::parseWavefrontPrefixRounds,
+                "wavefront-prefix rounds");
         int terrainWorkers = reader.value(
                 TERRAIN_WORKER_PERCENTAGE_KEY,
                 defaults.terrainWorkerPercentage(),
@@ -202,6 +211,7 @@ final class PrimeConfigCodec {
                         settings,
                         scatterCount,
                         deltaWalkLimit,
+                        wavefrontPrefixRounds,
                         terrainWorkers,
                         hdr,
                         referenceWhite),
@@ -213,6 +223,8 @@ final class PrimeConfigCodec {
         return PATH_TRACING_ENABLED_KEY + "=" + settings.pathTracingEnabled() + "\n"
                 + SCATTER_COUNT_KEY + "=" + data.scatterCount() + "\n"
                 + DELTA_WALK_LIMIT_KEY + "=" + data.deltaWalkLimit() + "\n"
+                + WAVEFRONT_PREFIX_ROUNDS_KEY + "="
+                + data.wavefrontPrefixRounds() + "\n"
                 + TERRAIN_WORKER_PERCENTAGE_KEY + "="
                 + data.terrainWorkerPercentage() + "\n"
                 + SURFACE_DETAIL_MODE_KEY + "="
@@ -243,10 +255,11 @@ final class PrimeConfigCodec {
     static void log(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, scatter count {}, primary delta-chain limit {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, scatter count {}, primary delta-chain limit {}, wavefront-prefix rounds {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 settings.pathTracingEnabled() ? "enabled" : "disabled",
                 data.scatterCount(),
                 data.deltaWalkLimit(),
+                data.wavefrontPrefixRounds(),
                 data.terrainWorkerPercentage(),
                 settings.surfaceDetailMode().id(),
                 formatVoxelSurfaceStrength(settings.voxelTextureSurfaceStrengthSteps()),
@@ -316,6 +329,15 @@ final class PrimeConfigCodec {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(
                     "Delta-walk limit must be an integer", exception);
+        }
+    }
+
+    static int parseWavefrontPrefixRounds(String value) {
+        try {
+            return WavefrontPrefixSettings.validateRounds(Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Wavefront-prefix rounds must be an integer", exception);
         }
     }
 

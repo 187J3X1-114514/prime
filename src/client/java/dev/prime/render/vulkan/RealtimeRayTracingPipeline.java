@@ -10,8 +10,12 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
     static final int RAYGEN_GROUP_COUNT = RealtimeStandardGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeStandardGroups.MODULE_COUNT;
 
-    static int dispatchCount(int scatterCount) {
-        return 3 * scatterCount + 10;
+    static int dispatchCount(int wavefrontPrefixRounds) {
+        dev.prime.render.WavefrontPrefixSettings.validateRounds(
+                wavefrontPrefixRounds);
+        // Landing owns prefix round zero. Every additional fixed wavefront round has three
+        // kernels; admission and the register tail replace all remaining per-bounce dispatches.
+        return 3 * (wavefrontPrefixRounds - 1) + 12;
     }
 
     static int[] primaryDirectInputImageIndices() {
@@ -50,7 +54,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 backend,
                 RealtimeStandardGroups.standardSchedule(
                         context.capabilities().wavefrontShaderSuffix()),
-                dispatchCount(dev.prime.render.ScatterSettings.DEFAULT_COUNT),
+                dispatchCount(dev.prime.render.WavefrontPrefixSettings.MAXIMUM_ROUNDS),
                 "Prime realtime ray tracing pipeline",
                 "Prime realtime shader binding table");
     }
@@ -72,7 +76,8 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
         this.recordPrimaryPrefix(commandBuffer, stack, activeProgram, commandOffset);
         this.standardBarrierBefore(
                 commandBuffer, stack, RealtimeStandardGroups.TRACE_CLASSIFY);
-        for (int bounce = 0; bounce < input.scatterCount(); bounce++) {
+        int wavefrontPrefixRounds = input.wavefrontPrefixRounds();
+        for (int round = 1; round < wavefrontPrefixRounds; round++) {
             this.traceQueued(
                     commandBuffer,
                     stack,
@@ -96,13 +101,25 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                     RealtimeStandardGroups.DUAL_LIGHT_ADVANCE,
                     commandOffset,
                     ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);
-            if (bounce + 1 == input.scatterCount()) {
-                this.resolveInputBarrier(commandBuffer, stack);
-            } else {
-                this.standardBarrierBefore(
-                        commandBuffer, stack, RealtimeStandardGroups.TRACE_CLASSIFY);
-            }
+            this.standardBarrierBefore(
+                    commandBuffer, stack, RealtimeStandardGroups.TRACE_CLASSIFY);
         }
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeStandardGroups.TAIL_ADMISSION,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0);
+        this.nextStepBarrier(commandBuffer, stack);
+        this.traceQueued(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeStandardGroups.TAIL,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.resolveInputBarrier(commandBuffer, stack);
         this.recordOutputTail(
                 commandBuffer,
                 stack,
@@ -112,7 +129,7 @@ public final class RealtimeRayTracingPipeline extends RealtimeRayTracingPipeline
                 input.height(),
                 RealtimeStandardGroups.BRANCH_RESOLVE,
                 RealtimeStandardGroups.NOISY_OUTPUT_RESOLVE);
-        return dispatchCount(input.scatterCount());
+        return dispatchCount(wavefrontPrefixRounds);
     }
 
     private void standardBarrierBefore(

@@ -18,6 +18,7 @@ public record IntegratorFrameInput(
         int packedRayCone,
         int scatterCount,
         int deltaWalkLimit,
+        int wavefrontPrefixRounds,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -45,9 +46,34 @@ public record IntegratorFrameInput(
             boolean shInput) {
         this(
                 camera, width, height, astronomy, packedRayCone, scatterCount,
-                DeltaWalkSettings.DEFAULT_LIMIT, sampleIndex, sampleEpoch, jitterPhase,
+                DeltaWalkSettings.DEFAULT_LIMIT, WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                sampleIndex, sampleEpoch, jitterPhase,
                 cameraInWater, postProcessingMode, transparentGuideMode, lighting, material,
                 shInput);
+    }
+
+    public IntegratorFrameInput(
+            FrameCamera camera,
+            int width,
+            int height,
+            AstronomyState astronomy,
+            int packedRayCone,
+            int scatterCount,
+            int deltaWalkLimit,
+            int sampleIndex,
+            int sampleEpoch,
+            int jitterPhase,
+            boolean cameraInWater,
+            PostProcessingMode postProcessingMode,
+            TransparentGuideMode transparentGuideMode,
+            LightingSettings.Snapshot lighting,
+            MaterialSettings.Snapshot material,
+            boolean shInput) {
+        this(
+                camera, width, height, astronomy, packedRayCone, scatterCount,
+                deltaWalkLimit, WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                sampleIndex, sampleEpoch, jitterPhase, cameraInWater,
+                postProcessingMode, transparentGuideMode, lighting, material, shInput);
     }
 
     public IntegratorFrameInput {
@@ -94,6 +120,7 @@ public record IntegratorFrameInput(
                 transparentGuideMode);
         ScatterSettings.validateCount(scatterCount);
         DeltaWalkSettings.validateLimit(deltaWalkLimit);
+        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
         IntegratorSettings.packMaterialLightingControl(
                 lighting.sunQuarterSteps(),
                 lighting.starQuarterSteps(),

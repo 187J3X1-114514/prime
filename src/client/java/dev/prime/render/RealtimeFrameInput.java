@@ -24,6 +24,7 @@ public record RealtimeFrameInput(
         TransparentGuideMode transparentGuideMode,
         int scatterCount,
         int deltaWalkLimit,
+        int wavefrontPrefixRounds,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
@@ -54,8 +55,39 @@ public record RealtimeFrameInput(
                 camera, frameTimeNanos, sceneRevision, residentSceneRevision,
                 textureRevision, width, height, displayWidth, displayHeight, astronomy,
                 cameraInWater, postProcessingMode, quality, transparentGuideMode,
-                scatterCount, DeltaWalkSettings.DEFAULT_LIMIT, lighting, material,
+                scatterCount, DeltaWalkSettings.DEFAULT_LIMIT,
+                WavefrontPrefixSettings.DEFAULT_ROUNDS, lighting, material,
                 shInput, display, forceReset);
+    }
+
+    public RealtimeFrameInput(
+            FrameCamera camera,
+            long frameTimeNanos,
+            long sceneRevision,
+            long residentSceneRevision,
+            long textureRevision,
+            int width,
+            int height,
+            int displayWidth,
+            int displayHeight,
+            AstronomyState astronomy,
+            boolean cameraInWater,
+            PostProcessingMode postProcessingMode,
+            ReconstructionQualityMode quality,
+            TransparentGuideMode transparentGuideMode,
+            int scatterCount,
+            int deltaWalkLimit,
+            LightingSettings.Snapshot lighting,
+            MaterialSettings.Snapshot material,
+            boolean shInput,
+            DisplaySettings.Snapshot display,
+            boolean forceReset) {
+        this(
+                camera, frameTimeNanos, sceneRevision, residentSceneRevision,
+                textureRevision, width, height, displayWidth, displayHeight, astronomy,
+                cameraInWater, postProcessingMode, quality, transparentGuideMode,
+                scatterCount, deltaWalkLimit, WavefrontPrefixSettings.DEFAULT_ROUNDS,
+                lighting, material, shInput, display, forceReset);
     }
 
     public RealtimeFrameInput {
@@ -72,6 +104,7 @@ public record RealtimeFrameInput(
                 transparentGuideMode);
         ScatterSettings.validateCount(scatterCount);
         DeltaWalkSettings.validateLimit(deltaWalkLimit);
+        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -131,6 +164,7 @@ public record RealtimeFrameInput(
                 packedRayCone,
                 this.scatterCount,
                 this.deltaWalkLimit,
+                this.wavefrontPrefixRounds,
                 sampleIndex,
                 sampleEpoch,
                 jitterPhase,

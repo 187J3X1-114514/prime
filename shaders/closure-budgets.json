@@ -157,6 +157,14 @@
       "maxFiles": 147,
       "maxBytes": 611591
     },
+    "entry/realtime/tail_admission.raygeneration.slang": {
+      "maxFiles": 40,
+      "maxBytes": 130000
+    },
+    "entry/realtime/tail.raygeneration.slang": {
+      "maxFiles": 145,
+      "maxBytes": 590000
+    },
     "entry/realtime/branch_resolve.raygeneration.slang": {
       "maxFiles": 32,
       "maxBytes": 139321

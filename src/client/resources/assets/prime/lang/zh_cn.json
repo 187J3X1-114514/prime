@@ -11,6 +11,8 @@
   "prime.options.scatter_count.tooltip": "设置实时第二阶段的最大反弹数和离线积分器的最大散射次数（1–64）。",
   "prime.options.delta_walk_limit": "Delta Walk 上限",
   "prime.options.delta_walk_limit.tooltip": "设置实时 Delta Walk 最多穿过的精确 Delta 顶点数（1–64，默认 8）。",
+  "prime.options.wavefront_prefix_rounds": "Wavefront 前缀轮数",
+  "prime.options.wavefront_prefix_rounds.tooltip": "设置主表面后在进入寄存器 Tail 前执行的固定无 RR Wavefront 轮数（2–4，默认 2；包含主表面轮）。",
   "prime.options.terrain_worker_percentage": "地形后台线程比例",
   "prime.options.terrain_worker_percentage.tooltip": "限制 Prime 地形构建最多使用 Minecraft 后台线程上限的这一比例。降低后可减少与区块加载争抢 CPU，但 Prime 几何出现会更慢；始终至少使用一个线程。",
   "prime.options.material.surface_detail": "纹理表面细节",

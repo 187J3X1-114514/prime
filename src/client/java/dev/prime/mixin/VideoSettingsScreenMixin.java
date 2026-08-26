@@ -10,6 +10,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.diagnostic.NrdInputView;
@@ -70,6 +71,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$options.rendering().screenshotMode());
             list.addBig(this.prime$options.rendering().scatterCount());
             list.addBig(this.prime$options.rendering().deltaWalkLimit());
+            list.addBig(this.prime$options.rendering().wavefrontPrefixRounds());
             list.addBig(this.prime$options.rendering().terrainWorkerPercentage());
             list.addSmall(
                     this.prime$options.rendering().surfaceDetailMode(),
@@ -137,6 +139,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$options.rendering().deltaWalkLimit(),
                 DeltaWalkSettings.DEFAULT_LIMIT);
+        this.prime$refresh(
+                this.prime$options.rendering().wavefrontPrefixRounds(),
+                WavefrontPrefixSettings.DEFAULT_ROUNDS);
         this.prime$refresh(
                 this.prime$options.rendering().terrainWorkerPercentage(),
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE);

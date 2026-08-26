@@ -39,6 +39,9 @@ final class RealtimeFramePlanTest {
             assertEquals(input.transparentGuideMode(), plan.integrator().transparentGuideMode());
             assertEquals(PACKED_RAY_CONE, plan.integrator().packedRayCone());
             assertEquals(input.scatterCount(), plan.integrator().scatterCount());
+            assertEquals(
+                    input.wavefrontPrefixRounds(),
+                    plan.integrator().wavefrontPrefixRounds());
             assertEquals(7, plan.integrator().jitterPhase());
             assertEquals(JITTER, plan.jitter());
             assertTrue(plan.reconstructionReset());

@@ -61,11 +61,17 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(13, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(13, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(46, RealtimeRayTracingPipeline.dispatchCount(12));
-        assertEquals(13, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(202, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(15, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(15, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(15, RealtimeRayTracingPipeline.dispatchCount(2));
+        assertEquals(18, RealtimeRayTracingPipeline.dispatchCount(3));
+        assertEquals(21, RealtimeRayTracingPipeline.dispatchCount(4));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RealtimeRayTracingPipeline.dispatchCount(1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RealtimeRayTracingPipeline.dispatchCount(5));
         assertEquals(24, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
@@ -75,13 +81,13 @@ final class TracePipelinesContractTest {
         assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -138,8 +144,29 @@ final class TracePipelinesContractTest {
         assertEquals(
                 "/prime/shaders/realtime_wavefront_steady_dual_light_advance_ser.rgen.spv",
                 realtime.moduleResource(10));
-        assertEquals(34, RealtimeRayTracingPipeline.dispatchCount(8));
-        assertEquals(46, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_tail_admission_ser.rgen.spv",
+                realtime.moduleResource(11));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_tail_ser.rgen.spv",
+                realtime.moduleResource(12));
+        assertEquals(15, RealtimeRayTracingPipeline.dispatchCount(2));
+        assertEquals(21, RealtimeRayTracingPipeline.dispatchCount(4));
+    }
+
+    @Test
+    void realtimeTailAdmissionSeesOnlyCompactPathAndQueueStorage() throws IOException {
+        Set<Integer> expected = Set.of(
+                ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
+                ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE);
+        for (String suffix : List.of("", "_ser")) {
+            assertEquals(
+                    expected,
+                    descriptorBindings(
+                            List.of(wavefrontShader(
+                                    "realtime", "tail_admission", suffix)),
+                            1));
+        }
     }
 
     @Test
@@ -179,6 +206,8 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "steady_trace_classify", suffix),
                             wavefrontShader("realtime", "steady_no_light_advance", suffix),
                             wavefrontShader("realtime", "steady_dual_light_advance", suffix),
+                            wavefrontShader("realtime", "tail_admission", suffix),
+                            wavefrontShader("realtime", "tail", suffix),
                             wavefrontShader(
                                     "realtime", "branch_resolve", suffix),
                             wavefrontShader("realtime", "visible_direct", suffix),

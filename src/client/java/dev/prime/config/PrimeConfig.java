@@ -10,6 +10,7 @@ import dev.prime.render.DeltaWalkSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.WavefrontPrefixSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -24,6 +25,7 @@ public final class PrimeConfig {
     private static PrimeSettings settings = PrimeSettings.defaults();
     private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
     private static int deltaWalkLimit = DeltaWalkSettings.DEFAULT_LIMIT;
+    private static int wavefrontPrefixRounds = WavefrontPrefixSettings.DEFAULT_ROUNDS;
     private static int terrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private static boolean hdrEnabled;
     private static int referenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
@@ -59,6 +61,7 @@ public final class PrimeConfig {
         settings = loaded.settings();
         scatterCount = loaded.scatterCount();
         deltaWalkLimit = loaded.deltaWalkLimit();
+        wavefrontPrefixRounds = loaded.wavefrontPrefixRounds();
         terrainWorkerPercentage = loaded.terrainWorkerPercentage();
         hdrEnabled = loaded.hdrEnabled();
         HdrOutput.setRequested(hdrEnabled);
@@ -91,6 +94,7 @@ public final class PrimeConfig {
                 current.display(),
                 scatterCount,
                 deltaWalkLimit,
+                wavefrontPrefixRounds,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -120,6 +124,19 @@ public final class PrimeConfig {
         int replacement = DeltaWalkSettings.validateLimit(limit);
         if (replacement != deltaWalkLimit) {
             deltaWalkLimit = replacement;
+            rendererRevision = Math.incrementExact(rendererRevision);
+            dirty = true;
+        }
+    }
+
+    public static int wavefrontPrefixRounds() {
+        return wavefrontPrefixRounds;
+    }
+
+    public static void setWavefrontPrefixRounds(int rounds) {
+        int replacement = WavefrontPrefixSettings.validateRounds(rounds);
+        if (replacement != wavefrontPrefixRounds) {
+            wavefrontPrefixRounds = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
@@ -226,6 +243,7 @@ public final class PrimeConfig {
         update(restoredDefaults(settings));
         setScatterCount(ScatterSettings.DEFAULT_COUNT);
         setDeltaWalkLimit(DeltaWalkSettings.DEFAULT_LIMIT);
+        setWavefrontPrefixRounds(WavefrontPrefixSettings.DEFAULT_ROUNDS);
         setTerrainWorkerPercentage(TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         setHdrEnabled(false);
         setReferenceWhiteNits(HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
@@ -275,6 +293,7 @@ public final class PrimeConfig {
                 settings,
                 scatterCount,
                 deltaWalkLimit,
+                wavefrontPrefixRounds,
                 terrainWorkerPercentage,
                 hdrEnabled,
                 referenceWhiteNits);

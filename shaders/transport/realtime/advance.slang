@@ -80,7 +80,7 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
             skipRoulette,
             recordIndex);
     continuation = continuation
-            && (skipRoulette
+            && (!phase.enforcesMaximumBounces()
                     || primePathBounce(path.control) < primeMaximumBounces());
     PrimeWavefrontTransportRecord updatedRecord =
             primeMakeUpdatedWavefrontRecord(
@@ -168,7 +168,7 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
             recordIndex);
     bool integratedContinuation = continuation;
     continuation = continuation
-            && (skipRoulette
+            && (!phase.enforcesMaximumBounces()
                     || primePathBounce(path.control) < primeMaximumBounces());
     PrimeWavefrontTransportRecord updatedRecord =
             primeMakeUpdatedTransparentWavefrontRecord(

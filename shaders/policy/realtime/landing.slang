@@ -10,4 +10,5 @@ public struct PrimeLandingTransportPhase : IPrimeRealtimeTransportPhase {
         return enabled && bounce > 0u;
     }
     uint ordinaryGuideHitBounce(uint primaryBounce) { return primaryBounce + 1u; }
+    bool enforcesMaximumBounces() { return false; }
 }

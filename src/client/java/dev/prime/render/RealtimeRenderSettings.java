@@ -12,7 +12,8 @@ public record RealtimeRenderSettings(
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
         int scatterCount,
-        int deltaWalkLimit) {
+        int deltaWalkLimit,
+        int wavefrontPrefixRounds) {
     public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
@@ -21,6 +22,7 @@ public record RealtimeRenderSettings(
         Objects.requireNonNull(display, "display");
         ScatterSettings.validateCount(scatterCount);
         DeltaWalkSettings.validateLimit(deltaWalkLimit);
+        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
     }
 
     public static RealtimeRenderSettings capture(RendererSettings settings) {
@@ -32,6 +34,7 @@ public record RealtimeRenderSettings(
                 settings.material(),
                 settings.display(),
                 settings.scatterCount(),
-                settings.deltaWalkLimit());
+                settings.deltaWalkLimit(),
+                settings.wavefrontPrefixRounds());
     }
 }

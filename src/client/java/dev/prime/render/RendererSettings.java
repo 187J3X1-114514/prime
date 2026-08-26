@@ -19,6 +19,7 @@ public record RendererSettings(
         DisplaySettings.Snapshot display,
         int scatterCount,
         int deltaWalkLimit,
+        int wavefrontPrefixRounds,
         int terrainWorkerPercentage,
         long revision) {
     public RendererSettings(
@@ -38,6 +39,7 @@ public record RendererSettings(
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
                 DeltaWalkSettings.DEFAULT_LIMIT,
+                WavefrontPrefixSettings.DEFAULT_ROUNDS,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -60,6 +62,7 @@ public record RendererSettings(
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
                 DeltaWalkSettings.DEFAULT_LIMIT,
+                WavefrontPrefixSettings.DEFAULT_ROUNDS,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 revision);
     }
@@ -83,6 +86,7 @@ public record RendererSettings(
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
                 astronomy, lighting, material, display, scatterCount,
                 DeltaWalkSettings.DEFAULT_LIMIT,
+                WavefrontPrefixSettings.DEFAULT_ROUNDS,
                 terrainWorkerPercentage,
                 revision);
     }
@@ -99,6 +103,7 @@ public record RendererSettings(
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
         ScatterSettings.validateCount(scatterCount);
         DeltaWalkSettings.validateLimit(deltaWalkLimit);
+        WavefrontPrefixSettings.validateRounds(wavefrontPrefixRounds);
         TerrainWorkerSettings.validatePercentage(terrainWorkerPercentage);
         if (revision < 0L) {
             throw new IllegalArgumentException("Renderer settings revision must not be negative");

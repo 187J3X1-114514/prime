@@ -11,6 +11,8 @@
   "prime.options.scatter_count.tooltip": "Sets the realtime second-stage bounce limit and the offline scatter limit (1–64).",
   "prime.options.delta_walk_limit": "Delta Walk Limit",
   "prime.options.delta_walk_limit.tooltip": "Sets how many exact delta transitions the realtime delta walk may cross (1–64, default 8).",
+  "prime.options.wavefront_prefix_rounds": "Wavefront Prefix Rounds",
+  "prime.options.wavefront_prefix_rounds.tooltip": "Sets the fixed no-RR wavefront rounds before the register tail (2–4, default 2; includes the primary-surface round).",
   "prime.options.terrain_worker_percentage": "Terrain Worker Share",
   "prime.options.terrain_worker_percentage.tooltip": "Limits Prime terrain building to this percentage of Minecraft's maximum background workers. Lower values reduce competition with chunk loading but make Prime geometry appear more slowly; at least one worker is always used.",
   "prime.options.material.surface_detail": "Texture Surface Detail",

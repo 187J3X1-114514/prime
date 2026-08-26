@@ -8,4 +8,5 @@ public interface IPrimeRealtimeTransportPhase {
     uint transparentFirstHitBounce();
     bool transparentPreviousUsedAreaNee(bool enabled, uint bounce);
     uint ordinaryGuideHitBounce(uint primaryBounce);
+    bool enforcesMaximumBounces();
 }

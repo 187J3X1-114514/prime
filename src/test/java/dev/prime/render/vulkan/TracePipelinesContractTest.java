@@ -61,11 +61,11 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(15, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(15, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(15, RealtimeRayTracingPipeline.dispatchCount(2));
-        assertEquals(18, RealtimeRayTracingPipeline.dispatchCount(3));
-        assertEquals(21, RealtimeRayTracingPipeline.dispatchCount(4));
+        assertEquals(21, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(16, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(16, RealtimeRayTracingPipeline.dispatchCount(2));
+        assertEquals(20, RealtimeRayTracingPipeline.dispatchCount(3));
+        assertEquals(24, RealtimeRayTracingPipeline.dispatchCount(4));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RealtimeRayTracingPipeline.dispatchCount(1));
@@ -81,13 +81,19 @@ final class TracePipelinesContractTest {
         assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14),
+        assertEquals(List.of(
+                        0, 1, 2, 3, 4, 5, 6, 7,
+                        8, 9, 10, 11, 8, 9, 10, 11,
+                        12, 12, 13, 14, 15),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        assertEquals(List.of(
+                        0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 1, 1, 1, 1,
+                        0, 1, 0, 0, 0),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -126,11 +132,15 @@ final class TracePipelinesContractTest {
         assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
                 RealtimePrimaryGroups.LANDING_GUIDE_ADVANCE));
         assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
-                RealtimeStandardGroups.NO_LIGHT_ADVANCE));
+                RealtimeStandardGroups.DIRECT_0));
+        assertTrue(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeStandardGroups.SCATTER_1));
         assertFalse(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
                 RealtimePrimaryGroups.LANDING_LIGHT_CLASSIFY));
         assertFalse(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
-                RealtimeStandardGroups.TRACE_CLASSIFY));
+                RealtimeStandardGroups.LIGHT_SELECT_0));
+        assertFalse(RealtimeRayTracingPipeline.standardBarrierPublishesImagesBefore(
+                RealtimeStandardGroups.BRIDGE_TRACE_1));
     }
 
     @Test
@@ -142,16 +152,16 @@ final class TracePipelinesContractTest {
                 "/prime/shaders/realtime_wavefront_surface_split_ser.rgen.spv",
                 realtime.moduleResource(2));
         assertEquals(
-                "/prime/shaders/realtime_wavefront_steady_dual_light_advance_ser.rgen.spv",
+                "/prime/shaders/realtime_wavefront_fixed_direct_ser.rgen.spv",
                 realtime.moduleResource(10));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_tail_admission_ser.rgen.spv",
-                realtime.moduleResource(11));
+                realtime.moduleResource(12));
         assertEquals(
                 "/prime/shaders/realtime_wavefront_tail_ser.rgen.spv",
-                realtime.moduleResource(12));
-        assertEquals(15, RealtimeRayTracingPipeline.dispatchCount(2));
-        assertEquals(21, RealtimeRayTracingPipeline.dispatchCount(4));
+                realtime.moduleResource(13));
+        assertEquals(16, RealtimeRayTracingPipeline.dispatchCount(2));
+        assertEquals(24, RealtimeRayTracingPipeline.dispatchCount(4));
     }
 
     @Test
@@ -203,9 +213,10 @@ final class TracePipelinesContractTest {
                                     "realtime", "landing_dual_light_advance", suffix),
                             wavefrontShader(
                                     "realtime", "landing_guide_advance", suffix),
-                            wavefrontShader("realtime", "steady_trace_classify", suffix),
-                            wavefrontShader("realtime", "steady_no_light_advance", suffix),
-                            wavefrontShader("realtime", "steady_dual_light_advance", suffix),
+                            wavefrontShader("realtime", "fixed_bridge_trace", suffix),
+                            wavefrontShader("realtime", "fixed_light_select", suffix),
+                            wavefrontShader("realtime", "fixed_direct", suffix),
+                            wavefrontShader("realtime", "fixed_scatter", suffix),
                             wavefrontShader("realtime", "tail_admission", suffix),
                             wavefrontShader("realtime", "tail", suffix),
                             wavefrontShader(
@@ -291,17 +302,22 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(tracePayload),
                     payloadShapes(
-                            wavefrontShader("realtime", "steady_trace_classify", suffix),
+                            wavefrontShader("realtime", "fixed_bridge_trace", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(),
                     payloadShapes(
-                            wavefrontShader("realtime", "steady_no_light_advance", suffix),
+                            wavefrontShader("realtime", "fixed_light_select", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(
-                            wavefrontShader("realtime", "steady_dual_light_advance", suffix),
+                            wavefrontShader("realtime", "fixed_direct", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader("realtime", "fixed_scatter", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(shadowPayload),
@@ -363,7 +379,7 @@ final class TracePipelinesContractTest {
     }
 
     @Test
-    void fixedQueuePartitionsCompactOnlyBeforeSerReorder()
+    void fixedStagesCompactOnlyAtLandingAndScatter()
             throws IOException {
         Set<Integer> landing = parse(wavefrontShader(
                 "realtime", "landing_light_classify", "_ser")).opcodes;
@@ -373,7 +389,11 @@ final class TracePipelinesContractTest {
         assertTrue(landing.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
 
         for (String suffix : List.of("", "_ser")) {
-            for (String stage : List.of("landing_light_classify", "steady_trace_classify")) {
+            for (String stage : List.of(
+                    "landing_light_classify",
+                    "fixed_bridge_trace",
+                    "fixed_light_select",
+                    "fixed_direct")) {
                 if (stage.equals("landing_light_classify") && suffix.equals("_ser")) {
                     continue;
                 }
@@ -393,7 +413,7 @@ final class TracePipelinesContractTest {
 
     @Test
     void wavefrontBackingHasDeclaredFourKSize() {
-        assertEquals(3_881_779_296L,
+        assertEquals(4_080_844_896L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(1_526_169_632L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));

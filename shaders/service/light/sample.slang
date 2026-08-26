@@ -3,6 +3,7 @@ module "service/light/sample.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "contract/light_sample.slang";
 import "model/atmosphere/sky.slang";
 import "service/atmosphere/trace.slang";
 import "math/packed_geometry.slang";
@@ -10,34 +11,10 @@ import "policy/runtime/config.slang";
 import "math/sampling.slang";
 import "math/transport.slang";
 import "service/material/surface.slang";
-import "math/light_tree.slang";
 import "service/atmosphere/starmap.slang";
 import "service/light/emission.slang";
 
 static const float PRIME_LIGHT_PI = 3.141592653589793;
-
-public struct LightSample {
-    public float3 direction;
-    public float distance;
-    public float3 radiance;
-    public float pdf;
-    public uint isDelta;
-};
-
-// Area-light geometry selection is deliberately separate from radiance resolution. Most sampled
-// lights are occluded in dense terrain; retaining only stable indices and UVs across traceRayEXT
-// avoids both an atlas read and live emitter state until the visibility test succeeds.
-public struct AreaLightSample {
-    public LightSample light;
-    public uint sectionIndex;
-    public uint emitterIndex;
-    public float2 uv;
-};
-
-public struct LightEvaluation {
-    public float3 radiance;
-    public float pdf;
-};
 
 // All radiance values in this adapter are linear Rec.2020 D65. pdf is the complete f32 sampling
 // density, including light-selection probability when a future registry introduces one. Reverse
@@ -49,7 +26,6 @@ public struct LightEvaluation {
 public float primePowerHeuristic(float firstPdf, float secondPdf) {
     return primePowerHeuristicValue(firstPdf, secondPdf);
 }
-
 public float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
     float result = primePowerHeuristicOverPdfValue(sampledPdf, otherPdf);
     return result;
@@ -131,29 +107,8 @@ public LightSample primeSampleSun(
     return result;
 }
 
-static const uint PRIME_LIGHT_LEAF_FLAG = 0x80000000u;
-static const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
-static const uint PRIME_LIGHT_TREE_MAX_DEPTH = 27u;
-static const uint PRIME_LIGHT_PATH_DEPTH_SHIFT = 27u;
-static const uint PRIME_LIGHT_PATH_TRAIL_MASK = 0x07ffffffu;
-static const uint PRIME_LIGHT_LEAF_MAX_ENTRIES = 8u;
-static const uint PRIME_LIGHT_CELL_SUBDIVISION = 16u;
-static const uint PRIME_LIGHT_CELL_COUNT = 256u;
-struct LightTreePick {
-    uint index;
-    float pdf;
-    float remapped;
-    uint valid;
-};
-
-LightTreePick primeInvalidLightTreePick() {
-    LightTreePick result;
-    result.index = 0u;
-    result.pdf = 0.0;
-    result.remapped = 0.0;
-    result.valid = 0u;
-    return result;
-}
+public static const uint PRIME_LIGHT_CELL_SUBDIVISION = 16u;
+public static const uint PRIME_LIGHT_CELL_COUNT = 256u;
 
 AreaLightSample primeInvalidAreaLightSample() {
     AreaLightSample result;
@@ -166,260 +121,6 @@ AreaLightSample primeInvalidAreaLightSample() {
     result.emitterIndex = PRIME_NO_LIGHT_INDEX;
     result.uv = float2(0.0);
     return result;
-}
-
-LightNode* primeWorldLightNodes(uint64_t worldLightAddress) {
-    return (LightNode*)worldLightAddress;
-}
-
-void primeUnpackLightNode(
-        LightNode* nodes,
-        uint index,
-        out float3 centroid,
-        out float power,
-        out uint emissionDirection,
-        out uint childOrLeaf) {
-    LightNode node = nodes[index];
-    centroid = node.centroidPower.xyz;
-    power = node.centroidPower.w;
-    emissionDirection = node.directionChildReserved.x;
-    childOrLeaf = node.directionChildReserved.y;
-}
-
-float2 primeLoadLightNodeMetrics(
-        LightNode* nodes,
-        uint index,
-        float3 point,
-        float3 receiverNormal) {
-    float3 centroid;
-    float power;
-    uint emissionDirection;
-    uint childOrLeaf;
-    primeUnpackLightNode(
-            nodes,
-            index,
-            centroid,
-            power,
-            emissionDirection,
-            childOrLeaf);
-    return primeLightNodeMetrics(
-            centroid,
-            power,
-            point,
-            receiverNormal,
-            emissionDirection);
-}
-
-float2 primeEmitterMetrics(
-        LightEmitter emitter,
-        float power,
-        float3 point,
-        float3 receiverNormal) {
-    float3 first = emitter.cornerArea.xyz;
-    float3 second = first + emitter.edgeOneScale.xyz;
-    float3 third = first + emitter.edgeTwoPower.xyz;
-    float3 boundsMin = min(first, min(second, third));
-    float3 boundsMax = max(first, max(second, third));
-    float3 closest = clamp(point, boundsMin, boundsMax);
-    float3 delta = point - closest;
-    float boundsDistanceSquared = dot(delta, delta);
-    float inverseDistance = boundsDistanceSquared > 0.0
-            ? rsqrt(boundsDistanceSquared)
-            : 0.0;
-    float receiverBound = primeLightReceiverCosineBoundWithInverse(
-            boundsMin,
-            boundsMax,
-            point,
-            receiverNormal,
-            boundsDistanceSquared,
-            inverseDistance);
-    float emitterBound = primeLightEmissionAxisCosineBound(
-            boundsMin,
-            boundsMax,
-            point,
-            emitter.normalPadding.xyz,
-            boundsDistanceSquared,
-            inverseDistance);
-    if ((emitter.metadata.z & PRIME_EMITTER_TWO_SIDED) != 0u) {
-        emitterBound = 0.5 * max(
-                emitterBound,
-                primeLightEmissionAxisCosineBound(
-                        boundsMin,
-                        boundsMax,
-                        point,
-                        -emitter.normalPadding.xyz,
-                        boundsDistanceSquared,
-                        inverseDistance));
-    }
-    float angularImportance = clamp(receiverBound * emitterBound, 0.0, 1.0);
-    float weightedPower = max(power, 0.0)
-            * (PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-                    + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR)
-                            * angularImportance);
-    float targetDistanceSquared = boundsDistanceSquared;
-    if (targetDistanceSquared == 0.0) {
-        float3 centroidDelta = point - (first + second + third) / 3.0;
-        targetDistanceSquared = dot(centroidDelta, centroidDelta);
-    }
-    if (targetDistanceSquared == 0.0) {
-        // A valid emissive triangle has nonzero edge extent. It supplies a deterministic target
-        // scale for the exact self-centroid case without altering visibility or ray endpoints.
-        float3 edgeOne = second - first;
-        float3 edgeTwo = third - first;
-        targetDistanceSquared = dot(edgeOne, edgeOne) + dot(edgeTwo, edgeTwo);
-    }
-    return float2(targetDistanceSquared, weightedPower);
-}
-
-float2 primeLoadEmitterMetrics(
-        LightEmitter* emitters,
-        LightLeafEntry entry,
-        float3 point,
-        float3 receiverNormal) {
-    return primeEmitterMetrics(
-            emitters[entry.index],
-            entry.power,
-            point,
-            receiverNormal);
-}
-
-LightTreePick primePickLightTree(
-        LightNode* nodes,
-        LightLeaf* leaves,
-        LightLeafEntry* entries,
-        uint root,
-        float3 point,
-        float3 receiverNormal,
-        float seed) {
-    uint nodeIndex = root;
-    float lowerBound = 0.0;
-    float pdf = 1.0;
-    [loop]
-    for (uint depth = 0u; depth <= PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
-        if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
-            uint leafIndex = childOrLeaf & PRIME_LIGHT_INDEX_MASK;
-            LightLeaf leaf = leaves[leafIndex];
-            float totalPower = nodes[nodeIndex].centroidPower.w;
-            if (!(totalPower > 0.0) || leaf.entryCount == 0u
-                    || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
-                return primeInvalidLightTreePick();
-            }
-            float localSeed = clamp(
-                    (seed - lowerBound) / pdf,
-                    0.0,
-                    asfloat(0x3f7fffffu));
-            float entryLower = 0.0;
-            [[unroll]]
-            for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-                if (offset >= leaf.entryCount) break;
-                LightLeafEntry entry = entries[leaf.firstEntry + offset];
-                float entryProbability = entry.power / totalPower;
-                float entryUpper = entryLower + entryProbability;
-                bool selected = localSeed < entryUpper || offset + 1u == leaf.entryCount;
-                if (selected) {
-                    if (!(entryProbability > 0.0)) {
-                        return primeInvalidLightTreePick();
-                    }
-                    LightTreePick result;
-                    result.index = entry.index;
-                    result.pdf = pdf * entryProbability;
-                    result.remapped = clamp(
-                            (localSeed - entryLower) / entryProbability,
-                            0.0,
-                            asfloat(0x3f7fffffu));
-                    result.valid = 1u;
-                    return result;
-                }
-                entryLower = entryUpper;
-            }
-            return primeInvalidLightTreePick();
-        }
-        // CPU linearization guarantees that these mandatory sibling records are consecutive.
-        uint leftIndex = childOrLeaf;
-        uint rightIndex = leftIndex + 1u;
-        float2 leftMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex, point, receiverNormal);
-        float2 rightMetrics = primeLoadLightNodeMetrics(
-                nodes, rightIndex, point, receiverNormal);
-        float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
-        if (!(leftProbability >= 0.0)) {
-            return primeInvalidLightTreePick();
-        }
-        float rightProbability = 1.0 - leftProbability;
-        // Keep the original sample in its cumulative interval. This is the same inverse-CDF
-        // traversal as repeatedly remapping value to [0, 1), but replaces one division per tree
-        // level with a multiply-add. pdf is also the current interval width.
-        float split = lowerBound + pdf * leftProbability;
-        bool selectLeft = seed < split || rightProbability <= 0.0;
-        if (selectLeft && leftProbability <= 0.0) {
-            return primeInvalidLightTreePick();
-        }
-        pdf *= selectLeft ? leftProbability : rightProbability;
-        lowerBound = selectLeft ? lowerBound : split;
-        nodeIndex = selectLeft ? leftIndex : rightIndex;
-    }
-    return primeInvalidLightTreePick();
-}
-
-float primeLightTreeSelectionPdf(
-        LightNode* nodes,
-        LightLeaf* leaves,
-        LightLeafEntry* entries,
-        uint root,
-        uint packedPath,
-        uint expectedIndex,
-        float3 point,
-        float3 receiverNormal) {
-    if (packedPath == PRIME_NO_LIGHT_INDEX) {
-        return 0.0;
-    }
-    uint depth = packedPath >> PRIME_LIGHT_PATH_DEPTH_SHIFT;
-    uint trail = packedPath & PRIME_LIGHT_PATH_TRAIL_MASK;
-    if (depth > PRIME_LIGHT_TREE_MAX_DEPTH
-            || (depth < PRIME_LIGHT_TREE_MAX_DEPTH && (trail >> depth) != 0u)) {
-        return 0.0;
-    }
-    uint nodeIndex = root;
-    float pdf = 1.0;
-    [loop]
-    for (uint level = 0u; level < PRIME_LIGHT_TREE_MAX_DEPTH; ++level) {
-        if (level >= depth) break;
-        uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
-        if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
-            return 0.0;
-        }
-        uint leftIndex = childOrLeaf;
-        float2 leftMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex, point, receiverNormal);
-        float2 rightMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex + 1u, point, receiverNormal);
-        float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
-        if (!(leftProbability >= 0.0)) {
-            return 0.0;
-        }
-        bool right = ((trail >> level) & 1u) != 0u;
-        float branchProbability = right ? 1.0 - leftProbability : leftProbability;
-        if (!(branchProbability > 0.0)) return 0.0;
-        pdf *= branchProbability;
-        nodeIndex = leftIndex + (right ? 1u : 0u);
-    }
-    uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
-    if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) == 0u) return 0.0;
-    LightLeaf leaf = leaves[childOrLeaf & PRIME_LIGHT_INDEX_MASK];
-    float totalPower = nodes[nodeIndex].centroidPower.w;
-    if (!(totalPower > 0.0) || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
-        return 0.0;
-    }
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        if (offset >= leaf.entryCount) break;
-        LightLeafEntry entry = entries[leaf.firstEntry + offset];
-        if (entry.index == expectedIndex) {
-            return entry.power > 0.0 ? pdf * entry.power / totalPower : 0.0;
-        }
-    }
-    return 0.0;
 }
 
 void primeLightCellVertices(uint geometry, out float2 first, out float2 second, out float2 third) {
@@ -440,7 +141,7 @@ void primeLightCellVertices(uint geometry, out float2 first, out float2 second, 
     }
 }
 
-uint primeLightCellIndex(float2 parentBarycentric) {
+public uint primeLightCellIndex(float2 parentBarycentric) {
     float2 bounded = max(parentBarycentric, float2(0.0));
     float sum = bounded.x + bounded.y;
     if (sum > 1.0) {
@@ -464,7 +165,7 @@ uint primeLightCellIndex(float2 parentBarycentric) {
     return rowBase + 2u * coordinate.x + (upper ? 1u : 0u);
 }
 
-float primeAreaSolidAnglePdf(
+public float primeAreaSolidAnglePdf(
         float3 origin,
         float3 lightPosition,
         float lightCosine,
@@ -568,68 +269,22 @@ AreaLightSample primeSampleAreaLightEmitter(
     return result;
 }
 
-public AreaLightSample primeSampleAreaLight(
+public AreaLightSample primeSampleAreaLightSelection(
         float3 surfacePosition,
-        uint packedReceiverNormal,
-        float2 treeSample,
+        AreaLightSelection selection,
+        float cellSample,
         float2 positionSample) {
-    float3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
-    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
-    uint64_t worldNodeAddress = sections[0].worldLightAddress;
-    uint64_t worldLeafAddress = sections[0].worldLightLeafAddress;
-    uint worldLeafCount = sections[0].worldLightLeafCount;
-    if (worldNodeAddress == uint64_t(0)
-            || worldLeafAddress == uint64_t(0)
-            || worldLeafCount == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-    LightNode* worldNodes = primeWorldLightNodes(worldNodeAddress);
-    LightLeaf* worldLeaves = (LightLeaf*)worldLeafAddress;
-    LightLeafEntry* worldEntries = (LightLeafEntry*)(
-            worldLeafAddress + uint64_t(worldLeafCount) * uint64_t(PRIME_LIGHT_LEAF_SIZE));
-    LightTreePick worldPick = primePickLightTree(
-            worldNodes,
-            worldLeaves,
-            worldEntries,
-            0u,
-            surfacePosition,
-            receiverNormal,
-            treeSample.x);
-    if (worldPick.valid == 0u) {
-        return primeInvalidAreaLightSample();
-    }
-    uint64_t sectionLightAddress = sections[worldPick.index].lightAddress;
-    if (sectionLightAddress == uint64_t(0)) {
-        return primeInvalidAreaLightSample();
-    }
-    SectionLightHeader* sectionBuffer = (SectionLightHeader*)sectionLightAddress;
-    uint64_t sectionNodeAddress = sectionBuffer[0].nodeAddress;
-    uint64_t sectionLeafAddress = sectionBuffer[0].leafAddress;
-    uint64_t sectionEntryAddress = sectionBuffer[0].entryAddress;
-    uint sectionRoot = sectionBuffer[0].root;
-    uint emitterCount = sectionBuffer[0].emitterCount;
-    LightNode* sectionNodes = (LightNode*)sectionNodeAddress;
-    LightLeaf* sectionLeaves = (LightLeaf*)sectionLeafAddress;
-    LightLeafEntry* sectionEntries = (LightLeafEntry*)sectionEntryAddress;
-    float3 sectionTranslation = sections[worldPick.index].translation;
-    float3 localSurfacePosition = surfacePosition - sectionTranslation;
-    LightTreePick sectionPick = primePickLightTree(
-            sectionNodes,
-            sectionLeaves,
-            sectionEntries,
-            sectionRoot,
-            localSurfacePosition,
-            receiverNormal,
-            worldPick.remapped);
-    if (sectionPick.valid == 0u || sectionPick.index >= emitterCount) {
+    if (selection.sectionIndex == PRIME_NO_LIGHT_INDEX
+            || selection.emitterIndex == PRIME_NO_LIGHT_INDEX
+            || !(selection.pdf > 0.0)) {
         return primeInvalidAreaLightSample();
     }
     return primeSampleAreaLightEmitter(
             surfacePosition,
-            worldPick.index,
-            sectionPick.index,
-            worldPick.pdf * sectionPick.pdf,
-            treeSample.y,
+            selection.sectionIndex,
+            selection.emitterIndex,
+            selection.pdf,
+            cellSample,
             positionSample);
 }
 
@@ -654,126 +309,4 @@ public float3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
             emitters[areaSample.emitterIndex].metadata.z,
             emitters[areaSample.emitterIndex].edgeOneScale.w,
             areaSample.uv);
-}
-
-public LightEvaluation primeEvaluateAreaLight(
-        SurfaceInteraction surface,
-        float3 rayOrigin,
-        float3 rayDirection,
-        uint packedReceiverNormal,
-        bool evaluatePdf) {
-    LightEvaluation result;
-    result.radiance = float3(0.0);
-    result.pdf = 0.0;
-    if (!evaluatePdf) {
-        result.radiance = primeEvaluateHitEmitterRadiance(
-                surface, rayDirection);
-        return result;
-    }
-    uint emitterIndex = primeSurfaceEmitterIndex(surface);
-    if (emitterIndex == PRIME_NO_LIGHT_INDEX) {
-        return result;
-    }
-    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
-    uint64_t sectionLightAddress = sections[surface.sectionIndex].lightAddress;
-    if (sectionLightAddress == uint64_t(0)) {
-        return result;
-    }
-    SectionLightHeader* sectionBuffer = (SectionLightHeader*)sectionLightAddress;
-    if (emitterIndex >= sectionBuffer[0].emitterCount) {
-        return result;
-    }
-    LightEmitter* emitters = (LightEmitter*)sectionBuffer[0].emitterAddress;
-    float4 emitterCornerArea = emitters[emitterIndex].cornerArea;
-    float lightCosine = primeEmitterCosine(
-            emitters[emitterIndex].normalPadding.xyz,
-            emitters[emitterIndex].metadata.z,
-            rayDirection);
-    if (!(lightCosine > 0.0) || !(emitterCornerArea.w > 0.0)) {
-        return result;
-    }
-
-    float3 sectionTranslation = sections[surface.sectionIndex].translation;
-    float3 localPosition = surface.position - sectionTranslation;
-    float3 relative = localPosition - emitterCornerArea.xyz;
-    float3 firstEdge = emitters[emitterIndex].edgeOneScale.xyz;
-    float3 secondEdge = emitters[emitterIndex].edgeTwoPower.xyz;
-    float3 edgeCross = cross(firstEdge, secondEdge);
-    float denominator = dot(edgeCross, edgeCross);
-    float2 parentBarycentric = float2(
-            dot(cross(relative, secondEdge), edgeCross) / denominator,
-            dot(cross(firstEdge, relative), edgeCross) / denominator);
-    result.radiance = primeEvaluateEmitterRadiance(
-            emitters[emitterIndex].metadata.w,
-            emitters[emitterIndex].uvsTint.w,
-            emitters[emitterIndex].metadata.z,
-            emitters[emitterIndex].edgeOneScale.w,
-            primeEmitterUv(
-                    emitters[emitterIndex].uvsTint.xyz,
-                    parentBarycentric),
-            surface.textureLod);
-    float3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
-
-    uint64_t worldNodeAddress = sections[surface.sectionIndex].worldLightAddress;
-    uint64_t worldLeafAddress =
-            sections[surface.sectionIndex].worldLightLeafAddress;
-    uint worldLeafCount = sections[surface.sectionIndex].worldLightLeafCount;
-    uint worldLightPath = sections[surface.sectionIndex].worldLightPath;
-    if (worldNodeAddress == uint64_t(0)
-            || worldLeafAddress == uint64_t(0)
-            || worldLeafCount == 0u
-            || worldLightPath == PRIME_NO_LIGHT_INDEX) {
-        return result;
-    }
-    LightCell* cells = (LightCell*)sectionBuffer[0].cellAddress;
-    uint cellIndex = primeLightCellIndex(parentBarycentric);
-    uint emitterCellBase = emitters[emitterIndex].metadata.x;
-    float cellProbabilityMass = cells[emitterCellBase + cellIndex].probabilityMass;
-    float cellArea = emitterCornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
-    if (!(cellProbabilityMass > 0.0) || !(cellArea > 0.0)) {
-        return result;
-    }
-    float worldPdf;
-    {
-        LightNode* worldNodes = primeWorldLightNodes(worldNodeAddress);
-        LightLeaf* worldLeaves = (LightLeaf*)worldLeafAddress;
-        LightLeafEntry* worldEntries = (LightLeafEntry*)(
-                worldLeafAddress
-                        + uint64_t(worldLeafCount) * uint64_t(PRIME_LIGHT_LEAF_SIZE));
-        worldPdf = primeLightTreeSelectionPdf(
-                worldNodes,
-                worldLeaves,
-                worldEntries,
-                0u,
-                worldLightPath,
-                surface.sectionIndex,
-                rayOrigin,
-                receiverNormal);
-    }
-    float sectionPdf;
-    {
-        LightNode* sectionNodes = (LightNode*)sectionBuffer[0].nodeAddress;
-        LightLeaf* sectionLeaves = (LightLeaf*)sectionBuffer[0].leafAddress;
-        LightLeafEntry* sectionEntries =
-                (LightLeafEntry*)sectionBuffer[0].entryAddress;
-        sectionPdf = primeLightTreeSelectionPdf(
-                sectionNodes,
-                sectionLeaves,
-                sectionEntries,
-                sectionBuffer[0].root,
-                emitters[emitterIndex].metadata.y,
-                emitterIndex,
-                rayOrigin - sectionTranslation,
-                receiverNormal);
-    }
-    if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
-        return result;
-    }
-    float areaPdf = worldPdf * sectionPdf * cellProbabilityMass / cellArea;
-    result.pdf = primeAreaSolidAnglePdf(
-            rayOrigin,
-            surface.position,
-            lightCosine,
-            areaPdf);
-    return result;
 }

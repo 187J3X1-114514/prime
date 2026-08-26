@@ -1,6 +1,8 @@
 #language slang 2026
 module "transport/offline/surface.slang";
 
+import "contract/light_sample.slang";
+
 import "policy/runtime/config.slang";
 import "prime_abi.slang";
 import "prime_abi_types.slang";
@@ -13,6 +15,7 @@ import "math/sampling.slang";
 import "math/transport.slang";
 import "service/light/emission.slang";
 import "service/light/sample.slang";
+import "service/light/area.slang";
 import "model/material/defaults.slang";
 import "model/material/transparent.slang";
 import "service/bsdf/contract/components.slang";

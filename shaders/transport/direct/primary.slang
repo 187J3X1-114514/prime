@@ -1,6 +1,8 @@
 #language slang 2026
 module "transport/direct/primary.slang";
 
+import "contract/light_sample.slang";
+
 import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "model/atmosphere/sky.slang";
@@ -28,7 +30,6 @@ public bool primeDirectSampleEligible(
                     || primeMaterialIsFoliage(surface.materialControl)
                     || dot(shadingNormal, light.direction) > 0.0);
 }
-
 public struct PrimePrimarySunSample {
     public PrimeDirectLightingSplit lighting;
     public float penumbra;
@@ -130,33 +131,6 @@ public PrimeDirectLightingSplit primeEstimatePrimaryDirectPreparedAreaLight(
             false);
 }
 
-public PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        PrimePreparedSampleBase preparedSample,
-        PrimeOpenPbrVolumeStack volumeStack,
-        bool conditionalTransparentBranch) {
-    AreaLightSample area = primeSampleAreaLight(
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY));
-    return primeEstimatePrimaryDirectPreparedAreaLight(
-            context,
-            surface,
-            viewDirection,
-            area,
-            volumeStack,
-            conditionalTransparentBranch);
-}
-
 public float3 primeEstimateDirectPreparedAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
@@ -189,27 +163,6 @@ public float3 primeEstimateDirectPreparedAreaLight(
             primeUsesAirGap(),
             true);
 }
-
-public float3 primeEstimateDirectAreaLight(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        float2 treeSample,
-        float2 positionSample,
-        PrimeOpenPbrVolumeStack volumeStack) {
-    AreaLightSample area = primeSampleAreaLight(
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
-            treeSample,
-            positionSample);
-    return primeEstimateDirectPreparedAreaLight(
-            context,
-            surface,
-            viewDirection,
-            area,
-            volumeStack);
-}
-
 public float3 primeEstimateDirectSun(
         inout PrimeIntegratorContext context,
         IntegratorRecord integrator,
@@ -242,22 +195,4 @@ public float3 primeEstimateDirectSun(
             volumeStack,
             primeUsesAirGap(),
             true);
-}
-
-public PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        PrimePreparedSampleBase preparedSample,
-        PrimeOpenPbrVolumeStack volumeStack,
-        bool conditionalTransparentBranch) {
-    // Stars are evaluated only when the continuation ray misses. Primary non-sun guides therefore
-    // contain only the explicitly sampled area-light family.
-    return primeEstimatePrimaryDirectAreaLight(
-            context,
-            surface,
-            viewDirection,
-            preparedSample,
-            volumeStack,
-            conditionalTransparentBranch);
 }

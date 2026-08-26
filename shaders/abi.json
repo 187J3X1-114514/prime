@@ -253,7 +253,7 @@
   "realtimeWavefrontContract": {
     "pathRecordSize": 112,
     "pathSlotsPerPixel": 2,
-    "areaRecordSize": 208,
+    "areaRecordSize": 232,
     "queueEntriesPerPixel": 2,
     "queueStorageEntriesPerPixel": 9,
     "queueCount": 6,

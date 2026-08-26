@@ -19,9 +19,8 @@ import "state/realtime/transport.slang";
 
 // The fixed prefix has already scattered this path. Apply exactly the roulette decision that the
 // old per-bounce advance would have made, then compact only survivors into the register tail.
-public void primeAdmitRealtimeTailPath(uint launchIndex) {
-    uint recordIndex = primeWavefrontQueuedPath(
-            PRIME_WAVEFRONT_TRANSPARENT_TRACE_QUEUE_0, launchIndex);
+public void primeAdmitRealtimeTailPath(uint sourceQueue, uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(sourceQueue, launchIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);

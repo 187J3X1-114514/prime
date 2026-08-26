@@ -2,21 +2,31 @@ package dev.prime.render.vulkan;
 
 /** Realtime transport topology. */
 final class RealtimeStandardGroups {
-    static final int TRACE_CLASSIFY = 8;
-    static final int NO_LIGHT_ADVANCE = 9;
-    static final int DUAL_LIGHT_ADVANCE = 10;
-    static final int TAIL_ADMISSION = 11;
-    static final int TAIL = 12;
-    static final int BRANCH_RESOLVE = 13;
-    static final int NOISY_OUTPUT_RESOLVE = 14;
-    static final int GROUP_COUNT = 15;
-    static final int MODULE_COUNT = 15;
+    static final int BRIDGE_TRACE_0 = 8;
+    static final int LIGHT_SELECT_0 = 9;
+    static final int DIRECT_0 = 10;
+    static final int SCATTER_0 = 11;
+    static final int BRIDGE_TRACE_1 = 12;
+    static final int LIGHT_SELECT_1 = 13;
+    static final int DIRECT_1 = 14;
+    static final int SCATTER_1 = 15;
+    static final int TAIL_ADMISSION_0 = 16;
+    static final int TAIL_ADMISSION_1 = 17;
+    static final int TAIL = 18;
+    static final int BRANCH_RESOLVE = 19;
+    static final int NOISY_OUTPUT_RESOLVE = 20;
+    static final int GROUP_COUNT = 21;
+    static final int MODULE_COUNT = 16;
 
     private static final int[] MODULES = {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14
+        0, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 8, 9, 10, 11,
+        12, 12, 13, 14, 15
     };
     private static final int[] CONTROLS = {
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 1, 1,
+        0, 1, 0, 0, 0
     };
     private RealtimeStandardGroups() {}
 
@@ -38,6 +48,26 @@ final class RealtimeStandardGroups {
 
     static int control(int group) {
         return CONTROLS[group];
+    }
+
+    static int bridgeTrace(boolean sourceOne) {
+        return sourceOne ? BRIDGE_TRACE_1 : BRIDGE_TRACE_0;
+    }
+
+    static int lightSelect(boolean sourceOne) {
+        return sourceOne ? LIGHT_SELECT_1 : LIGHT_SELECT_0;
+    }
+
+    static int direct(boolean sourceOne) {
+        return sourceOne ? DIRECT_1 : DIRECT_0;
+    }
+
+    static int scatter(boolean sourceOne) {
+        return sourceOne ? SCATTER_1 : SCATTER_0;
+    }
+
+    static int tailAdmission(boolean sourceOne) {
+        return sourceOne ? TAIL_ADMISSION_1 : TAIL_ADMISSION_0;
     }
 
 }

@@ -1,6 +1,8 @@
 #language slang 2026
 module "transport/direct/evaluate.slang";
 
+import "contract/light_sample.slang";
+
 import "prime_abi_types.slang";
 import "service/bsdf/contract/sample.slang";
 import "bsdf/compact/dielectric/contract.slang";

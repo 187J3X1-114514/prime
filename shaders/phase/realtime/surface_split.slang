@@ -4,7 +4,7 @@ module "phase/realtime/surface_split.slang";
 import "prime_realtime_abi.slang";
 import "service/trace/context.slang";
 import "state/realtime/queue.slang";
-import "transport/direct/policy.slang";
+import "transport/direct/deferred.slang";
 import "transport/realtime/surface_split.slang";
 
 public void primePhase()

@@ -16,7 +16,7 @@ import "service/bsdf/contract/albedo.slang";
 import "service/bsdf/dispatch/sample.slang";
 import "service/bsdf/dispatch/traits.slang";
 import "service/trace/context.slang";
-import "transport/direct/policy.slang";
+import "transport/direct/contract.slang";
 import "model/realtime/transport.slang";
 import "transport/scatter/ordinary.slang";
 import "transport/scatter/contract.slang";

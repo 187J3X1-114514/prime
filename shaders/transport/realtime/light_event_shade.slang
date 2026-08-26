@@ -3,6 +3,7 @@ module "transport/realtime/light_event_shade.slang";
 
 import "transport/realtime/light_event_classify.slang";
 import "contract/realtime/light_event.slang";
+import "contract/light_sample.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
@@ -12,6 +13,7 @@ import "policy/runtime/config.slang";
 import "math/sampling.slang";
 import "math/transport.slang";
 import "service/light/sample.slang";
+import "service/light/area.slang";
 import "model/material/defaults.slang";
 import "service/trace/context.slang";
 import "state/realtime/light.slang";

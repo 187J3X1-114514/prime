@@ -1,6 +1,7 @@
 #language slang 2026
 module "transport/realtime/landing_guide_dual_light.slang";
 
+import "contract/light_sample.slang";
 import "prime_realtime_abi.slang";
 import "prime_abi_types.slang";
 import "transport/realtime/light_event_shade.slang";

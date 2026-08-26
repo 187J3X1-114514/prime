@@ -1,0 +1,125 @@
+#language slang 2026
+module "service/light/evaluate.slang";
+
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "contract/light_sample.slang";
+import "math/packed_geometry.slang";
+import "math/light_receiver.slang";
+import "service/material/surface.slang";
+import "service/light/emission.slang";
+import "service/light/sample.slang";
+import "service/light/tree_common.slang";
+import "service/light/tree_pdf.slang";
+
+public LightEvaluation primeEvaluateAreaLight(
+        SurfaceInteraction surface,
+        float3 rayOrigin,
+        float3 rayDirection,
+        uint packedReceiverNormal,
+        bool evaluatePdf) {
+    LightEvaluation result;
+    result.radiance = float3(0.0);
+    result.pdf = 0.0;
+    if (!evaluatePdf) {
+        result.radiance = primeEvaluateHitEmitterRadiance(
+                surface, rayDirection);
+        return result;
+    }
+    uint emitterIndex = primeSurfaceEmitterIndex(surface);
+    if (emitterIndex == PRIME_NO_LIGHT_INDEX) {
+        return result;
+    }
+    SectionRecord* sections = (SectionRecord*)primePush.sectionTableAddress;
+    uint64_t sectionLightAddress = sections[surface.sectionIndex].lightAddress;
+    if (sectionLightAddress == uint64_t(0)) {
+        return result;
+    }
+    SectionLightHeader* sectionBuffer = (SectionLightHeader*)sectionLightAddress;
+    if (emitterIndex >= sectionBuffer[0].emitterCount) {
+        return result;
+    }
+    LightEmitter* emitters = (LightEmitter*)sectionBuffer[0].emitterAddress;
+    float4 emitterCornerArea = emitters[emitterIndex].cornerArea;
+    float lightCosine = primeEmitterCosine(
+            emitters[emitterIndex].normalPadding.xyz,
+            emitters[emitterIndex].metadata.z,
+            rayDirection);
+    if (!(lightCosine > 0.0) || !(emitterCornerArea.w > 0.0)) {
+        return result;
+    }
+
+    float3 sectionTranslation = sections[surface.sectionIndex].translation;
+    float3 localPosition = surface.position - sectionTranslation;
+    float3 relative = localPosition - emitterCornerArea.xyz;
+    float3 firstEdge = emitters[emitterIndex].edgeOneScale.xyz;
+    float3 secondEdge = emitters[emitterIndex].edgeTwoPower.xyz;
+    float3 edgeCross = cross(firstEdge, secondEdge);
+    float denominator = dot(edgeCross, edgeCross);
+    float2 parentBarycentric = float2(
+            dot(cross(relative, secondEdge), edgeCross) / denominator,
+            dot(cross(firstEdge, relative), edgeCross) / denominator);
+    result.radiance = primeEvaluateEmitterRadiance(
+            emitters[emitterIndex].metadata.w,
+            emitters[emitterIndex].uvsTint.w,
+            emitters[emitterIndex].metadata.z,
+            emitters[emitterIndex].edgeOneScale.w,
+            primeEmitterUv(
+                    emitters[emitterIndex].uvsTint.xyz,
+                    parentBarycentric),
+            surface.textureLod);
+    float3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
+
+    uint64_t worldNodeAddress = sections[surface.sectionIndex].worldLightAddress;
+    uint64_t worldLeafAddress =
+            sections[surface.sectionIndex].worldLightLeafAddress;
+    uint worldLeafCount = sections[surface.sectionIndex].worldLightLeafCount;
+    uint worldLightPath = sections[surface.sectionIndex].worldLightPath;
+    if (worldNodeAddress == uint64_t(0)
+            || worldLeafAddress == uint64_t(0)
+            || worldLeafCount == 0u
+            || worldLightPath == PRIME_NO_LIGHT_INDEX) {
+        return result;
+    }
+    LightCell* cells = (LightCell*)sectionBuffer[0].cellAddress;
+    uint cellIndex = primeLightCellIndex(parentBarycentric);
+    uint emitterCellBase = emitters[emitterIndex].metadata.x;
+    float cellProbabilityMass = cells[emitterCellBase + cellIndex].probabilityMass;
+    float cellArea = emitterCornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
+    if (!(cellProbabilityMass > 0.0) || !(cellArea > 0.0)) {
+        return result;
+    }
+    LightNode* worldNodes = primeWorldLightNodes(worldNodeAddress);
+    LightLeaf* worldLeaves = (LightLeaf*)worldLeafAddress;
+    LightLeafEntry* worldEntries = (LightLeafEntry*)(
+            worldLeafAddress
+                    + uint64_t(worldLeafCount) * uint64_t(PRIME_LIGHT_LEAF_SIZE));
+    float worldPdf = primeLightTreeSelectionPdf(
+            worldNodes,
+            worldLeaves,
+            worldEntries,
+            0u,
+            worldLightPath,
+            surface.sectionIndex,
+            rayOrigin,
+            receiverNormal);
+    float sectionPdf = primeLightTreeSelectionPdf(
+            (LightNode*)sectionBuffer[0].nodeAddress,
+            (LightLeaf*)sectionBuffer[0].leafAddress,
+            (LightLeafEntry*)sectionBuffer[0].entryAddress,
+            sectionBuffer[0].root,
+            emitters[emitterIndex].metadata.y,
+            emitterIndex,
+            rayOrigin - sectionTranslation,
+            receiverNormal);
+    if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
+        return result;
+    }
+    float areaPdf = worldPdf * sectionPdf * cellProbabilityMass / cellArea;
+    result.pdf = primeAreaSolidAnglePdf(
+            rayOrigin,
+            surface.position,
+            lightCosine,
+            areaPdf);
+    return result;
+}

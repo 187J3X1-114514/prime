@@ -15,7 +15,7 @@ import "service/light/sample.slang";
 import "service/light/emission.slang";
 import "model/material/defaults.slang";
 import "service/trace/context.slang";
-import "transport/direct/policy.slang";
+import "transport/direct/staged.slang";
 import "model/realtime/transport.slang";
 import "transport/scatter/surface.slang";
 import "transport/scatter/transparent.slang";
@@ -68,7 +68,7 @@ public bool primeAdvanceOrdinaryWavefrontRecord<Phase>(
     bool continuation = primeIntegrateWavefrontSurface(
             phase,
             PrimeStagedSecondarySunNee(),
-            PrimeStagedSecondaryAreaNee(),
+            PrimeFixedSecondaryAreaNee(),
             PrimeNoIndirectReuse(),
             context,
             path,
@@ -149,7 +149,7 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
     bool continuation = primeIntegrateTransparentWavefrontSurface(
             phase,
             PrimeStagedSecondarySunNee(),
-            PrimeStagedSecondaryAreaNee(),
+            PrimeFixedSecondaryAreaNee(),
             context,
             path,
             integrator,

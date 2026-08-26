@@ -20,6 +20,7 @@ import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
 import "state/realtime/surface.slang";
 import "contract/light.slang";
+import "transport/direct/area.slang";
 import "transport/direct/primary.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";

@@ -1,46 +1,14 @@
 #language slang 2026
 module "math/light_tree.slang";
 
-public static const uint PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE = 0x8000u;
+import "math/light_receiver.slang";
+
 public static const float PRIME_LIGHT_RECEIVER_COSINE_FLOOR = 1.0 / 256.0;
 public static const uint PRIME_LIGHT_DIRECTION_MODE_SHIFT = 30u;
 public static const uint PRIME_LIGHT_DIRECTION_MODE_LOBES = 2u;
 public static const uint PRIME_LIGHT_DIRECTION_MODE_FULL = 3u;
 public static const uint PRIME_LIGHT_DIRECTION_OCT_MASK = 0x3ffu;
 public static const uint PRIME_LIGHT_DIRECTION_LOBE_MASK = 0x1fu;
-
-public float2 primeLightTreeSignNotZero(float2 value) {
-    return float2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
-}
-
-// The compact normal lives in an otherwise unused cold path lane. Forward sampling uses the
-// decoded value too, so reverse MIS reconstructs the exact same quantized selection density.
-public uint primePackLightReceiverNormal(float3 value) {
-    float3 normal = normalize(value);
-    normal /= max(abs(normal.x) + abs(normal.y) + abs(normal.z), 1.0e-20);
-    if (normal.z < 0.0) {
-        normal.xy = (1.0 - abs(normal.yx)) * primeLightTreeSignNotZero(normal.xy);
-    }
-    float2 unit = clamp(normal.xy * 0.5 + 0.5, float2(0.0), float2(1.0));
-    uint2 quantized = uint2(round(unit * float2(255.0, 127.0)));
-    return PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE
-            | quantized.x
-            | (quantized.y << 8u);
-}
-
-public float3 primeUnpackLightReceiverNormal(uint packedValue) {
-    if ((packedValue & PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE) == 0u) {
-        return float3(0.0);
-    }
-    float2 encoded = float2(
-            float(packedValue & 0xffu) / 255.0,
-            float((packedValue >> 8u) & 0x7fu) / 127.0) * 2.0 - 1.0;
-    float3 normal = float3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
-    if (normal.z < 0.0) {
-        normal.xy = (1.0 - abs(normal.yx)) * primeLightTreeSignNotZero(normal.xy);
-    }
-    return normalize(normal);
-}
 
 public float3 primeUnpackLightEmissionAxis(uint packedValue) {
     float2 encoded = float2(
@@ -49,7 +17,7 @@ public float3 primeUnpackLightEmissionAxis(uint packedValue) {
             / 1023.0 * 2.0 - 1.0;
     float3 axis = float3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
     if (axis.z < 0.0) {
-        axis.xy = (1.0 - abs(axis.yx)) * primeLightTreeSignNotZero(axis.xy);
+        axis.xy = (1.0 - abs(axis.yx)) * primeLightReceiverSignNotZero(axis.xy);
     }
     return normalize(axis);
 }

@@ -2,8 +2,7 @@
 module "transport/direct/selection.slang";
 
 import "prime_abi_types.slang";
-import "math/light_tree.slang";
-import "service/light/sample.slang";
+import "math/light_receiver.slang";
 import "model/material/defaults.slang";
 import "transport/surface/access.slang";
 

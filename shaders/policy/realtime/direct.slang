@@ -4,7 +4,7 @@ module "policy/realtime/direct.slang";
 import "prime_abi_types.slang";
 import "math/sampling.slang";
 import "service/trace/context.slang";
-import "transport/direct/policy.slang";
+import "transport/direct/contract.slang";
 import "bsdf/compact/contract/volume.slang";
 
 public struct PrimeStagedSecondarySunNee : IPrimeSecondarySunNee {

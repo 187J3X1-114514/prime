@@ -227,43 +227,57 @@
       "stage": "raygeneration",
       "resource": "realtime_wavefront_noisy_output_resolve.rgen.spv"
     },
-    "realtime_wavefront_steady_dual_light_advance": {
-      "source": "shaders/entry/realtime/steady_dual_light_advance.raygeneration.slang",
+    "realtime_wavefront_fixed_bridge_trace": {
+      "source": "shaders/entry/realtime/fixed_bridge_trace.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_dual_light_advance.rgen.spv"
+      "resource": "realtime_wavefront_fixed_bridge_trace.rgen.spv"
     },
-    "realtime_wavefront_steady_dual_light_advance_ser": {
-      "source": "shaders/entry/realtime/steady_dual_light_advance.raygeneration.slang",
+    "realtime_wavefront_fixed_bridge_trace_ser": {
+      "source": "shaders/entry/realtime/fixed_bridge_trace.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_dual_light_advance_ser.rgen.spv",
+      "resource": "realtime_wavefront_fixed_bridge_trace_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
       ]
     },
-    "realtime_wavefront_steady_trace_classify": {
-      "source": "shaders/entry/realtime/steady_trace_classify.raygeneration.slang",
+    "realtime_wavefront_fixed_light_select": {
+      "source": "shaders/entry/realtime/fixed_light_select.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_trace_classify.rgen.spv"
+      "resource": "realtime_wavefront_fixed_light_select.rgen.spv"
     },
-    "realtime_wavefront_steady_trace_classify_ser": {
-      "source": "shaders/entry/realtime/steady_trace_classify.raygeneration.slang",
+    "realtime_wavefront_fixed_light_select_ser": {
+      "source": "shaders/entry/realtime/fixed_light_select.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_trace_classify_ser.rgen.spv",
+      "resource": "realtime_wavefront_fixed_light_select_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
       ]
     },
-    "realtime_wavefront_steady_no_light_advance": {
-      "source": "shaders/entry/realtime/steady_no_light_advance.raygeneration.slang",
+    "realtime_wavefront_fixed_direct": {
+      "source": "shaders/entry/realtime/fixed_direct.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_no_light_advance.rgen.spv"
+      "resource": "realtime_wavefront_fixed_direct.rgen.spv"
     },
-    "realtime_wavefront_steady_no_light_advance_ser": {
-      "source": "shaders/entry/realtime/steady_no_light_advance.raygeneration.slang",
+    "realtime_wavefront_fixed_direct_ser": {
+      "source": "shaders/entry/realtime/fixed_direct.raygeneration.slang",
       "stage": "raygeneration",
-      "resource": "realtime_wavefront_steady_no_light_advance_ser.rgen.spv",
+      "resource": "realtime_wavefront_fixed_direct_ser.rgen.spv",
+      "definitions": [
+        "-DPRIME_ENABLE_SER=1",
+        "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
+      ]
+    },
+    "realtime_wavefront_fixed_scatter": {
+      "source": "shaders/entry/realtime/fixed_scatter.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_wavefront_fixed_scatter.rgen.spv"
+    },
+    "realtime_wavefront_fixed_scatter_ser": {
+      "source": "shaders/entry/realtime/fixed_scatter.raygeneration.slang",
+      "stage": "raygeneration",
+      "resource": "realtime_wavefront_fixed_scatter_ser.rgen.spv",
       "definitions": [
         "-DPRIME_ENABLE_SER=1",
         "-DPRIME_ENABLE_SUBGROUP_QUEUE=1"
@@ -367,9 +381,10 @@
         "realtime_wavefront_landing_guide_dual_light",
         "realtime_wavefront_landing_dual_light_advance",
         "realtime_wavefront_landing_guide_advance",
-        "realtime_wavefront_steady_trace_classify",
-        "realtime_wavefront_steady_no_light_advance",
-        "realtime_wavefront_steady_dual_light_advance",
+        "realtime_wavefront_fixed_bridge_trace",
+        "realtime_wavefront_fixed_light_select",
+        "realtime_wavefront_fixed_direct",
+        "realtime_wavefront_fixed_scatter",
         "realtime_wavefront_tail_admission",
         "realtime_wavefront_tail",
         "realtime_wavefront_branch_resolve",
@@ -425,8 +440,28 @@
           "control": 0
         },
         {
+          "module": 8,
+          "control": 1
+        },
+        {
+          "module": 9,
+          "control": 1
+        },
+        {
+          "module": 10,
+          "control": 1
+        },
+        {
+          "module": 11,
+          "control": 1
+        },
+        {
           "module": 12,
           "control": 0
+        },
+        {
+          "module": 12,
+          "control": 1
         },
         {
           "module": 13,
@@ -434,6 +469,10 @@
         },
         {
           "module": 14,
+          "control": 0
+        },
+        {
+          "module": 15,
           "control": 0
         }
       ]
@@ -448,9 +487,10 @@
         "realtime_wavefront_landing_guide_dual_light_ser",
         "realtime_wavefront_landing_dual_light_advance_ser",
         "realtime_wavefront_landing_guide_advance_ser",
-        "realtime_wavefront_steady_trace_classify_ser",
-        "realtime_wavefront_steady_no_light_advance_ser",
-        "realtime_wavefront_steady_dual_light_advance_ser",
+        "realtime_wavefront_fixed_bridge_trace_ser",
+        "realtime_wavefront_fixed_light_select_ser",
+        "realtime_wavefront_fixed_direct_ser",
+        "realtime_wavefront_fixed_scatter_ser",
         "realtime_wavefront_tail_admission_ser",
         "realtime_wavefront_tail_ser",
         "realtime_wavefront_branch_resolve_ser",
@@ -506,8 +546,28 @@
           "control": 0
         },
         {
+          "module": 8,
+          "control": 1
+        },
+        {
+          "module": 9,
+          "control": 1
+        },
+        {
+          "module": 10,
+          "control": 1
+        },
+        {
+          "module": 11,
+          "control": 1
+        },
+        {
           "module": 12,
           "control": 0
+        },
+        {
+          "module": 12,
+          "control": 1
         },
         {
           "module": 13,
@@ -515,6 +575,10 @@
         },
         {
           "module": 14,
+          "control": 0
+        },
+        {
+          "module": 15,
           "control": 0
         }
       ]

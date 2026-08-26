@@ -1,6 +1,8 @@
 #language slang 2026
 module "transport/surface/emission.slang";
 
+import "contract/light_sample.slang";
+
 import "prime_abi_types.slang";
 import "state/path.slang";
 import "contract/path.slang";
@@ -9,6 +11,7 @@ import "policy/runtime/config.slang";
 import "service/atmosphere/starmap.slang";
 import "math/transport.slang";
 import "service/light/emission.slang";
+import "service/light/evaluate.slang";
 import "service/light/sample.slang";
 import "model/material/defaults.slang";
 import "service/trace/context.slang";

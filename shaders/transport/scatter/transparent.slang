@@ -20,7 +20,7 @@ import "service/bsdf/dispatch/traits.slang";
 import "service/bsdf/dielectric/sample.slang";
 import "service/bsdf/dielectric/discrete.slang";
 import "service/trace/context.slang";
-import "transport/direct/policy.slang";
+import "transport/direct/contract.slang";
 import "transport/guide/queued_psr.slang";
 import "transport/scatter/ordinary.slang";
 import "transport/scatter/contract.slang";

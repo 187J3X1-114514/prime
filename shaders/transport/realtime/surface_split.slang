@@ -22,7 +22,7 @@ import "service/bsdf/contract/albedo.slang";
 import "service/bsdf/dispatch/traits.slang";
 import "service/bsdf/support/conversion.slang";
 import "service/trace/context.slang";
-import "transport/direct/policy.slang";
+import "transport/direct/contract.slang";
 import "transport/direct/primary.slang";
 import "model/realtime/transport.slang";
 import "transport/guide/queued_psr.slang";

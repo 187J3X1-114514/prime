@@ -88,6 +88,24 @@ final class RayTracingPushConstantsTest {
                         valid.lighting(),
                         valid.material(),
                         valid.shInput()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new IntegratorFrameInput(
+                        valid.camera(),
+                        (1 << 18) + 1,
+                        valid.height(),
+                        valid.astronomy(),
+                        valid.packedRayCone(),
+                        valid.maximumBounces(),
+                        valid.sampleIndex(),
+                        valid.sampleEpoch(),
+                        valid.jitterPhase(),
+                        valid.cameraInWater(),
+                        valid.postProcessingMode(),
+                        valid.transparentGuideMode(),
+                        valid.lighting(),
+                        valid.material(),
+                        valid.shInput()));
     }
 
     private static Fixture input(int sampleIndex) {

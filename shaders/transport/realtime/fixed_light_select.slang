@@ -1,6 +1,7 @@
 #language slang 2026
 module "transport/realtime/fixed_light_select.slang";
 
+import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
@@ -37,6 +38,7 @@ public void primeSelectFixedLight(uint sourceQueue, uint launchIndex) {
             selection.area = primeInvalidAreaLightSelection();
             PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
                     pixel,
+                    primePush.outputExtent,
                     primeSampleIndex(),
                     primeSampleEpoch(),
                     primePathBounce(path.control) + 1u,

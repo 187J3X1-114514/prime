@@ -28,6 +28,8 @@ public record IntegratorFrameInput(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput) {
+    private static final int ZSOBOL_MAXIMUM_EXTENT = 1 << 18;
+
     public IntegratorFrameInput(
             FrameCamera camera,
             int width,
@@ -88,6 +90,12 @@ public record IntegratorFrameInput(
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
                     "Integrator extent must be positive");
+        }
+        // pbrt's 52-column Sobol matrices leave 36 Morton bits after Prime's 16-bit
+        // progressive sample index, hence at most 18 coordinate bits per axis.
+        if (width > ZSOBOL_MAXIMUM_EXTENT || height > ZSOBOL_MAXIMUM_EXTENT) {
+            throw new IllegalArgumentException(
+                    "Integrator extent exceeds the Z-Sobol sequence domain");
         }
         if (sampleIndex < 0 || sampleIndex >= 1 << 16) {
             throw new IllegalArgumentException(

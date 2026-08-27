@@ -115,11 +115,11 @@
     },
     "entry/realtime/landing_light_select.raygeneration.slang": {
       "maxFiles": 79,
-      "maxBytes": 260216
+      "maxBytes": 264856
     },
     "entry/realtime/landing_direct.raygeneration.slang": {
       "maxFiles": 107,
-      "maxBytes": 412926
+      "maxBytes": 417544
     },
     "entry/realtime/landing_scatter.raygeneration.slang": {
       "maxFiles": 144,

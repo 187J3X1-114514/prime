@@ -28,8 +28,8 @@ Prime's epipolar sun-shadow profile is adapted from Intel's Apache-2.0-licensed
 Outdoor Light Scattering Sample. See `OUTDOOR-LIGHT-SCATTERING-NOTICE.txt` and
 `APACHE-2.0.txt`.
 
-Prime's realtime direct-light sampler includes six blue-noise scalar tables from
-pbrt-v4. See `PBRT-V4-NOTICE.txt` and `APACHE-2.0.txt`.
+Prime's realtime direct-light sampler adapts pbrt-v4's hierarchical Z-Sobol
+sampler. See `PBRT-V4-NOTICE.txt` and `APACHE-2.0.txt`.
 
 Prime's night sky uses NASA Scientific Visualization Studio's Deep Star Maps
 2020 with Gaia DR2 data. See `NASA-DEEP-STAR-MAPS-2020-NOTICE.md` for the

@@ -320,7 +320,6 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
     public static final int DESCRIPTOR_TEXTURE_RECORDS = ${schema.sharedDescriptors.textureRecords};
     public static final int DESCRIPTOR_MATERIAL_NORMAL_PAGES = ${schema.sharedDescriptors.materialNormalPages};
-    public static final int DESCRIPTOR_DIRECT_SAMPLE_LUT = ${schema.sharedDescriptors.directSampleLut};
     public static final int DESCRIPTOR_MATERIAL_OPTICAL_PAGES = ${schema.sharedDescriptors.materialOpticalPages};
     public static final int DESCRIPTOR_NRD_SUN_LIGHTING = ${schema.realtimeDescriptors.nrdSunLighting};
     public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.realtimeDescriptors.nrdSunPenumbra};
@@ -468,7 +467,6 @@ module "prime_abi_bindings.slang";
 
 // Generated from shaders/abi.json. Do not edit by hand.
 public static const uint PRIME_TRANSMISSION_GGX_ENERGY_BINDING = ${schema.sharedDescriptors.transmissionGgxEnergy};
-public static const uint PRIME_DESCRIPTOR_DIRECT_SAMPLE_LUT = ${schema.sharedDescriptors.directSampleLut};
 """
 		new File(slangDir, 'prime_abi_types.slang').text = """\
 #language slang 2026

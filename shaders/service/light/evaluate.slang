@@ -135,42 +135,20 @@ public LightEvaluation primeEvaluateAreaLight(
             lightCosine,
             textureAreaPdf);
     float3 lightCorner = emitterCornerArea.xyz + sectionTranslation;
-    PrimeProjectedSolidAngleDomain diffuseDomain =
-            primePrepareProjectedSolidAngleTriangle(
-                    lightCorner,
-                    firstEdge,
-                    secondEdge,
-                    rayOrigin,
-                    receiverNormal);
-    bool diffuseActive = primeProjectedSolidAngleReliable(diffuseDomain);
-    PrimeGgxLtc ltc = primeInvalidGgxLtc();
-    PrimeProjectedSolidAngleDomain specularDomain =
-            primeInvalidProjectedSolidAngleDomain();
-    if (diffuseActive && primeAreaLightBrdfActive(packedReceiverBrdf)) {
-        ltc = primeGgxLtc(packedReceiverNormal, packedReceiverBrdf);
-        if (ltc.determinant > 0.0) {
-            specularDomain = primePrepareGgxLtcTriangle(
-                    ltc,
-                    lightCorner,
-                    firstEdge,
-                    secondEdge,
-                    rayOrigin);
-        }
-    }
-    bool specularActive = primeProjectedSolidAngleReliable(specularDomain);
-    float diffuseRatio = diffuseActive
-            ? primeAreaDiffuseRatio(
-                    packedReceiverBrdf,
-                    ltc,
-                    diffuseDomain,
-                    specularDomain)
-            : 1.0;
+    PrimeAreaProposal proposal = primeAreaProposal(
+            lightCorner, firstEdge, secondEdge, rayOrigin,
+            receiverNormal, packedReceiverNormal, packedReceiverBrdf);
+    bool diffuseActive = primeProjectedSolidAngleReliable(proposal.data.z);
+    bool specularActive = primeProjectedSolidAngleReliable(proposal.data.w);
+    float diffuseRatio = proposal.data.y;
     float diffusePdf = selectionPdf * primeProjectedSolidAnglePdf(
-            diffuseDomain, receiverNormal, rayDirection);
-    float specularPdf = specularActive
-            ? selectionPdf * primeGgxLtcPdf(
-                    ltc, specularDomain, rayDirection)
-            : 0.0;
+            proposal.data.z, receiverNormal, rayDirection);
+    float specularPdf = 0.0;
+    if (specularActive) {
+        PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
+        specularPdf = selectionPdf * primeGgxLtcPdf(
+                ltc, proposal.data.w, rayDirection);
+    }
     result.pdf = primeAreaMixturePdf(
             texturePdf,
             diffusePdf,

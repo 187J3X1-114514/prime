@@ -370,17 +370,16 @@ public PrimeProjectedSolidAngleDomain primePrepareProjectedSolidAngleTriangle(
             bitangent);
 }
 
-public bool primeProjectedSolidAngleReliable(
-        PrimeProjectedSolidAngleDomain domain) {
-    return domain.area >= PRIME_PROJECTED_MIN_AREA;
+public bool primeProjectedSolidAngleReliable(float area) {
+    return area >= PRIME_PROJECTED_MIN_AREA;
 }
 
 public float primeProjectedSolidAnglePdf(
-        PrimeProjectedSolidAngleDomain domain,
+        float area,
         float3 receiverNormal,
         float3 direction) {
     float receiverCosine = max(dot(receiverNormal, direction), 0.0);
-    return primeProjectedSolidAngleReliable(domain)
-            ? receiverCosine / domain.area
+    return primeProjectedSolidAngleReliable(area)
+            ? receiverCosine / area
             : 0.0;
 }

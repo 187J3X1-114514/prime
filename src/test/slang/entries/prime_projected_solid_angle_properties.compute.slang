@@ -64,20 +64,20 @@ void primeCheckProjectedSolidAngle(
     if (expectedVertexCount == 0u) {
         if (domain.area != 0.0 || reversed.area != 0.0
                 || primeProjectedSolidAnglePdf(
-                        domain, receiverNormal, receiverNormal) != 0.0) {
+                        domain.area, receiverNormal, receiverNormal) != 0.0) {
             result.mask |= PRIME_TEST_FAILURE_PDF;
         }
         result.domain = float4(domain.area, reversed.area, 0.0, 0.0);
         return;
     }
-    bool reliable = primeProjectedSolidAngleReliable(domain);
-    bool reversedReliable = primeProjectedSolidAngleReliable(reversed);
+    bool reliable = primeProjectedSolidAngleReliable(domain.area);
+    bool reversedReliable = primeProjectedSolidAngleReliable(reversed.area);
     if (reliable != reversedReliable) {
         result.mask |= PRIME_TEST_FAILURE_SYMMETRY;
     }
     if (!reliable || !reversedReliable) {
         if (primeProjectedSolidAnglePdf(
-                domain, receiverNormal, receiverNormal) != 0.0) {
+                domain.area, receiverNormal, receiverNormal) != 0.0) {
             result.mask |= PRIME_TEST_FAILURE_PDF;
         }
         result.domain = float4(domain.area, reversed.area, 0.0, 0.0);
@@ -105,9 +105,9 @@ void primeCheckProjectedSolidAngle(
                     + receiverNormal * localDirection.z);
     float receiverCosine = dot(receiverNormal, direction);
     float pdf = primeProjectedSolidAnglePdf(
-            domain, receiverNormal, direction);
+            domain.area, receiverNormal, direction);
     float reversedPdf = primeProjectedSolidAnglePdf(
-            reversed, receiverNormal, direction);
+            reversed.area, receiverNormal, direction);
     result.mask |= primeTestClassify(float4(direction, pdf));
     result.mask |= primeTestClassify(reversedPdf);
     if (receiverCosine < -2.0e-6

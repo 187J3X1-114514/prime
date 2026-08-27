@@ -58,14 +58,14 @@ void primeCheckLtcAreaSampling(
     PrimeProjectedSolidAngleDomain reversed = primePrepareGgxLtcTriangle(
             ltc, corner, secondEdge, firstEdge, receiver);
     result.mask |= primeTestClassify(float2(domain.area, reversed.area));
-    bool reliable = primeProjectedSolidAngleReliable(domain);
-    bool reversedReliable = primeProjectedSolidAngleReliable(reversed);
+    bool reliable = primeProjectedSolidAngleReliable(domain.area);
+    bool reversedReliable = primeProjectedSolidAngleReliable(reversed.area);
     if (reliable != reversedReliable) {
         result.mask |= PRIME_TEST_FAILURE_SYMMETRY;
     }
     if (!reliable || !reversedReliable) {
-        if (primeGgxLtcPdf(ltc, domain, ltc.basisZ) != 0.0
-                || primeGgxLtcPdf(ltc, reversed, ltc.basisZ) != 0.0) {
+        if (primeGgxLtcPdf(ltc, domain.area, ltc.basisZ) != 0.0
+                || primeGgxLtcPdf(ltc, reversed.area, ltc.basisZ) != 0.0) {
             result.mask |= PRIME_TEST_FAILURE_PDF;
         }
         result.domain = float4(domain.area, reversed.area, 0.0, 0.0);
@@ -95,8 +95,8 @@ void primeCheckLtcAreaSampling(
         result.mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
     }
 
-    float pdf = primeGgxLtcPdf(ltc, domain, worldDirection);
-    float reversedPdf = primeGgxLtcPdf(ltc, reversed, worldDirection);
+    float pdf = primeGgxLtcPdf(ltc, domain.area, worldDirection);
+    float reversedPdf = primeGgxLtcPdf(ltc, reversed.area, worldDirection);
     float3 transformed = primeGgxLtcShadingToCosine(
             ltc, primeGgxLtcWorldToShading(ltc, worldDirection));
     float lengthSquared = dot(transformed, transformed);
@@ -132,7 +132,10 @@ void primeCheckLtcAreaSampling(
                     receiver,
                     primeUnpackLightReceiverNormal(packedNormal));
     float diffuseRatio = primeAreaDiffuseRatio(
-            packedBrdf, ltc, diffuseDomain, domain);
+            packedBrdf,
+            ltc.albedo,
+            diffuseDomain.area,
+            domain.area);
     if (diffuseRatio < 0.0 || diffuseRatio > 1.0) {
         result.mask |= PRIME_TEST_FAILURE_VALUE;
     }

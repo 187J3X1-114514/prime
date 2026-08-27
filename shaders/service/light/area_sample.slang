@@ -119,44 +119,12 @@ AreaLightSample primeSampleAreaLightEmitter(
             + sections[sectionIndex].translation;
     float3 receiverNormal = primeUnpackLightReceiverNormal(
             packedReceiverNormal);
-    float3 tangent = float3(0.0);
-    float3 bitangent = float3(0.0);
-    PrimeProjectedSolidAngleDomain diffuseDomain =
-            primeInvalidProjectedSolidAngleDomain();
-    PrimeGgxLtc ltc = primeInvalidGgxLtc();
-    PrimeProjectedSolidAngleDomain specularDomain =
-            primeInvalidProjectedSolidAngleDomain();
-    if (dot(receiverNormal, receiverNormal) > 0.0) {
-        primeBasis(receiverNormal, tangent, bitangent);
-        diffuseDomain = primePrepareProjectedSolidAngleTriangleBasis(
-                lightCorner,
-                firstEdge,
-                secondEdge,
-                surfacePosition,
-                receiverNormal,
-                tangent,
-                bitangent);
-        if (primeAreaLightBrdfActive(packedReceiverBrdf)) {
-            ltc = primeGgxLtc(packedReceiverNormal, packedReceiverBrdf);
-            if (ltc.determinant > 0.0) {
-                specularDomain = primePrepareGgxLtcTriangle(
-                        ltc,
-                        lightCorner,
-                        firstEdge,
-                        secondEdge,
-                        surfacePosition);
-            }
-        }
-    }
-    bool diffuseActive = primeProjectedSolidAngleReliable(diffuseDomain);
-    bool specularActive = primeProjectedSolidAngleReliable(specularDomain);
-    float diffuseRatio = diffuseActive
-            ? primeAreaDiffuseRatio(
-                    packedReceiverBrdf,
-                    ltc,
-                    diffuseDomain,
-                    specularDomain)
-            : 1.0;
+    PrimeAreaProposal proposal = primeAreaProposal(
+            lightCorner, firstEdge, secondEdge, surfacePosition,
+            receiverNormal, packedReceiverNormal, packedReceiverBrdf);
+    bool diffuseActive = primeProjectedSolidAngleReliable(proposal.data.z);
+    bool specularActive = primeProjectedSolidAngleReliable(proposal.data.w);
+    float diffuseRatio = proposal.data.y;
     bool sampleTexture = !diffuseActive
             || cellSample < PRIME_AREA_PROJECTED_MIXTURE;
     float projectedSample = (cellSample - PRIME_AREA_PROJECTED_MIXTURE)
@@ -173,7 +141,7 @@ AreaLightSample primeSampleAreaLightEmitter(
                 ? cellSample / PRIME_AREA_PROJECTED_MIXTURE
                 : cellSample;
         float aliasValue = textureSample * float(PRIME_LIGHT_CELL_COUNT);
-        // Sobol conversion and the exact mixture remap are strictly below one.
+        // Sobol and mixture remap stay below 1.
         uint column = uint(aliasValue);
         LightCell aliasCell = cells[emitterCellBase + column];
         cellIndex = aliasValue - float(column) < aliasCell.aliasProbability
@@ -185,27 +153,35 @@ AreaLightSample primeSampleAreaLightEmitter(
         }
         parentBarycentric = primeSampleLightCell(selectedCell, positionSample);
     } else {
+        PrimeProjectedSolidAngleDomain sampleDomain;
+        if (sampleSpecular) {
+            PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
+            sampleDomain = primePrepareGgxLtcTriangle(
+                    ltc, lightCorner, firstEdge, secondEdge, surfacePosition);
+        } else {
+            sampleDomain = primePrepareProjectedSolidAngleTriangle(
+                    lightCorner, firstEdge, secondEdge, surfacePosition,
+                    receiverNormal);
+        }
         float3 localDirection = primeSampleProjectedSolidAngle(
-                sampleSpecular ? specularDomain : diffuseDomain,
-                positionSample);
-        // Ray-plane intersection is invariant to direction scale; the common path below
-        // normalizes the direction rebuilt from the exact emitter plane.
+                sampleDomain, positionSample);
+        // Plane intersection ignores scale; the common path rebuilds the exact direction.
         float3 direction;
         if (sampleSpecular) {
+            PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
             float3 shadingDirection = normalize(
                     primeGgxLtcCosineToShading(ltc, localDirection));
             direction = primeGgxLtcShadingToWorld(ltc, shadingDirection);
         } else {
+            float3 tangent;
+            float3 bitangent;
+            primeBasis(receiverNormal, tangent, bitangent);
             direction = tangent * localDirection.x
                     + bitangent * localDirection.y
                     + receiverNormal * localDirection.z;
         }
         if (!primeIntersectAreaLight(
-                surfacePosition,
-                direction,
-                lightCorner,
-                firstEdge,
-                secondEdge,
+                surfacePosition, direction, lightCorner, firstEdge, secondEdge,
                 parentBarycentric)) {
             return primeInvalidAreaLightSample();
         }
@@ -240,11 +216,13 @@ AreaLightSample primeSampleAreaLightEmitter(
             lightCosine,
             textureAreaPdf);
     float diffusePdf = emitterSelectionPdf * primeProjectedSolidAnglePdf(
-            diffuseDomain, receiverNormal, direction);
-    float specularPdf = specularActive
-            ? emitterSelectionPdf * primeGgxLtcPdf(
-                    ltc, specularDomain, direction)
-            : 0.0;
+            proposal.data.z, receiverNormal, direction);
+    float specularPdf = 0.0;
+    if (specularActive) {
+        PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
+        specularPdf = emitterSelectionPdf * primeGgxLtcPdf(
+                ltc, proposal.data.w, direction);
+    }
     float pdf = primeAreaMixturePdf(
             texturePdf,
             diffusePdf,

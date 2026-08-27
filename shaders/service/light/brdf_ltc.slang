@@ -140,9 +140,9 @@ public PrimeProjectedSolidAngleDomain primePrepareGgxLtcTriangle(
 
 public float primeGgxLtcPdf(
         PrimeGgxLtc ltc,
-        PrimeProjectedSolidAngleDomain domain,
+        float projectedArea,
         float3 worldDirection) {
-    if (!primeProjectedSolidAngleReliable(domain)
+    if (!primeProjectedSolidAngleReliable(projectedArea)
             || !(ltc.determinant > 0.0)) {
         return 0.0;
     }
@@ -151,24 +151,24 @@ public float primeGgxLtcPdf(
     float lengthSquared = dot(cosineDirection, cosineDirection);
     return lengthSquared > 0.0
             ? max(cosineDirection.z, 0.0) * ltc.determinant
-                    / (lengthSquared * lengthSquared * domain.area)
+                    / (lengthSquared * lengthSquared * projectedArea)
             : 0.0;
 }
 
 public float primeAreaDiffuseRatio(
         uint packedBrdf,
-        PrimeGgxLtc ltc,
-        PrimeProjectedSolidAngleDomain diffuseDomain,
-        PrimeProjectedSolidAngleDomain specularDomain) {
-    if (!primeProjectedSolidAngleReliable(specularDomain)) {
+        float specularAlbedo,
+        float diffuseArea,
+        float specularArea) {
+    if (!primeProjectedSolidAngleReliable(specularArea)) {
         return 1.0;
     }
     // These weights select between proposals only. The exact compact OpenPBR response and the
     // complete mixture PDF remain unchanged, so the coarse luminance encoding cannot bias paths.
     float diffuseWeight = max(
             primeAreaLightBrdfDiffuseLuminance(packedBrdf), 0.01)
-            * diffuseDomain.area;
-    float specularWeight = max(ltc.albedo, 0.0) * specularDomain.area;
+            * diffuseArea;
+    float specularWeight = max(specularAlbedo, 0.0) * specularArea;
     float weightSum = diffuseWeight + specularWeight;
     return weightSum > 0.0 ? diffuseWeight / weightSum : 1.0;
 }

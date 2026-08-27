@@ -20,6 +20,8 @@ final class TransparentBoundaryResolver {
     static Result resolve(
             CapturedCluster cluster,
             boolean resolveStaticOverlays) {
+        TransmissiveTopologyResolver.Result topologies =
+                TransmissiveTopologyResolver.resolve(cluster);
         @SuppressWarnings("unchecked")
         ArrayList<ResolvedQuad>[] sections =
                 (ArrayList<ResolvedQuad>[]) new ArrayList<?>[SectionCluster.SECTION_COUNT];
@@ -39,7 +41,7 @@ final class TransparentBoundaryResolver {
             int originY = CapturedCluster.sectionY(localIndex) * 16;
             int originZ = CapturedCluster.sectionZ(localIndex) * 16;
             List<TwoSidedQuadReducer.ResolvedQuad> reduced =
-                    TwoSidedQuadReducer.resolve(section.quads());
+                    TwoSidedQuadReducer.resolve(section.quads(), topologies.topology());
             if (resolveStaticOverlays) {
                 reduced = resolveExactOverlays(reduced);
             }
@@ -76,7 +78,7 @@ final class TransparentBoundaryResolver {
                     ? List.of()
                     : coalesce(sections[index]);
         }
-        return new Result(immutable);
+        return new Result(immutable, topologies.issues());
     }
 
     private static List<TwoSidedQuadReducer.ResolvedQuad> resolveExactOverlays(
@@ -134,8 +136,14 @@ final class TransparentBoundaryResolver {
         CapturedSectionGeometry.Quad b = second.quad();
         boolean aOverlay = a.surface().rasterOverlay();
         boolean bOverlay = b.surface().rasterOverlay();
+        TwoSidedQuadReducer.ResolvedQuad substrateResolved = aOverlay ? second : first;
         if (aOverlay == bOverlay
-                || FaceKind.of((aOverlay ? b : a).surface()) != FaceKind.OPAQUE
+                || FaceKind.of(
+                                (aOverlay ? b : a).surface(),
+                                substrateResolved.definition()
+                                        .primary()
+                                        .transmissiveTopology())
+                        != FaceKind.OPAQUE
                 || a.normalX() * b.normalX()
                                 + a.normalY() * b.normalY()
                                 + a.normalZ() * b.normalZ()
@@ -144,6 +152,8 @@ final class TransparentBoundaryResolver {
         }
         CapturedSectionGeometry.Quad geometry = aOverlay ? b : a;
         CapturedSectionGeometry.Quad layer = aOverlay ? a : b;
+        TwoSidedQuadReducer.ResolvedQuad layerResolved = aOverlay ? first : second;
+        TwoSidedQuadReducer.ResolvedQuad geometryResolved = aOverlay ? second : first;
         int[] mapping = sameWindingMapping(geometry, layer);
         if (mapping == null) {
             return null;
@@ -154,8 +164,14 @@ final class TransparentBoundaryResolver {
                 layer.u(mapping[2]), layer.v(mapping[2]),
                 layer.u(mapping[3]), layer.v(mapping[3]));
         return new SurfaceDefinition.MaterialBinding[] {
-            new SurfaceDefinition.MaterialBinding(layer.surface(), overlayUv),
-            SurfaceDefinition.MaterialBinding.of(geometry)
+            new SurfaceDefinition.MaterialBinding(
+                    layer.surface(),
+                    overlayUv,
+                    layerResolved.definition().primary().transmissiveTopology()),
+            new SurfaceDefinition.MaterialBinding(
+                    geometry.surface(),
+                    SurfaceDefinition.UvMapping.of(geometry),
+                    geometryResolved.definition().primary().transmissiveTopology())
         };
     }
 
@@ -208,7 +224,13 @@ final class TransparentBoundaryResolver {
         return List.copyOf(result);
     }
 
-    record Result(List<ResolvedQuad>[] sections) {
+    record Result(
+            List<ResolvedQuad>[] sections,
+            java.util.Set<StaticCompatibilityIssue> issues) {
+        Result {
+            issues = java.util.Set.copyOf(issues);
+        }
+
         List<ResolvedQuad> section(int localIndex) {
             return this.sections[localIndex];
         }
@@ -446,8 +468,8 @@ final class TransparentBoundaryResolver {
                     && sameMedium(negativeFace, positiveFace)) {
                 return;
             }
-            FaceKind negativeKind = FaceKind.of(negativeFace.quad.surface());
-            FaceKind positiveKind = FaceKind.of(positiveFace.quad.surface());
+            FaceKind negativeKind = negativeFace.kind();
+            FaceKind positiveKind = positiveFace.kind();
             if (negativeKind == FaceKind.SOLID_TRANSMISSIVE
                     && positiveKind == FaceKind.SOLID_TRANSMISSIVE) {
                 if (!sameMedium(negativeFace, positiveFace)) {
@@ -520,7 +542,7 @@ final class TransparentBoundaryResolver {
 
         private static boolean allTransmissive(List<Candidate> candidates) {
             for (Candidate candidate : candidates) {
-                if (!FaceKind.of(candidate.quad.surface()).transmissive) {
+                if (!candidate.kind().transmissive) {
                     return false;
                 }
             }
@@ -529,7 +551,7 @@ final class TransparentBoundaryResolver {
 
         private static boolean noneTransmissive(List<Candidate> candidates) {
             for (Candidate candidate : candidates) {
-                if (FaceKind.of(candidate.quad.surface()).transmissive) {
+                if (candidate.kind().transmissive) {
                     return false;
                 }
             }
@@ -538,7 +560,7 @@ final class TransparentBoundaryResolver {
 
         private static boolean hasOpaque(List<Candidate> candidates) {
             for (Candidate candidate : candidates) {
-                if (FaceKind.of(candidate.quad.surface()) == FaceKind.OPAQUE) {
+                if (candidate.kind() == FaceKind.OPAQUE) {
                     return true;
                 }
             }
@@ -556,7 +578,7 @@ final class TransparentBoundaryResolver {
                         : (explicitOverlay(second) ? second : null);
                 Candidate substrate = overlay == first ? second : first;
                 if (overlay != null
-                        && FaceKind.of(substrate.quad.surface()) == FaceKind.OPAQUE
+                        && substrate.kind() == FaceKind.OPAQUE
                         && sameRectangle(first, second)
                         && !substrate.quad.peerOnly()) {
                     output[substrate.sectionIndex].add(overlaySlice(
@@ -622,7 +644,7 @@ final class TransparentBoundaryResolver {
                 return false;
             }
             Candidate substrate = overlay == first ? second : first;
-            if (FaceKind.of(substrate.quad.surface()) != FaceKind.OPAQUE
+            if (substrate.kind() != FaceKind.OPAQUE
                     || substrate.quad.peerOnly()
                     || Math.abs(overlay.plane - substrate.plane)
                             > ATTACHED_SURFACE_EPSILON) {
@@ -762,9 +784,11 @@ final class TransparentBoundaryResolver {
             this.transmissive = transmissive;
         }
 
-        static FaceKind of(CapturedSectionGeometry.Surface surface) {
+        static FaceKind of(
+                CapturedSectionGeometry.Surface surface,
+                TransmissiveTopology topology) {
             if (ClusterSceneTranslator.isTransmissive(surface)) {
-                return surface.collisionEmpty()
+                return topology == TransmissiveTopology.THIN_SHEET
                         ? THIN_TRANSMISSIVE
                         : SOLID_TRANSMISSIVE;
             }
@@ -778,6 +802,7 @@ final class TransparentBoundaryResolver {
         private final int originY;
         private final int originZ;
         private final CapturedSectionGeometry.Quad quad;
+        private final TransmissiveTopology transmissiveTopology;
         private final BoundaryKey key;
         private final int planeAxis;
         private final int axisU;
@@ -797,6 +822,7 @@ final class TransparentBoundaryResolver {
                 int originY,
                 int originZ,
                 CapturedSectionGeometry.Quad quad,
+                TransmissiveTopology transmissiveTopology,
                 BoundaryKey key,
                 int planeAxis,
                 int axisU,
@@ -814,6 +840,7 @@ final class TransparentBoundaryResolver {
             this.originY = originY;
             this.originZ = originZ;
             this.quad = quad;
+            this.transmissiveTopology = transmissiveTopology;
             this.key = key;
             this.planeAxis = planeAxis;
             this.axisU = axisU;
@@ -936,6 +963,7 @@ final class TransparentBoundaryResolver {
                     originY,
                     originZ,
                     quad,
+                    resolved.definition().primary().transmissiveTopology(),
                     key,
                     planeAxis,
                     axisU,
@@ -976,7 +1004,14 @@ final class TransparentBoundaryResolver {
             float referenceU = 0.5F * (minimum(this.cornerU) + maximum(this.cornerU));
             float referenceV = 0.5F * (minimum(this.cornerV) + maximum(this.cornerV));
             return new SurfaceDefinition.MediumEndpoint(
-                    this.quad.surface(), referenceU, referenceV);
+                    this.quad.surface(),
+                    referenceU,
+                    referenceV,
+                    this.transmissiveTopology);
+        }
+
+        FaceKind kind() {
+            return FaceKind.of(this.quad.surface(), this.transmissiveTopology);
         }
 
         private SurfaceDefinition.MaterialBinding bindingForSlice(
@@ -1010,7 +1045,8 @@ final class TransparentBoundaryResolver {
                     surface,
                     new SurfaceDefinition.UvMapping(
                             u[0], v[0], u[1], v[1],
-                            u[2], v[2], u[3], v[3]));
+                            u[2], v[2], u[3], v[3]),
+                    this.transmissiveTopology);
         }
 
         void writeGeometry(

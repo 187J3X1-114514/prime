@@ -56,6 +56,29 @@ public float atmRaySphere(float3 origin, float3 direction, float radius) {
     return discriminant > b * b ? -b + sqrt(discriminant) : -b - sqrt(discriminant);
 }
 
+// Integral of exp(-extinction * distance) over one homogeneous segment. The Taylor branch
+// avoids cancellation at small optical depth without replacing zero extinction by absorption.
+public float atmHomogeneousSegmentIntegral(float extinction, float length)
+{
+    float segmentLength = max(length, 0.0);
+    float x = extinction * segmentLength;
+    if (x <= 0.05) {
+        float factor = 1.0 + x * (-0.5 + x * (1.0 / 6.0
+                + x * (-1.0 / 24.0 + x * (1.0 / 120.0))));
+        return segmentLength * factor;
+    }
+    return segmentLength * (1.0 - exp(-x)) / x;
+}
+
+public float4 atmHomogeneousSegmentIntegral(float4 extinction, float length)
+{
+    return float4(
+            atmHomogeneousSegmentIntegral(extinction.x, length),
+            atmHomogeneousSegmentIntegral(extinction.y, length),
+            atmHomogeneousSegmentIntegral(extinction.z, length),
+            atmHomogeneousSegmentIntegral(extinction.w, length));
+}
+
 public AtmRaySegment atmRaySegment(float3 origin, float3 direction) {
     AtmRaySegment segment;
     segment.topDistanceKm = atmRaySphere(origin, direction, ATM_TOP_RADIUS_KM);

@@ -1,7 +1,9 @@
 package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.textures.GpuSampler;
+import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
@@ -226,7 +228,9 @@ public final class DynamicSceneCapture {
         TextureAtlas blockAtlas = minecraft.getAtlasManager()
                 .getAtlasOrThrow(AtlasIds.BLOCKS);
         int textureIndex = session.textureIndex(
-                blockAtlas.getTextureView(), blockAtlas.getSampler());
+                blockAtlas.getTextureView(),
+                blockAtlas.getSampler(),
+                DynamicSceneFrame.Sampling.SRGB_COLOR);
         DynamicMeshBuilder.VertexSink sink = textureIndex < 0
                 ? null
                 : session.builder.open(
@@ -438,7 +442,9 @@ public final class DynamicSceneCapture {
             var texture = minecraft.getTextureManager()
                     .getTexture(layer.textureAtlasLocation());
             int textureIndex = session.textureIndex(
-                    texture.getTextureView(), texture.getSampler());
+                    texture.getTextureView(),
+                    texture.getSampler(),
+                    DynamicSceneFrame.Sampling.SRGB_COLOR);
             if (textureIndex < 0) {
                 continue;
             }
@@ -632,7 +638,9 @@ public final class DynamicSceneCapture {
             this.builder.endMotionObject(element, key);
         }
 
-        private int textureIndex(RenderType renderType) {
+        private int textureIndex(
+                RenderType renderType,
+                DynamicSceneFrame.Sampling sampling) {
             if (renderType.hasBlending()) {
                 this.builder.report(
                         DynamicSceneFrame.CompatibilityIssue.BLENDED_MATERIAL_APPROXIMATED);
@@ -646,7 +654,8 @@ public final class DynamicSceneCapture {
                 }
             }
             if (albedo != null) {
-                return this.textureIndex(albedo.textureView(), albedo.sampler());
+                return this.textureIndex(
+                        albedo.textureView(), albedo.sampler(), sampling);
             }
             this.builder.report(prepared.textures().isEmpty()
                     ? DynamicSceneFrame.CompatibilityIssue.TEXTURELESS_MATERIAL_APPROXIMATED
@@ -663,7 +672,10 @@ public final class DynamicSceneCapture {
                 RenderType renderType,
                 int fallbackLight,
                 boolean redAlpha) {
-            int textureIndex = this.textureIndex(renderType);
+            DynamicSceneFrame.Sampling sampling = redAlpha
+                    ? DynamicSceneFrame.Sampling.LINEAR_RED_DATA
+                    : DynamicSceneFrame.Sampling.SRGB_COLOR;
+            int textureIndex = this.textureIndex(renderType, sampling);
             if (textureIndex < 0) {
                 return null;
             }
@@ -680,10 +692,30 @@ public final class DynamicSceneCapture {
                             redAlpha);
         }
 
-        private int textureIndex(GpuTextureView view, GpuSampler sampler) {
+        private int textureIndex(
+                GpuTextureView view,
+                GpuSampler sampler,
+                DynamicSceneFrame.Sampling sampling) {
+            GpuTexture texture = view.texture();
+            if (sampling == DynamicSceneFrame.Sampling.SRGB_COLOR) {
+                if ((texture.usage() & GpuTexture.USAGE_RENDER_ATTACHMENT) != 0) {
+                    this.builder.report(
+                            DynamicSceneFrame.CompatibilityIssue.UNKNOWN_ALBEDO_ENCODING);
+                    return -1;
+                }
+                if (texture.getFormat() != GpuFormat.RGBA8_UNORM
+                        || texture.getDepthOrLayers() != 1
+                        || (texture.usage() & GpuTexture.USAGE_CUBEMAP_COMPATIBLE) != 0) {
+                    this.builder.report(
+                            DynamicSceneFrame.CompatibilityIssue.UNSUPPORTED_ALBEDO_FORMAT);
+                    return -1;
+                }
+            }
             for (int index = 0; index < this.textures.size(); index++) {
-                DynamicSceneFrame.SceneTexture texture = this.textures.get(index);
-                if (texture.view() == view && texture.sampler() == sampler) {
+                DynamicSceneFrame.SceneTexture candidate = this.textures.get(index);
+                if (candidate.view() == view
+                        && candidate.sampler() == sampler
+                        && candidate.sampling() == sampling) {
                     return index + 1;
                 }
             }
@@ -692,7 +724,7 @@ public final class DynamicSceneCapture {
                         DynamicSceneFrame.CompatibilityIssue.SCENE_TEXTURE_LIMIT);
                 return -1;
             }
-            this.textures.add(new DynamicSceneFrame.SceneTexture(view, sampler));
+            this.textures.add(new DynamicSceneFrame.SceneTexture(view, sampler, sampling));
             return this.textures.size();
         }
 

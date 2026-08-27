@@ -235,8 +235,19 @@ public record LabPbrAtlasFrame(
                     (int) Math.ceil(baseY1 * this.frameHeight / baseFrameHeight),
                     sourceY0 + 1,
                     this.frameHeight);
+            int centerX = clamp(
+                    (int) Math.floor(
+                            0.5 * (baseX0 + baseX1) * this.frameWidth / baseFrameWidth),
+                    0,
+                    this.frameWidth - 1);
+            int centerY = clamp(
+                    (int) Math.floor(
+                            0.5 * (baseY0 + baseY1) * this.frameHeight / baseFrameHeight),
+                    0,
+                    this.frameHeight - 1);
+            int centerPixel = this.pixels[
+                    (frameY + centerY) * this.width + frameX + centerX];
             long red = 0L;
-            long green = 0L;
             long blue = 0L;
             double normalX = 0.0;
             double normalY = 0.0;
@@ -255,8 +266,6 @@ public record LabPbrAtlasFrame(
                             emission += encodedAlpha;
                         }
                         red += pixel >>> 16 & 0xff;
-                        green += pixel >>> 8 & 0xff;
-                        blue += pixel & 0xff;
                     } else {
                         double xNormal = (pixel >>> 16 & 0xff) * (2.0 / 255.0) - 1.0;
                         double yNormal = (pixel >>> 8 & 0xff) * (2.0 / 255.0) - 1.0;
@@ -293,8 +302,7 @@ public record LabPbrAtlasFrame(
                     : (int) ((emission + count / 2L) / count);
             return filteredAlpha << 24
                     | (int) ((red + count / 2L) / count) << 16
-                    | (int) ((green + count / 2L) / count) << 8
-                    | (int) ((blue + count / 2L) / count);
+                    | (centerPixel & 0x0000_ffff);
         }
 
         /** Blends two already filtered animation texels without repeating mip filtering. */
@@ -344,10 +352,9 @@ public record LabPbrAtlasFrame(
             }
             int red = ((current >>> 16 & 0xff) * inverse
                     + (next >>> 16 & 0xff) * progress + 500) / 1000;
-            int green = ((current >>> 8 & 0xff) * inverse
-                    + (next >>> 8 & 0xff) * progress + 500) / 1000;
-            int blue = ((current & 0xff) * inverse + (next & 0xff) * progress + 500) / 1000;
-            return alpha << 24 | red << 16 | green << 8 | blue;
+            // LabPBR G/B are categorical codes. Animation keeps the current frame until its
+            // discrete frame transition; only continuous roughness/emission channels blend.
+            return alpha << 24 | red << 16 | (current & 0x0000_ffff);
         }
 
         private static int clamp(int value, int minimum, int maximum) {

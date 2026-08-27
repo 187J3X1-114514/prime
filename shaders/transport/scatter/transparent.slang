@@ -32,6 +32,7 @@ import "transport/surface/emission.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
+import "contract/material/normal.slang";
 import "policy/transport/path.slang";
 import "contract/realtime/transparent.slang";
 
@@ -237,6 +238,14 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
                         float3(0.5),
                         volumeStack,
                         primeUsesAirGap());
+            }
+            if (!primeGeometricSampleSupport(
+                    primeMaterialUsesNormalMap(surface.opticalControl),
+                    surface.geometricNormal,
+                    viewDirection,
+                    guideScatter.bsdf)) {
+                guideScatter.bsdf = primeInvalidBsdfSample();
+                guideScatter.volumeStack = volumeStack;
             }
             guideContinuationReusable = primeTransparentGuideContinuationReusable(
                     scatter.bsdf,

@@ -13,9 +13,6 @@ public struct PrimeOpticalMaterial
     public uint thinWalled;
 };
 
-public static const float PRIME_COMMON_DIELECTRIC_F0_MINIMUM = 0.02;
-public static const float PRIME_COMMON_DIELECTRIC_F0_MAXIMUM = 0.17;
-
 public bool primeIsStandardConductorCode(uint fresnelCode)
 {
     return fresnelCode >= PRIME_FRESNEL_IRON && fresnelCode <= PRIME_FRESNEL_SILVER;
@@ -50,8 +47,12 @@ public PrimeOpticalMaterial primeDecodeOpticalMaterial(
     result.dielectricF0 = fresnelCode <= 230
             ? primeDecodeDielectricF0(fresnelCode)
             : PRIME_DEFAULT_DIELECTRIC_F0;
-    result.subsurfaceWeight = float(min(subsurfaceCode, 190)) / 190.0;
     result.thinWalled = (materialControl & PRIME_MATERIAL_THIN_WALLED) != 0 ? 1 : 0;
+    // LabPBR has no usable thick-surface SSS topology in Prime. Only an explicitly thin
+    // material may carry this weight; thick input is intentionally translated to diffuse.
+    result.subsurfaceWeight = result.thinWalled != 0
+            ? float(min(subsurfaceCode, 190)) / 190.0
+            : 0.0;
     return result;
 }
 

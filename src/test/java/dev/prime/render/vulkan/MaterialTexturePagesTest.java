@@ -259,4 +259,62 @@ final class MaterialTexturePagesTest {
 
         assertEquals(0x7f000000, sampled);
     }
+
+    @Test
+    void specularFilteringUsesTheTargetCenterForCategoricalCodes() {
+        int[] pixels = {
+            0x0a20_e540, 0x1e40_e641,
+            0x3260_ed41, 0x4680_ee42,
+            0x5aa0_fe42, 0x6ec0_ff40
+        };
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
+                pixels, 6, 1, 6, 1, 6, 1);
+        int[] expectedCodes = {0xe641, 0xee42, 0xff40};
+
+        for (int targetX = 0; targetX < 3; targetX++) {
+            int sampled = source.filtered(
+                    LabPbrAtlasFrame.AnimationSample.ZERO,
+                    targetX,
+                    0.0,
+                    targetX + 1.0,
+                    1.0,
+                    3,
+                    1,
+                    true);
+
+            assertEquals(expectedCodes[targetX], sampled & 0x0000_ffff);
+            int first = pixels[targetX * 2];
+            int second = pixels[targetX * 2 + 1];
+            assertEquals(
+                    ((first >>> 24) + (second >>> 24) + 1) / 2,
+                    sampled >>> 24);
+            assertEquals(
+                    ((first >>> 16 & 0xff) + (second >>> 16 & 0xff) + 1) / 2,
+                    sampled >>> 16 & 0xff);
+        }
+    }
+
+    @Test
+    void specularAnimationKeepsCurrentFrameCategoricalCodes() {
+        LabPbrAtlasFrame.MaterialSource source = LabPbrAtlasFrame.MaterialSource.create(
+                new int[] {0x1020_e540, 0x3040_e641},
+                1,
+                2,
+                1,
+                1,
+                1,
+                2);
+
+        int sampled = source.filtered(
+                new LabPbrAtlasFrame.AnimationSample(0, 1, 500),
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1,
+                1,
+                true);
+
+        assertEquals(0x2030_e540, sampled);
+    }
 }

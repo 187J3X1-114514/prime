@@ -77,6 +77,10 @@ public record DynamicSceneFrame(
                 "a textureless render type is approximated with its submitted vertex color"),
         MISSING_ALBEDO_TEXTURE(
                 "a render type with textures has no Sampler0 albedo binding and was omitted"),
+        UNSUPPORTED_ALBEDO_FORMAT(
+                "a dynamic albedo is not a supported two-dimensional RGBA8 texture and was omitted"),
+        UNKNOWN_ALBEDO_ENCODING(
+                "a dynamic render attachment has no reliable source color encoding and was omitted"),
         SCENE_TEXTURE_LIMIT(
                 "the dynamic scene texture descriptor limit was reached and geometry was omitted"),
         UNSUPPORTED_TOPOLOGY(
@@ -100,10 +104,19 @@ public record DynamicSceneFrame(
     }
 
     /** Texture zero is the block atlas; captured textures start at index one. */
-    public record SceneTexture(GpuTextureView view, GpuSampler sampler) {
+    public enum Sampling {
+        SRGB_COLOR,
+        LINEAR_RED_DATA
+    }
+
+    public record SceneTexture(
+            GpuTextureView view,
+            GpuSampler sampler,
+            Sampling sampling) {
         public SceneTexture {
             Objects.requireNonNull(view, "view");
             Objects.requireNonNull(sampler, "sampler");
+            Objects.requireNonNull(sampling, "sampling");
         }
     }
 

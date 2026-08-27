@@ -120,7 +120,8 @@ public record IntegratorFrameInput(
                 astronomy.settings(),
                 material.seamlessGlass(),
                 material.airGap(),
-                material.vanillaPbrPresets());
+                material.vanillaPbrPresets(),
+                lighting.transparentNeeMode());
         IntegratorSettings.packSampleEpoch(sampleEpoch);
         IntegratorSettings.packPathControl(
                 maximumBounces,

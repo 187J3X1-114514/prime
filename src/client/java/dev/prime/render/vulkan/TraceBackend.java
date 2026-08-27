@@ -109,7 +109,7 @@ public final class TraceBackend implements Destroyable {
         if (this.sceneBindings != null
                 && this.sceneBindings.matches(
                         tlas,
-                        atlasView.vkImageView(),
+                        SrgbTextureView.imageView(atlasView),
                         atlasSampler.vkSampler(),
                         sceneTextures,
                         materialNormalPages,
@@ -463,6 +463,7 @@ public final class TraceBackend implements Destroyable {
                     int opticalStart = normalStart + ShaderAbi.MATERIAL_PAGE_COUNT;
                     int starmapIndex = opticalStart + ShaderAbi.MATERIAL_PAGE_COUNT;
                     int shadowStart = starmapIndex + 1;
+                    long atlasColorView = SrgbTextureView.imageView(atlasView);
                     VkDescriptorImageInfo.Buffer infos = VkDescriptorImageInfo.calloc(
                             shadowStart + SunShadowClipmap.BANK_COUNT
                                     * SunShadowClipmap.CASCADE_COUNT,
@@ -471,7 +472,7 @@ public final class TraceBackend implements Destroyable {
                         SceneTexture texture = index == 0 || index > sceneTextures.size()
                                 ? new SceneTexture(
                                         atlasView.texture().vkImage(),
-                                        atlasView.vkImageView(),
+                                        atlasColorView,
                                         atlasSampler.vkSampler())
                                 : sceneTextures.get(index - 1);
                         infos.get(index)
@@ -645,7 +646,7 @@ public final class TraceBackend implements Destroyable {
                             pool,
                             set,
                             tlas,
-                            atlasView.vkImageView(),
+                            atlasColorView,
                             atlasSampler.vkSampler(),
                             sceneTextures,
                             normalPages,

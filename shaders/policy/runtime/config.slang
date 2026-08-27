@@ -31,6 +31,11 @@ public bool primeUsesVanillaPbrPresets()
     return (primePush.path.x & PRIME_PATH_VANILLA_PBR_PRESETS_MASK) != 0u;
 }
 
+public bool primeUsesUnbiasedTransparentNee()
+{
+    return (primePush.path.x & PRIME_PATH_TRANSPARENT_NEE_UNBIASED_MASK) != 0u;
+}
+
 public float primeObserverLatitudeRadians()
 {
     uint encoded = (primePush.path.z >> PRIME_PATH_LATITUDE_SHIFT)

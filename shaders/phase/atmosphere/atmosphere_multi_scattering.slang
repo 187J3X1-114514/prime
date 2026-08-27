@@ -61,10 +61,10 @@ void integrateDirection(
         float4 scattering = coefficients.aerosolScattering + coefficients.molecularScattering;
         float4 source = sunTransmittance * scattering * ATM_INV_4PI;
         float4 stepTransmittance = exp(-stepLength * coefficients.extinction);
-        float4 safeExtinction = max(coefficients.extinction, float4(1.0e-7));
-        radiance += transmittance * (source - source * stepTransmittance) / safeExtinction;
-        scatteringAsOne += transmittance
-                * (scattering - scattering * stepTransmittance) / safeExtinction;
+        float4 segmentIntegral = atmHomogeneousSegmentIntegral(
+                coefficients.extinction, stepLength);
+        radiance += transmittance * source * segmentIntegral;
+        scatteringAsOne += transmittance * scattering * segmentIntegral;
         transmittance *= stepTransmittance;
     }
     if (segment.hitsGround) {

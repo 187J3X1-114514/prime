@@ -3,6 +3,7 @@ package dev.prime.render.terrain;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * One logically immutable BLAS payload backed by bounded CPU segments.
@@ -22,6 +23,7 @@ public final class CpuClusterMesh {
     private final CompiledClusterLights lights;
     private final List<CpuVoxelMesh> voxelMeshes;
     private final CpuVoxelInstances voxelInstances;
+    private final Set<StaticCompatibilityIssue> compatibilityIssues;
 
     private CpuClusterMesh(
             List<Segment> segments,
@@ -32,6 +34,28 @@ public final class CpuClusterMesh {
             CompiledClusterLights lights,
             List<CpuVoxelMesh> voxelMeshes,
             CpuVoxelInstances voxelInstances) {
+        this(
+                segments,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                opacityMicromap,
+                lights,
+                voxelMeshes,
+                voxelInstances,
+                Set.of());
+    }
+
+    private CpuClusterMesh(
+            List<Segment> segments,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CompiledClusterLights lights,
+            List<CpuVoxelMesh> voxelMeshes,
+            CpuVoxelInstances voxelInstances,
+            Set<StaticCompatibilityIssue> compatibilityIssues) {
         this.segments = List.copyOf(segments);
         if (opaqueTriangleCount < 0L
                 || cutoutTriangleCount < 0L
@@ -69,6 +93,7 @@ public final class CpuClusterMesh {
         this.voxelMeshes = List.copyOf(voxelMeshes);
         this.voxelInstances = Objects.requireNonNull(
                 voxelInstances, "voxelInstances");
+        this.compatibilityIssues = Set.copyOf(compatibilityIssues);
         if (opacityMicromap.triangleCount() != cutoutTriangleCount) {
             throw new IllegalArgumentException(
                     "Cluster opacity micromap does not match cutout geometry");
@@ -281,6 +306,27 @@ public final class CpuClusterMesh {
 
     public CpuVoxelInstances voxelInstances() {
         return this.voxelInstances;
+    }
+
+    public Set<StaticCompatibilityIssue> compatibilityIssues() {
+        return this.compatibilityIssues;
+    }
+
+    CpuClusterMesh withCompatibilityIssues(Set<StaticCompatibilityIssue> issues) {
+        Set<StaticCompatibilityIssue> copied = Set.copyOf(issues);
+        if (this.compatibilityIssues.equals(copied)) {
+            return this;
+        }
+        return new CpuClusterMesh(
+                this.segments,
+                this.opaqueTriangleCount,
+                this.cutoutTriangleCount,
+                this.transmissiveTriangleCount,
+                this.opacityMicromap,
+                this.lights,
+                this.voxelMeshes,
+                this.voxelInstances,
+                copied);
     }
 
     public boolean isEmpty() {

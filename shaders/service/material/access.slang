@@ -167,7 +167,7 @@ public float3 primeStaticBaseColor(
     float4 tint = primeUnpackTint(packedTint);
     opacity = textureSample.a;
     float3 linearSrgbAlbedo =
-            primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb);
+            textureSample.rgb * primeDecodeSrgb(tint.rgb);
     return primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
 }
 

@@ -180,7 +180,7 @@ def main() -> None:
                 "plate carree celestial ICRF/J2000; centered at 0h right ascension; "
                 "right ascension increases to the left"
             ),
-            "encoding": "linear RGB, OpenEXR HALF",
+            "encoding": "scene-linear RGB, primaries and white point unknown, OpenEXR HALF",
             "credit": CREDIT,
         },
         "image": {

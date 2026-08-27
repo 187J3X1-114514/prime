@@ -57,23 +57,29 @@ sealed interface SurfaceDefinition permits
 
     record MaterialBinding(
             CapturedSectionGeometry.Surface surface,
-            UvMapping uv) {
+            UvMapping uv,
+            TransmissiveTopology transmissiveTopology) {
         public MaterialBinding {
             Objects.requireNonNull(surface, "surface");
             Objects.requireNonNull(uv, "uv");
+            Objects.requireNonNull(transmissiveTopology, "transmissiveTopology");
         }
 
-        static MaterialBinding of(CapturedSectionGeometry.Quad quad) {
-            return new MaterialBinding(quad.surface(), UvMapping.of(quad));
+        static MaterialBinding of(
+                CapturedSectionGeometry.Quad quad,
+                TransmissiveTopology topology) {
+            return new MaterialBinding(quad.surface(), UvMapping.of(quad), topology);
         }
     }
 
     record MediumEndpoint(
             CapturedSectionGeometry.Surface surface,
             float referenceU,
-            float referenceV) {
+            float referenceV,
+            TransmissiveTopology transmissiveTopology) {
         public MediumEndpoint {
             Objects.requireNonNull(surface, "surface");
+            Objects.requireNonNull(transmissiveTopology, "transmissiveTopology");
             if (!Float.isFinite(referenceU) || !Float.isFinite(referenceV)) {
                 throw new IllegalArgumentException("Medium reference UV must be finite");
             }

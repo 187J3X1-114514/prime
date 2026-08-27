@@ -92,6 +92,14 @@ emission 和 decorative interface。decorative interface 表示玻璃 alpha 规�
 
 subsurface code 只保留作者输入；生产闭包仅在非金属材质明确标记 thin-walled 时消费该权重。
 厚材质不尝试缺少散射半径控制的表面穿透近似，统一把 subsurface 权重清零并退化为常规漫反射。
+这是 LabPBR 输入翻译契约，不是 compact OpenPBR 内部的 lobe 近似。LabPBR 的介电 F0 字节也在
+同一边界以具名上下界清洗到 `[0.02, 0.17]`，用于阻止无效极端值破坏积分；该清洗不得移入或
+伪装成 OpenPBR Fresnel 数学的一部分。
+
+法线贴图激活时，evaluate、NEE 和 realtime/offline continuation 共用同一几何支持域：反射
+方向必须与入射方向位于几何法线同侧，透射必须位于异侧。违反支持域的 sample 直接终止，不
+重采样、不重新归一化，也不施加 Veach shading-normal correction；由此造成的截断能量是明确
+接受的法线贴图策略。
 
 玻璃保持既有规则：稳定 reference alpha 判定 stained，当前 alpha 与 seamless 开关判定
 decorative；无色 decorative 使用 opaque rough dielectric，染色 decorative 保持透射；光滑

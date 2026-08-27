@@ -10,6 +10,7 @@ import dev.prime.render.MaximumBounceSettings;
 import dev.prime.render.MinimumBounceSettings;
 import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.TransparentNeeMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -39,6 +40,7 @@ final class PrimeConfigCodec {
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String STAR_EV_KEY = "lighting.star_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
+    private static final String TRANSPARENT_NEE_MODE_KEY = "lighting.transparent_nee_mode";
     private static final String LATITUDE_DEGREES_KEY = "astronomy.latitude_degrees";
     private static final String SOLAR_LONGITUDE_DEGREES_KEY =
             "astronomy.solar_longitude_degrees";
@@ -64,6 +66,7 @@ final class PrimeConfigCodec {
             SUN_EV_KEY,
             STAR_EV_KEY,
             BLOCK_LIGHT_EV_KEY,
+            TRANSPARENT_NEE_MODE_KEY,
             LATITUDE_DEGREES_KEY,
             SOLAR_LONGITUDE_DEGREES_KEY,
             FINAL_EXPOSURE_EV_KEY,
@@ -155,6 +158,11 @@ final class PrimeConfigCodec {
                 defaultSettings.blockLightQuarterSteps(),
                 PrimeConfigCodec::parseEvQuarterSteps,
                 "block-light exposure");
+        TransparentNeeMode transparentNeeMode = reader.value(
+                TRANSPARENT_NEE_MODE_KEY,
+                defaultSettings.transparentNeeMode(),
+                PrimeConfigCodec::parseTransparentNeeMode,
+                "transparent NEE mode");
         int finalExposure = reader.value(
                 FINAL_EXPOSURE_EV_KEY,
                 defaultSettings.finalExposureQuarterSteps(),
@@ -203,7 +211,8 @@ final class PrimeConfigCodec {
                 mode,
                 quality,
                 new AstronomySettings(latitude, longitude),
-                new LightingSettings.Snapshot(sun, stars, blockLights, 0L),
+                new LightingSettings.Snapshot(
+                        sun, stars, blockLights, transparentNeeMode, 0L),
                 new DisplaySettings.Snapshot(finalExposure, exposureCompensation),
                 new MaterialSettings.Snapshot(
                         roughness,
@@ -245,6 +254,7 @@ final class PrimeConfigCodec {
                 + SUN_EV_KEY + "=" + formatEv(settings.sunQuarterSteps()) + "\n"
                 + STAR_EV_KEY + "=" + formatStarEv(settings.starQuarterSteps()) + "\n"
                 + BLOCK_LIGHT_EV_KEY + "=" + formatEv(settings.blockLightQuarterSteps()) + "\n"
+                + TRANSPARENT_NEE_MODE_KEY + "=" + settings.transparentNeeMode().id() + "\n"
                 + FINAL_EXPOSURE_EV_KEY + "="
                 + formatFinalExposure(settings.finalExposureQuarterSteps()) + "\n"
                 + HDR_ENABLED_KEY + "=" + data.hdrEnabled() + "\n"
@@ -261,7 +271,7 @@ final class PrimeConfigCodec {
     static void log(PrimeConfigData data) {
         PrimeSettings settings = data.settings();
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, additional specular bounces {}, minimum bounces {}, maximum bounces {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, additional specular bounces {}, minimum bounces {}, maximum bounces {}, terrain workers {}%, surface detail {} at {}x displacement height, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, transparent NEE {}, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 settings.pathTracingEnabled() ? "enabled" : "disabled",
                 data.additionalSpecularBounces(),
                 data.minimumBounces(),
@@ -277,6 +287,7 @@ final class PrimeConfigCodec {
                 formatEv(settings.sunQuarterSteps()),
                 formatStarEv(settings.starQuarterSteps()),
                 formatEv(settings.blockLightQuarterSteps()),
+                settings.transparentNeeMode().id(),
                 formatFinalExposure(settings.finalExposureQuarterSteps()),
                 data.hdrEnabled() ? "enabled" : "disabled",
                 data.referenceWhiteNits() == HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS
@@ -309,6 +320,12 @@ final class PrimeConfigCodec {
         return ReconstructionQualityMode.findById(value)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Unknown reconstruction quality"));
+    }
+
+    static TransparentNeeMode parseTransparentNeeMode(String value) {
+        return TransparentNeeMode.findById(value)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unknown transparent NEE mode"));
     }
 
     static boolean parseBoolean(String value) {

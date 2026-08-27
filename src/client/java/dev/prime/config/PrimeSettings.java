@@ -5,6 +5,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.TransparentNeeMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -50,6 +51,7 @@ public record PrimeSettings(
                         LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
                         LightingSettings.DEFAULT_STAR_QUARTER_STEPS,
                         LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
+                        TransparentNeeMode.DEFAULT,
                         0L),
                 new DisplaySettings.Snapshot(
                         DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
@@ -157,6 +159,7 @@ public record PrimeSettings(
                         value,
                         starQuarterSteps(),
                         blockLightQuarterSteps(),
+                        transparentNeeMode(),
                         Math.incrementExact(lightingRevision())));
     }
 
@@ -168,6 +171,7 @@ public record PrimeSettings(
                         sunQuarterSteps(),
                         value,
                         blockLightQuarterSteps(),
+                        transparentNeeMode(),
                         Math.incrementExact(lightingRevision())));
     }
 
@@ -178,6 +182,19 @@ public record PrimeSettings(
                 : withLighting(new LightingSettings.Snapshot(
                         sunQuarterSteps(),
                         starQuarterSteps(),
+                        value,
+                        transparentNeeMode(),
+                        Math.incrementExact(lightingRevision())));
+    }
+
+    public PrimeSettings withTransparentNeeMode(TransparentNeeMode value) {
+        Objects.requireNonNull(value, "value");
+        return value == transparentNeeMode()
+                ? this
+                : withLighting(new LightingSettings.Snapshot(
+                        sunQuarterSteps(),
+                        starQuarterSteps(),
+                        blockLightQuarterSteps(),
                         value,
                         Math.incrementExact(lightingRevision())));
     }
@@ -253,6 +270,10 @@ public record PrimeSettings(
         return this.lighting.blockLightQuarterSteps();
     }
 
+    public TransparentNeeMode transparentNeeMode() {
+        return this.lighting.transparentNeeMode();
+    }
+
     public long lightingRevision() {
         return this.lighting.revision();
     }
@@ -300,6 +321,7 @@ public record PrimeSettings(
                         sunQuarterSteps(),
                         starQuarterSteps(),
                         blockLightQuarterSteps(),
+                        transparentNeeMode(),
                         Math.incrementExact(lightingRevision())),
                 this.display,
                 this.material);

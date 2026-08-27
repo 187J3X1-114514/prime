@@ -35,9 +35,8 @@ public PrimeMaterialSample primeEvaluateMaterial(
         uint instanceTint) {
     PrimeMaterialSample result;
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
-    // Minecraft stores both albedo texels and tint RGB as display-encoded sRGB in UNORM values.
-    // Decode both before multiplication, then cross the single material boundary into the
-    // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
+    // The Vulkan sRGB view decodes texture RGB before filtering; packed vertex/instance tint is
+    // still encoded sRGB. Alpha remains coverage and is never color-decoded.
     if (bakedMaterial) {
         float3 linearSrgbAlbedo = primeDecodeSrgb(primeUnpackTint(primitive.tint).rgb);
         bool ownsTint = (primitive.uv2 & PRIME_CONSTANT_UV_OWN_TINT) != 0u;
@@ -57,8 +56,7 @@ public PrimeMaterialSample primeEvaluateMaterial(
         } else {
             result.opacity = textureSample.a;
             result.baseColor = primeLinearSrgbToLinearRec2020(
-                    primeDecodeSrgb(textureSample.rgb)
-                            * primeDecodeSrgb(tint.rgb));
+                    textureSample.rgb * primeDecodeSrgb(tint.rgb));
         }
     }
     uint recipeControl = primePrimitiveControl(primitive);

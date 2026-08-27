@@ -286,6 +286,7 @@
     "seamlessGlassMask": "0x02000000",
     "airGapMask": "0x04000000",
     "vanillaPbrPresetsMask": "0x08000000",
+    "transparentNeeUnbiasedMask": "0x10000000",
     "sampleEpochMask": "0x7fffffff",
     "maximumBouncesMask": "0xff",
     "latitudeShift": 8,

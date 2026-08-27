@@ -349,8 +349,7 @@ public final class SectionMeshAccumulator {
                             ClusterSceneTranslator.isCutout(adjacent),
                             ClusterSceneTranslator.isTransmissive(adjacent),
                             adjacent.foliage()
-                                    || ClusterSceneTranslator.isTransmissive(adjacent)
-                                            && adjacent.collisionEmpty(),
+                                    || endpoint.transmissiveTopology().thinWalled(),
                             false,
                             false));
             int control = CpuSectionMesh.SURFACE_RELATION_BOUNDARY
@@ -428,8 +427,7 @@ public final class SectionMeshAccumulator {
                 ClusterSceneTranslator.isCutout(captured),
                 ClusterSceneTranslator.isTransmissive(captured),
                 captured.foliage()
-                        || ClusterSceneTranslator.isTransmissive(captured)
-                                && captured.collisionEmpty(),
+                        || binding.transmissiveTopology().thinWalled(),
                 (packedTangent & 0x1_0000_0000L) != 0L,
                 false));
         int packedTint = PrimitivePacking.packTintControl(

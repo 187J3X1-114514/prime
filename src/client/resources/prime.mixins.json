@@ -37,6 +37,8 @@
     "accessor.TextureAtlasSpriteAccessor",
     "VulkanBackendMixin",
     "VulkanGpuSurfaceMixin",
+    "VulkanGpuTextureMixin",
+    "VulkanGpuTextureViewMixin",
     "VulkanInstanceMixin",
     "VideoSettingsScreenMixin"
   ],

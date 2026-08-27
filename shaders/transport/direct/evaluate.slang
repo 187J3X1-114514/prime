@@ -41,9 +41,17 @@ public PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     bool transmissive = primeMaterialIsTransmissive(surface.materialControl);
     bool foliage = primeMaterialIsFoliage(surface.materialControl);
     bool normalMapped = primeMaterialUsesNormalMap(surface.opticalControl);
-    float geometricSide = dot(surface.geometricNormal, viewDirection)
-            * dot(surface.geometricNormal, light.direction);
-    if (normalMapped && !transmissive && !foliage && geometricSide < 0.0) {
+    bool geometricReflection = primeGeometricReflectionSupport(
+            surface.geometricNormal, viewDirection, light.direction);
+    bool geometricTransmission = primeGeometricEventSupport(
+            surface.geometricNormal,
+            viewDirection,
+            light.direction,
+            PRIME_BSDF_EVENT_TRANSMISSION);
+    if (normalMapped && !geometricReflection && !geometricTransmission) {
+        return result;
+    }
+    if (normalMapped && !transmissive && !foliage && !geometricReflection) {
         return result;
     }
     float cosine = transmissive || foliage
@@ -55,10 +63,11 @@ public PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     }
     if (transmissive) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        bool reflection = normalMapped
-                ? geometricSide >= 0.0
-                : dot(outwardNormal, viewDirection)
-                        * dot(outwardNormal, light.direction) >= 0.0;
+        bool reflection = dot(outwardNormal, viewDirection)
+                * dot(outwardNormal, light.direction) >= 0.0;
+        if (normalMapped && reflection != geometricReflection) {
+            return result;
+        }
         BsdfEvaluation evaluation;
         if (conditionalTransparentBranch) {
             // The first visible interface exposes fixed-split conditional proposals. Smooth
@@ -127,6 +136,11 @@ public PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         return result;
     }
     if (foliage) {
+        bool reflection = dot(shadingNormal, viewDirection)
+                * dot(shadingNormal, light.direction) >= 0.0;
+        if (normalMapped && reflection != geometricReflection) {
+            return result;
+        }
         PrimeBsdfComponents components = primeEvaluateMinecraftFoliageComponents(
                 surface.baseColor,
                 shadingNormal,

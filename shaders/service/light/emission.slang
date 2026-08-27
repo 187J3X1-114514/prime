@@ -76,5 +76,5 @@ public float3 primeEvaluateHitEmitterRadiance(
             primeEmitterUv(
                     emitters[emitterIndex].uvsTint.xyz,
                     parentBarycentric),
-            surface.textureLod);
+            0.0);
 }

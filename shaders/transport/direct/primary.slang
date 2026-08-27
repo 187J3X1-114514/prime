@@ -12,6 +12,7 @@ import "policy/runtime/config.slang";
 import "math/sampling.slang";
 import "math/transport.slang";
 import "service/light/sample.slang";
+import "service/light/area_sample.slang";
 import "model/material/defaults.slang";
 import "service/trace/context.slang";
 import "contract/light.slang";

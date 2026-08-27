@@ -2,6 +2,7 @@
 module "transport/offline/surface.slang";
 
 import "contract/light_sample.slang";
+import "contract/offline/area_request.slang";
 
 import "policy/runtime/config.slang";
 import "prime_abi.slang";
@@ -15,6 +16,7 @@ import "math/sampling.slang";
 import "math/transport.slang";
 import "service/light/emission.slang";
 import "service/light/sample.slang";
+import "service/light/area_sample.slang";
 import "service/light/area.slang";
 import "model/material/defaults.slang";
 import "model/material/transparent.slang";
@@ -38,16 +40,6 @@ import "transport/surface/medium.slang";
 import "bsdf/compact/contract/flags.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
-
-public struct PrimeOfflineAreaRequest {
-    public float3 direction;
-    public float distance;
-    public float3 contribution;
-    public bool valid;
-    public float3 startingExtinction;
-    public uint startingMediumCount;
-    public uint2 targetEmitter;
-};
 
 public struct PrimeOfflineSurfaceStep {
     public PrimeOfflineAreaRequest areaRequest;
@@ -111,34 +103,6 @@ public PrimeOfflineAreaRequest primePrepareOfflineArea(
         request.targetEmitter = uint2(area.sectionIndex, area.emitterIndex);
     }
     return request;
-}
-
-public PrimeShadowTrace primeTraceOfflineAreaShadow(
-        inout PrimeIntegratorContext context,
-        float3 physicalPosition,
-        uint2 sourcePrimitive,
-        PrimeOfflineAreaRequest request,
-        PrimeOpenPbrVolumeStack startingVolumeStack) {
-    uint startingMediumCount = min(
-            request.startingMediumCount, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
-    float3 startingExtinction0 = startingMediumCount > 0u
-            ? primeShadowCanonicalExtinction(
-                    startingVolumeStack.values[0].extinction)
-            : float3(0.0);
-    float3 startingExtinction1 = startingMediumCount > 1u
-            ? primeShadowCanonicalExtinction(
-                    startingVolumeStack.values[1].extinction)
-            : float3(0.0);
-    return primeTracePreparedShadow(
-            context,
-            physicalPosition,
-            request.direction,
-            request.distance,
-            sourcePrimitive,
-            request.targetEmitter,
-            startingExtinction0,
-            startingExtinction1,
-            startingMediumCount);
 }
 
 public bool primeAdvanceOfflinePath(

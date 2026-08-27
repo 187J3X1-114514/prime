@@ -10,7 +10,7 @@ import "contract/path.slang";
 import "math/direct_sampling.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
-import "service/light/sample.slang";
+import "service/light/area_sample.slang";
 import "service/trace/context.slang";
 import "state/path.slang";
 import "state/realtime/contract.slang";
@@ -20,6 +20,7 @@ import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
 import "state/realtime/surface.slang";
 import "transport/direct/primary.slang";
+import "transport/direct/selection.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
 
@@ -54,8 +55,12 @@ public void primeEvaluateLandingDirect(
             && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
     float cellSample = primeDirectSample2D(
             directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY).y;
+    float3 viewDirection = -path.rayDirection;
+    uint packedReceiverNormal = primeAreaLightReceiverNormal(
+            surface, viewDirection);
     AreaLightSample area = primeSampleAreaLightSelection(
             surface.position,
+            packedReceiverNormal,
             selection.area,
             cellSample,
             primeDirectSample2D(
@@ -65,7 +70,6 @@ public void primeEvaluateLandingDirect(
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = float4(0.0);
-    float3 viewDirection = -path.rayDirection;
     if (guideDual) {
         PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
                 context,

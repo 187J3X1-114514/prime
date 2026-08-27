@@ -1,6 +1,8 @@
 #language slang 2026
 module "phase/offline/path_surface_step.slang";
 
+import "contract/offline/area_request.slang";
+
 import "prime_abi_types.slang";
 import "state/path.slang";
 import "contract/offline/shader_record.slang";

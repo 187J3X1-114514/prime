@@ -2,6 +2,7 @@
 module "phase/offline/area_shadow.slang";
 
 import "contract/offline/shader_record.slang";
+import "contract/offline/area_request.slang";
 import "service/reconstruct/nrd/common.slang";
 import "contract/trace/shadow_payload.slang";
 import "service/trace/context.slang";
@@ -10,7 +11,7 @@ import "state/offline/queue.slang";
 import "state/offline/transport.slang";
 import "policy/offline/queue.slang";
 import "transport/direct/shadow.slang";
-import "transport/offline/surface.slang";
+import "transport/offline/area_shadow.slang";
 import "bsdf/compact/contract/volume.slang";
 
 public void primePhase() {

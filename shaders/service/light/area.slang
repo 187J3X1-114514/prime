@@ -2,7 +2,7 @@
 module "service/light/area.slang";
 
 import "contract/light_sample.slang";
-import "service/light/sample.slang";
+import "service/light/area_sample.slang";
 import "service/light/tree_select.slang";
 
 public AreaLightSample primeSampleAreaLight(
@@ -13,5 +13,9 @@ public AreaLightSample primeSampleAreaLight(
     AreaLightSelection selection = primeSelectAreaLight(
             surfacePosition, packedReceiverNormal, treeSample.x);
     return primeSampleAreaLightSelection(
-            surfacePosition, selection, treeSample.y, positionSample);
+            surfacePosition,
+            packedReceiverNormal,
+            selection,
+            treeSample.y,
+            positionSample);
 }

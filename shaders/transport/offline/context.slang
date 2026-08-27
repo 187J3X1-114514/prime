@@ -3,6 +3,7 @@ module "transport/offline/context.slang";
 
 import "prime_abi.slang";
 import "prime_abi_types.slang";
+import "contract/offline/area_request.slang";
 import "state/path.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
@@ -11,7 +12,6 @@ import "service/bsdf/support/volume_transition.slang";
 import "state/offline/area.slang";
 import "state/offline/contract.slang";
 import "state/offline/transport.slang";
-import "transport/offline/surface.slang";
 import "bsdf/compact/contract/volume.slang";
 
 public IntegratorRecord primeOfflineIntegrator() {

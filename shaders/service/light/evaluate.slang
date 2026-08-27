@@ -9,6 +9,8 @@ import "math/light_receiver.slang";
 import "math/projected_solid_angle_domain.slang";
 import "service/material/surface.slang";
 import "service/light/area_common.slang";
+import "service/light/brdf_common.slang";
+import "service/light/brdf_ltc.slang";
 import "service/light/emission.slang";
 import "service/light/tree_common.slang";
 import "service/light/tree_pdf.slang";
@@ -18,6 +20,7 @@ public LightEvaluation primeEvaluateAreaLight(
         float3 rayOrigin,
         float3 rayDirection,
         uint packedReceiverNormal,
+        uint packedReceiverBrdf,
         bool evaluatePdf) {
     LightEvaluation result;
     result.radiance = float3(0.0);
@@ -132,18 +135,48 @@ public LightEvaluation primeEvaluateAreaLight(
             lightCosine,
             textureAreaPdf);
     float3 lightCorner = emitterCornerArea.xyz + sectionTranslation;
-    PrimeProjectedSolidAngleDomain projectedDomain =
+    PrimeProjectedSolidAngleDomain diffuseDomain =
             primePrepareProjectedSolidAngleTriangle(
                     lightCorner,
                     firstEdge,
                     secondEdge,
                     rayOrigin,
                     receiverNormal);
-    float projectedPdf = selectionPdf * primeProjectedSolidAnglePdf(
-            projectedDomain, receiverNormal, rayDirection);
+    bool diffuseActive = primeProjectedSolidAngleReliable(diffuseDomain);
+    PrimeGgxLtc ltc = primeInvalidGgxLtc();
+    PrimeProjectedSolidAngleDomain specularDomain =
+            primeInvalidProjectedSolidAngleDomain();
+    if (diffuseActive && primeAreaLightBrdfActive(packedReceiverBrdf)) {
+        ltc = primeGgxLtc(packedReceiverNormal, packedReceiverBrdf);
+        if (ltc.determinant > 0.0) {
+            specularDomain = primePrepareGgxLtcTriangle(
+                    ltc,
+                    lightCorner,
+                    firstEdge,
+                    secondEdge,
+                    rayOrigin);
+        }
+    }
+    bool specularActive = primeProjectedSolidAngleReliable(specularDomain);
+    float diffuseRatio = diffuseActive
+            ? primeAreaDiffuseRatio(
+                    packedReceiverBrdf,
+                    ltc,
+                    diffuseDomain,
+                    specularDomain)
+            : 1.0;
+    float diffusePdf = selectionPdf * primeProjectedSolidAnglePdf(
+            diffuseDomain, receiverNormal, rayDirection);
+    float specularPdf = specularActive
+            ? selectionPdf * primeGgxLtcPdf(
+                    ltc, specularDomain, rayDirection)
+            : 0.0;
     result.pdf = primeAreaMixturePdf(
             texturePdf,
-            projectedPdf,
-            primeProjectedSolidAngleReliable(projectedDomain));
+            diffusePdf,
+            specularPdf,
+            diffuseActive,
+            specularActive,
+            diffuseRatio);
     return result;
 }

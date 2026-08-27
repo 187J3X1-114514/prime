@@ -301,6 +301,36 @@ PrimeProjectedSolidAngleDomain primePrepareProjectedSolidAngleDomain(
     return domain;
 }
 
+public PrimeProjectedSolidAngleDomain primePrepareProjectedSolidAngleTriangleLocal(
+        float3 first,
+        float3 second,
+        float3 third) {
+    float side = dot(
+            primeProjectedCross(second - first, third - first),
+            -first);
+    // The inverse sampler requires clockwise winding as seen from the local origin.
+    if (side > 0.0) {
+        float3 swap = second;
+        second = third;
+        third = swap;
+    }
+    float3 vertices[PRIME_PROJECTED_VERTEX_COUNT];
+    vertices[0] = first;
+    vertices[1] = second;
+    vertices[2] = third;
+    vertices[3] = first;
+    uint vertexCount = primeClipProjectedTriangle(vertices);
+    if (vertexCount < 3u) {
+        return primeInvalidProjectedSolidAngleDomain();
+    }
+    PrimeProjectedSolidAngleDomain domain =
+            primePrepareProjectedSolidAngleDomain(vertexCount, vertices);
+    if (!(domain.area > 0.0) || isnan(domain.area) || isinf(domain.area)) {
+        return primeInvalidProjectedSolidAngleDomain();
+    }
+    return domain;
+}
+
 public PrimeProjectedSolidAngleDomain primePrepareProjectedSolidAngleTriangleBasis(
         float3 corner,
         float3 edgeOne,
@@ -315,29 +345,10 @@ public PrimeProjectedSolidAngleDomain primePrepareProjectedSolidAngleTriangleBas
     float3 first = corner - receiverPosition;
     float3 second = corner + edgeOne - receiverPosition;
     float3 third = corner + edgeTwo - receiverPosition;
-    float side = dot(cross(edgeOne, edgeTwo), receiverPosition - corner);
-    // The projected sampler requires clockwise winding as seen from the receiver.
-    if (side > 0.0) {
-        float3 swap = second;
-        second = third;
-        third = swap;
-    }
-
-    float3 vertices[PRIME_PROJECTED_VERTEX_COUNT];
-    vertices[0] = float3(dot(first, tangent), dot(first, bitangent), dot(first, receiverNormal));
-    vertices[1] = float3(dot(second, tangent), dot(second, bitangent), dot(second, receiverNormal));
-    vertices[2] = float3(dot(third, tangent), dot(third, bitangent), dot(third, receiverNormal));
-    vertices[3] = vertices[0];
-    uint vertexCount = primeClipProjectedTriangle(vertices);
-    if (vertexCount < 3u) {
-        return primeInvalidProjectedSolidAngleDomain();
-    }
-    PrimeProjectedSolidAngleDomain domain =
-            primePrepareProjectedSolidAngleDomain(vertexCount, vertices);
-    if (!(domain.area > 0.0) || isnan(domain.area) || isinf(domain.area)) {
-        return primeInvalidProjectedSolidAngleDomain();
-    }
-    return domain;
+    return primePrepareProjectedSolidAngleTriangleLocal(
+            float3(dot(first, tangent), dot(first, bitangent), dot(first, receiverNormal)),
+            float3(dot(second, tangent), dot(second, bitangent), dot(second, receiverNormal)),
+            float3(dot(third, tangent), dot(third, bitangent), dot(third, receiverNormal)));
 }
 
 public PrimeProjectedSolidAngleDomain primePrepareProjectedSolidAngleTriangle(

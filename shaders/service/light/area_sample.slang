@@ -9,6 +9,8 @@ import "math/light_receiver.slang";
 import "math/projected_solid_angle_domain.slang";
 import "math/projected_solid_angle_sample.slang";
 import "service/light/area_common.slang";
+import "service/light/brdf_common.slang";
+import "service/light/brdf_ltc.slang";
 import "service/light/emission.slang";
 import "service/material/surface.slang";
 
@@ -87,6 +89,7 @@ bool primeIntersectAreaLight(
 AreaLightSample primeSampleAreaLightEmitter(
         float3 surfacePosition,
         uint packedReceiverNormal,
+        uint packedReceiverBrdf,
         uint sectionIndex,
         uint emitterIndex,
         float emitterSelectionPdf,
@@ -118,11 +121,14 @@ AreaLightSample primeSampleAreaLightEmitter(
             packedReceiverNormal);
     float3 tangent = float3(0.0);
     float3 bitangent = float3(0.0);
-    PrimeProjectedSolidAngleDomain projectedDomain =
+    PrimeProjectedSolidAngleDomain diffuseDomain =
+            primeInvalidProjectedSolidAngleDomain();
+    PrimeGgxLtc ltc = primeInvalidGgxLtc();
+    PrimeProjectedSolidAngleDomain specularDomain =
             primeInvalidProjectedSolidAngleDomain();
     if (dot(receiverNormal, receiverNormal) > 0.0) {
         primeBasis(receiverNormal, tangent, bitangent);
-        projectedDomain = primePrepareProjectedSolidAngleTriangleBasis(
+        diffuseDomain = primePrepareProjectedSolidAngleTriangleBasis(
                 lightCorner,
                 firstEdge,
                 secondEdge,
@@ -130,16 +136,40 @@ AreaLightSample primeSampleAreaLightEmitter(
                 receiverNormal,
                 tangent,
                 bitangent);
+        if (primeAreaLightBrdfActive(packedReceiverBrdf)) {
+            ltc = primeGgxLtc(packedReceiverNormal, packedReceiverBrdf);
+            if (ltc.determinant > 0.0) {
+                specularDomain = primePrepareGgxLtcTriangle(
+                        ltc,
+                        lightCorner,
+                        firstEdge,
+                        secondEdge,
+                        surfacePosition);
+            }
+        }
     }
-    bool projectedActive = primeProjectedSolidAngleReliable(projectedDomain);
-    bool sampleTexture = !projectedActive
+    bool diffuseActive = primeProjectedSolidAngleReliable(diffuseDomain);
+    bool specularActive = primeProjectedSolidAngleReliable(specularDomain);
+    float diffuseRatio = diffuseActive
+            ? primeAreaDiffuseRatio(
+                    packedReceiverBrdf,
+                    ltc,
+                    diffuseDomain,
+                    specularDomain)
+            : 1.0;
+    bool sampleTexture = !diffuseActive
             || cellSample < PRIME_AREA_PROJECTED_MIXTURE;
+    float projectedSample = (cellSample - PRIME_AREA_PROJECTED_MIXTURE)
+            / (1.0 - PRIME_AREA_PROJECTED_MIXTURE);
+    bool sampleSpecular = !sampleTexture
+            && specularActive
+            && projectedSample >= diffuseRatio;
 
     uint emitterCellBase = emitters[emitterIndex].metadata.x;
     float2 parentBarycentric;
     uint cellIndex;
     if (sampleTexture) {
-        float textureSample = projectedActive
+        float textureSample = diffuseActive
                 ? cellSample / PRIME_AREA_PROJECTED_MIXTURE
                 : cellSample;
         float aliasValue = textureSample * float(PRIME_LIGHT_CELL_COUNT);
@@ -156,12 +186,20 @@ AreaLightSample primeSampleAreaLightEmitter(
         parentBarycentric = primeSampleLightCell(selectedCell, positionSample);
     } else {
         float3 localDirection = primeSampleProjectedSolidAngle(
-                projectedDomain, positionSample);
+                sampleSpecular ? specularDomain : diffuseDomain,
+                positionSample);
         // Ray-plane intersection is invariant to direction scale; the common path below
         // normalizes the direction rebuilt from the exact emitter plane.
-        float3 direction = tangent * localDirection.x
-                + bitangent * localDirection.y
-                + receiverNormal * localDirection.z;
+        float3 direction;
+        if (sampleSpecular) {
+            float3 shadingDirection = normalize(
+                    primeGgxLtcCosineToShading(ltc, localDirection));
+            direction = primeGgxLtcShadingToWorld(ltc, shadingDirection);
+        } else {
+            direction = tangent * localDirection.x
+                    + bitangent * localDirection.y
+                    + receiverNormal * localDirection.z;
+        }
         if (!primeIntersectAreaLight(
                 surfacePosition,
                 direction,
@@ -201,10 +239,19 @@ AreaLightSample primeSampleAreaLightEmitter(
             lightPosition,
             lightCosine,
             textureAreaPdf);
-    float projectedPdf = emitterSelectionPdf * primeProjectedSolidAnglePdf(
-            projectedDomain, receiverNormal, direction);
+    float diffusePdf = emitterSelectionPdf * primeProjectedSolidAnglePdf(
+            diffuseDomain, receiverNormal, direction);
+    float specularPdf = specularActive
+            ? emitterSelectionPdf * primeGgxLtcPdf(
+                    ltc, specularDomain, direction)
+            : 0.0;
     float pdf = primeAreaMixturePdf(
-            texturePdf, projectedPdf, projectedActive);
+            texturePdf,
+            diffusePdf,
+            specularPdf,
+            diffuseActive,
+            specularActive,
+            diffuseRatio);
     if (!(pdf > 0.0) || isnan(pdf) || isinf(pdf)) {
         return primeInvalidAreaLightSample();
     }
@@ -225,6 +272,7 @@ AreaLightSample primeSampleAreaLightEmitter(
 public AreaLightSample primeSampleAreaLightSelection(
         float3 surfacePosition,
         uint packedReceiverNormal,
+        uint packedReceiverBrdf,
         AreaLightSelection selection,
         float cellSample,
         float2 positionSample) {
@@ -236,6 +284,7 @@ public AreaLightSample primeSampleAreaLightSelection(
     return primeSampleAreaLightEmitter(
             surfacePosition,
             packedReceiverNormal,
+            packedReceiverBrdf,
             selection.sectionIndex,
             selection.emitterIndex,
             selection.pdf,

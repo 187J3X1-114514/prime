@@ -57,7 +57,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.materialPageCount != 16
 				|| schema.sharedDescriptors.textureRecords != 18
 				|| schema.sharedDescriptors.materialNormalPages != 19
-				|| schema.sharedDescriptors.materialOpticalPages != 49) {
+				|| schema.sharedDescriptors.materialOpticalPages != 49
+				|| schema.sharedDescriptors.ggxLtcMatrix != 35
+				|| schema.sharedDescriptors.ggxLtcAmplitude != 50) {
 			throw new GradleException(
 					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
 		}
@@ -319,6 +321,8 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.realtimeDescriptors.nrdNoisySpecular};
     public static final int DESCRIPTOR_NRD_SPECULAR_MATERIAL = ${schema.realtimeDescriptors.nrdSpecularMaterial};
     public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
+    public static final int DESCRIPTOR_GGX_LTC_MATRIX = ${schema.sharedDescriptors.ggxLtcMatrix};
+    public static final int DESCRIPTOR_GGX_LTC_AMPLITUDE = ${schema.sharedDescriptors.ggxLtcAmplitude};
     public static final int DESCRIPTOR_TEXTURE_RECORDS = ${schema.sharedDescriptors.textureRecords};
     public static final int DESCRIPTOR_MATERIAL_NORMAL_PAGES = ${schema.sharedDescriptors.materialNormalPages};
     public static final int DESCRIPTOR_MATERIAL_OPTICAL_PAGES = ${schema.sharedDescriptors.materialOpticalPages};
@@ -469,6 +473,8 @@ module "prime_abi_bindings.slang";
 
 // Generated from shaders/abi.json. Do not edit by hand.
 public static const uint PRIME_TRANSMISSION_GGX_ENERGY_BINDING = ${schema.sharedDescriptors.transmissionGgxEnergy};
+public static const uint PRIME_GGX_LTC_MATRIX_BINDING = ${schema.sharedDescriptors.ggxLtcMatrix};
+public static const uint PRIME_GGX_LTC_AMPLITUDE_BINDING = ${schema.sharedDescriptors.ggxLtcAmplitude};
 """
 		new File(slangDir, 'prime_abi_types.slang').text = """\
 #language slang 2026
@@ -492,6 +498,8 @@ static const uint PRIME_NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
 static const uint PRIME_SUN_SHADOW_QUERY_CONSTANT_SIZE = ${sunShadowQuery.size};
 static const uint PRIME_SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
 static const uint PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
+static const uint PRIME_DESCRIPTOR_GGX_LTC_MATRIX = ${schema.sharedDescriptors.ggxLtcMatrix};
+static const uint PRIME_DESCRIPTOR_GGX_LTC_AMPLITUDE = ${schema.sharedDescriptors.ggxLtcAmplitude};
 static const uint PRIME_PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
 static const uint PRIME_PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
 static const uint PRIME_PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};

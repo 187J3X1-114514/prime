@@ -182,7 +182,8 @@ public PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
                     << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
     record.rayDirectionAndDenoiserControl =
             float4(path.rayDirection, asfloat(denoiserControl));
-    record.throughputAndReserved = float4(path.throughput, 0.0);
+    record.throughputAndReserved = float4(
+            path.throughput, asfloat(path.previousLightBrdf));
     return record;
 }
 

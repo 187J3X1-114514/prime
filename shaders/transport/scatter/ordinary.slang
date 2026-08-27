@@ -8,6 +8,7 @@ import "policy/runtime/config.slang";
 import "math/sampling.slang";
 import "math/transport.slang";
 import "service/trace/context.slang";
+import "service/light/brdf_pack.slang";
 import "transport/direct/selection.slang";
 import "transport/scatter/path_update.slang";
 import "policy/transport/path.slang";
@@ -39,12 +40,17 @@ public bool primeAdvanceRealtimePath(
     uint previousLightNormal = discreteOnlyInterface
             ? 0u
             : primeAreaLightReceiverNormal(surface, -path.rayDirection);
+    uint previousLightBrdf = discreteOnlyInterface
+            ? 0u
+            : primePackAreaLightBrdf(
+                    surface, -path.rayDirection, previousLightNormal);
     if (!primeAdvancePathWithoutRoulette(
             context,
             path,
             surface,
             bsdf,
-            previousLightNormal)) {
+            previousLightNormal,
+            previousLightBrdf)) {
         return false;
     }
     if (skipRoulette) {

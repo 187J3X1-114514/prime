@@ -43,9 +43,15 @@ public float primeAreaSolidAnglePdf(
 
 public float primeAreaMixturePdf(
         float texturePdf,
-        float projectedPdf,
-        bool projectedActive) {
-    return projectedActive
+        float diffusePdf,
+        float specularPdf,
+        bool diffuseActive,
+        bool specularActive,
+        float diffuseRatio) {
+    float projectedPdf = specularActive
+            ? lerp(specularPdf, diffusePdf, diffuseRatio)
+            : diffusePdf;
+    return diffuseActive
             ? lerp(texturePdf, projectedPdf, PRIME_AREA_PROJECTED_MIXTURE)
             : texturePdf;
 }

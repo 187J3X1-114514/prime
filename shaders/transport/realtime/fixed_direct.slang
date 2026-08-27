@@ -9,6 +9,7 @@ import "math/direct_sampling.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
 import "service/light/area_sample.slang";
+import "service/light/brdf_pack.slang";
 import "service/trace/context.slang";
 import "state/path.slang";
 import "state/realtime/contract.slang";
@@ -58,6 +59,8 @@ public void primeEvaluateFixedDirect(
     AreaLightSample area = primeSampleAreaLightSelection(
             surface.position,
             packedReceiverNormal,
+            primePackAreaLightBrdf(
+                    surface, viewDirection, packedReceiverNormal),
             selection.area,
             areaSample.y,
             primeDirectSample2D(

@@ -31,6 +31,9 @@ Outdoor Light Scattering Sample. See `OUTDOOR-LIGHT-SCATTERING-NOTICE.txt` and
 Prime's triangle projected-solid-angle light sampler is adapted from Christoph Peters'
 BSD-3-Clause implementation. See `PROJECTED-SOLID-ANGLE-SAMPLING-NOTICE.txt`.
 
+Prime's GGX linearly transformed cosine proposal uses the polygonal-light paper's supplemental
+numeric fit data. See `POLYGONAL-LIGHT-LTC-NOTICE.txt` for exact provenance and conversion hashes.
+
 Prime's realtime direct-light sampler adapts pbrt-v4's hierarchical Z-Sobol
 sampler. See `PBRT-V4-NOTICE.txt` and `APACHE-2.0.txt`.
 

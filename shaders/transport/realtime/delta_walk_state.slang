@@ -113,6 +113,7 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             path,
             surface,
             bsdf,
+            0u,
             0u)) {
         return false;
     }
@@ -241,6 +242,7 @@ public bool primeAdvanceTransparentDeltaWalk(
             path,
             surface,
             bsdf,
+            0u,
             0u)) {
         return false;
     }

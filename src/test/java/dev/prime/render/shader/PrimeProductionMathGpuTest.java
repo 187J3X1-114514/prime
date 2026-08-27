@@ -3,10 +3,14 @@ package dev.prime.render.shader;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.material.BuiltinMaterialClass;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.SplittableRandom;
+import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,6 +30,7 @@ final class PrimeProductionMathGpuTest {
     private static final long SAMPLING_SEED = 0x5341_4D50_4C49_4E47L;
     private static final long BSDF_CONTRACT_SEED = 0x4253_4446_434F_5245L;
     private static final long PROJECTED_SOLID_ANGLE_SEED = 0x5052_4F4A_534F_4C49L;
+    private static final long LTC_AREA_SAMPLING_SEED = 0x4C54_4341_5245_4101L;
     private static final int[] SPECIAL_FLOAT_BITS = {
         0x0000_0000,
         0x0000_0001,
@@ -822,6 +827,185 @@ final class PrimeProductionMathGpuTest {
             }
         }
         return input;
+    }
+
+    @Test
+    void ltcAreaSamplingPreservesItsTransformDomainAndPdf() throws IOException {
+        int cases = CASES_PER_KIND;
+        int inputWords = 9;
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                slangShader("prime_ltc_area_sampling_properties.comp.spv"),
+                ltcAreaSamplingCases(cases, inputWords),
+                cases,
+                inputWords,
+                12,
+                LTC_AREA_SAMPLING_SEED);
+    }
+
+    private static ByteBuffer ltcAreaSamplingCases(int cases, int inputWords)
+            throws IOException {
+        ByteBuffer input = ShaderTestBuffer.inputs(cases, inputWords);
+        ByteBuffer matrices = ByteBuffer.wrap(decodeTable(
+                        "/prime/light/ggx_ltc_matrix.bytes.gz.b64"))
+                .order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer amplitudes = ByteBuffer.wrap(decodeTable(
+                        "/prime/light/ggx_ltc_amplitude.bytes.gz.b64"))
+                .order(ByteOrder.LITTLE_ENDIAN);
+        int voxelCount = 64 * 64 * 51;
+        SplittableRandom random = new SplittableRandom(LTC_AREA_SAMPLING_SEED);
+        for (int index = 0; index < cases; index++) {
+            float a;
+            float b;
+            float c;
+            float d;
+            float e;
+            float albedo;
+            do {
+                int voxel = random.nextInt(voxelCount);
+                int matrixOffset = voxel * 4 * Short.BYTES;
+                int amplitudeOffset = voxel * 2 * Short.BYTES;
+                a = unorm16(matrices, matrixOffset);
+                b = unorm16(matrices, matrixOffset + Short.BYTES);
+                c = unorm16(matrices, matrixOffset + 2 * Short.BYTES);
+                d = unorm16(matrices, matrixOffset + 3 * Short.BYTES);
+                e = unorm16(amplitudes, amplitudeOffset);
+                albedo = unorm16(amplitudes, amplitudeOffset + Short.BYTES);
+            } while (!(c * (a * e + b * d) > 0.0F));
+
+            float[] normal = unpackLightDirection(packLightDirection(randomUnitVector(random)));
+            float[] tangent = projectedTangent(normal);
+            float cosine = 0.2F + 0.8F * random.nextFloat();
+            float sine = (float) Math.sqrt(Math.max(0.0F, 1.0F - cosine * cosine));
+            float[] view = normalize(new float[] {
+                normal[0] * cosine + tangent[0] * sine,
+                normal[1] * cosine + tangent[1] * sine,
+                normal[2] * cosine + tangent[2] * sine
+            });
+            view = unpackLightDirection(packLightDirection(view));
+            float viewCosine = dot(normal, view);
+            float[] basisX = normalize(new float[] {
+                view[0] - normal[0] * viewCosine,
+                view[1] - normal[1] * viewCosine,
+                view[2] - normal[2] * viewCosine
+            });
+            float[] specularDirection = normalize(new float[] {
+                basisX[0] * b + normal[0] * a,
+                basisX[1] * b + normal[1] * a,
+                basisX[2] * b + normal[2] * a
+            });
+            if (dot(normal, specularDirection) < 0.15F) {
+                index--;
+                continue;
+            }
+
+            float[] receiver = new float[] {
+                random.nextFloat() * 128.0F - 64.0F,
+                random.nextFloat() * 128.0F - 64.0F,
+                random.nextFloat() * 128.0F - 64.0F
+            };
+            float distance = 0.5F + random.nextFloat() * 15.5F;
+            float radius = distance * (0.08F + 0.12F * random.nextFloat());
+            float[] planeX = projectedTangent(specularDirection);
+            float[] planeY = cross(specularDirection, planeX);
+            float[] center = new float[] {
+                receiver[0] + specularDirection[0] * distance,
+                receiver[1] + specularDirection[1] * distance,
+                receiver[2] + specularDirection[2] * distance
+            };
+            float rootThreeHalf = 0.8660254F;
+            float[] first = offset(center, planeX, radius, planeY, 0.0F);
+            float[] second = offset(
+                    center, planeX, -0.5F * radius, planeY, rootThreeHalf * radius);
+            float[] third = offset(
+                    center, planeX, -0.5F * radius, planeY, -rootThreeHalf * radius);
+            float[] firstEdge = subtract(second, first);
+            float[] secondEdge = subtract(third, first);
+
+            putInt(input, index, inputWords, 0, 0, 0);
+            putInt(input, index, inputWords, 0, 1, random.nextInt(16));
+            putVec4(input, index, inputWords, 1, first[0], first[1], first[2], 0.0F);
+            putVec4(input, index, inputWords, 2,
+                    firstEdge[0], firstEdge[1], firstEdge[2], 0.0F);
+            putVec4(input, index, inputWords, 3,
+                    secondEdge[0], secondEdge[1], secondEdge[2], 0.0F);
+            putVec4(input, index, inputWords, 4,
+                    receiver[0], receiver[1], receiver[2], 0.0F);
+            putVec4(input, index, inputWords, 5,
+                    normal[0], normal[1], normal[2], 0.0F);
+            putVec4(input, index, inputWords, 6,
+                    view[0], view[1], view[2], 0.0F);
+            putVec4(input, index, inputWords, 7, a, b, c, d);
+            putVec4(input, index, inputWords, 8,
+                    e,
+                    albedo,
+                    1.0e-6F + random.nextFloat() * (1.0F - 2.0e-6F),
+                    1.0e-6F + random.nextFloat() * (1.0F - 2.0e-6F));
+        }
+        return input;
+    }
+
+    private static byte[] decodeTable(String resource) throws IOException {
+        InputStream encoded = PrimeProductionMathGpuTest.class.getResourceAsStream(resource);
+        if (encoded == null) {
+            throw new IOException("Missing test resource " + resource);
+        }
+        try (encoded;
+                InputStream decoded = Base64.getMimeDecoder().wrap(encoded);
+                GZIPInputStream decompressed = new GZIPInputStream(decoded)) {
+            return decompressed.readAllBytes();
+        }
+    }
+
+    private static float unorm16(ByteBuffer data, int offset) {
+        return Short.toUnsignedInt(data.getShort(offset)) / 65535.0F;
+    }
+
+    private static int packLightDirection(float[] value) {
+        float[] normal = normalize(value);
+        float inverseL1 = 1.0F / Math.max(
+                Math.abs(normal[0]) + Math.abs(normal[1]) + Math.abs(normal[2]),
+                1.0e-20F);
+        float x = normal[0] * inverseL1;
+        float y = normal[1] * inverseL1;
+        float z = normal[2] * inverseL1;
+        if (z < 0.0F) {
+            float previousX = x;
+            x = (1.0F - Math.abs(y)) * (previousX >= 0.0F ? 1.0F : -1.0F);
+            y = (1.0F - Math.abs(previousX)) * (y >= 0.0F ? 1.0F : -1.0F);
+        }
+        int quantizedX = Math.round(Math.clamp(x * 0.5F + 0.5F, 0.0F, 1.0F) * 255.0F);
+        int quantizedY = Math.round(Math.clamp(y * 0.5F + 0.5F, 0.0F, 1.0F) * 127.0F);
+        return 0x8000 | quantizedX | quantizedY << 8;
+    }
+
+    private static float[] unpackLightDirection(int packed) {
+        float x = (packed & 0xff) / 255.0F * 2.0F - 1.0F;
+        float y = ((packed >>> 8) & 0x7f) / 127.0F * 2.0F - 1.0F;
+        float z = 1.0F - Math.abs(x) - Math.abs(y);
+        if (z < 0.0F) {
+            float previousX = x;
+            x = (1.0F - Math.abs(y)) * (previousX >= 0.0F ? 1.0F : -1.0F);
+            y = (1.0F - Math.abs(previousX)) * (y >= 0.0F ? 1.0F : -1.0F);
+        }
+        return normalize(new float[] {x, y, z});
+    }
+
+    private static float[] offset(
+            float[] origin,
+            float[] firstAxis,
+            float firstScale,
+            float[] secondAxis,
+            float secondScale) {
+        return new float[] {
+            origin[0] + firstAxis[0] * firstScale + secondAxis[0] * secondScale,
+            origin[1] + firstAxis[1] * firstScale + secondAxis[1] * secondScale,
+            origin[2] + firstAxis[2] * firstScale + secondAxis[2] * secondScale
+        };
+    }
+
+    private static float dot(float[] first, float[] second) {
+        return first[0] * second[0] + first[1] * second[1] + first[2] * second[2];
     }
 
     private static float[][] centralProjectedTriangle(

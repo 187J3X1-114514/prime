@@ -1,0 +1,24 @@
+GGX Linearly Transformed Cosine Fit Data
+Copyright (C) 2021, Christoph Peters, Karlsruhe Institute of Technology
+
+Paper: Christoph Peters, "BRDF Importance Sampling for Polygonal Lights", 2021
+Project: https://github.com/MomentsInGraphics/vulkan_renderer
+Reference commit: 38b1dc04ec3e67a311dad2f8e863eb070d076135
+Supplemental archive:
+https://momentsingraphics.de/Media/Siggraph2021/peters2021-brdf_importance_sampling_for_polygonal_lights-code_and_data.zip
+
+Prime includes numeric GGX LTC fit tables from data/ggx_ltc_fit/fit0.dat through fit50.dat in
+that supplemental archive. Each source slice contains a 64 by 64 grid; the slices span F0 from
+zero through one. Prime converts the fitted matrices to the same normalized 16-bit UNORM
+five-coefficient representation used by the reference renderer and stores the fitted directional
+albedo beside it. The resulting resources are:
+
+- prime/light/ggx_ltc_matrix.bytes.gz.b64
+  decoded SHA-256: e2fc71977a4c35c32c5c26621875959e9504431e330f2993204ef4013b770fea
+- prime/light/ggx_ltc_amplitude.bytes.gz.b64
+  decoded SHA-256: c720db27d3cffee3eba898cce6009b9c9ce6a3d9337cd488c5c9c672b4b8b140
+
+The supplemental archive does not state a separate software license for these numeric fit data.
+This notice records their exact provenance and conversion; they are not represented as original
+Prime data. Prime's LTC lookup, transform, proposal-density and state-packing source is an
+independent implementation and remains covered by Prime's license.

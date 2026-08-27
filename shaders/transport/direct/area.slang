@@ -6,6 +6,7 @@ import "contract/light.slang";
 import "contract/light_sample.slang";
 import "math/sampling.slang";
 import "service/light/area.slang";
+import "service/light/brdf_pack.slang";
 import "service/trace/context.slang";
 import "transport/direct/primary.slang";
 import "transport/direct/selection.slang";
@@ -42,9 +43,13 @@ public PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLightSampled(
         float2 positionSample,
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
+    uint packedReceiverNormal = primeAreaLightReceiverNormal(
+            surface, viewDirection);
     AreaLightSample area = primeSampleAreaLight(
             surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
+            packedReceiverNormal,
+            primePackAreaLightBrdf(
+                    surface, viewDirection, packedReceiverNormal),
             treeSample,
             positionSample);
     return primeEstimatePrimaryDirectPreparedAreaLight(
@@ -63,9 +68,13 @@ public float3 primeEstimateDirectAreaLight(
         float2 treeSample,
         float2 positionSample,
         PrimeOpenPbrVolumeStack volumeStack) {
+    uint packedReceiverNormal = primeAreaLightReceiverNormal(
+            surface, viewDirection);
     AreaLightSample area = primeSampleAreaLight(
             surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
+            packedReceiverNormal,
+            primePackAreaLightBrdf(
+                    surface, viewDirection, packedReceiverNormal),
             treeSample,
             positionSample);
     return primeEstimateDirectPreparedAreaLight(

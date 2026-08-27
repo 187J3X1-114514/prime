@@ -42,6 +42,7 @@ public PathState primeWavefrontPath(
             : 0u;
     path.sampleSeed = primePathSampleSeed(
             pixel, primeSampleEpoch(), samplePathIndex);
+    path.previousLightBrdf = asuint(record.throughputAndReserved.w);
     return path;
 }
 

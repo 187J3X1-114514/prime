@@ -3,6 +3,7 @@ module "service/bsdf/dispatch/sample.slang";
 
 import "prime_abi_types.slang";
 import "service/bsdf/contract/sample.slang";
+import "service/bsdf/support/sanitization.slang";
 import "bsdf/compact/opaque/state.slang";
 import "bsdf/compact/dielectric/contract.slang";
 import "bsdf/compact/foliage/contract.slang";
@@ -20,6 +21,7 @@ import "service/bsdf/foliage/state.slang";
 import "service/bsdf/foliage/sample.slang";
 import "transport/surface/access.slang";
 import "service/trace/context.slang";
+import "contract/material/normal.slang";
 import "transport/scatter/contract.slang";
 import "bsdf/compact/contract/volume.slang";
 
@@ -105,6 +107,14 @@ public PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                 viewDirection,
                 sampleValue,
                 volumeStack);
+    }
+    if (!primeGeometricSampleSupport(
+            primeMaterialUsesNormalMap(surface.opticalControl),
+            surface.geometricNormal,
+            viewDirection,
+            result.bsdf)) {
+        result.bsdf = primeInvalidBsdfSample();
+        result.volumeStack = volumeStack;
     }
     return result;
 }
@@ -216,6 +226,14 @@ public PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                 viewDirection,
                 sampleValue,
                 volumeStack);
+    }
+    if (!primeGeometricSampleSupport(
+            primeMaterialUsesNormalMap(surface.opticalControl),
+            surface.geometricNormal,
+            viewDirection,
+            result.scatter.bsdf)) {
+        result.scatter.bsdf = primeInvalidBsdfSample();
+        result.scatter.volumeStack = volumeStack;
     }
     return result;
 }

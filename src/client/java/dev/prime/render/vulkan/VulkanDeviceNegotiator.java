@@ -244,6 +244,19 @@ public final class VulkanDeviceNegotiator {
             if (rayProperties.maxRayRecursionDepth() < 1) {
                 return VulkanCapabilities.unavailable(deviceName, "Ray tracing recursion depth 1 is not supported");
             }
+            VkFormatProperties srgbColorFormat = VkFormatProperties.calloc(stack);
+            VK12.vkGetPhysicalDeviceFormatProperties(
+                    physicalDevice.vkPhysicalDevice(),
+                    VK12.VK_FORMAT_R8G8B8A8_SRGB,
+                    srgbColorFormat);
+            int requiredSrgbColorFeatures = VK12.VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+                    | VK12.VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+            if ((srgbColorFormat.optimalTilingFeatures() & requiredSrgbColorFeatures)
+                    != requiredSrgbColorFeatures) {
+                return VulkanCapabilities.unavailable(
+                        deviceName,
+                        "RGBA8 sRGB linear filtering required for albedo textures is not supported");
+            }
             VkFormatProperties accumulationFormat = VkFormatProperties.calloc(stack);
             VK12.vkGetPhysicalDeviceFormatProperties(
                     physicalDevice.vkPhysicalDevice(),

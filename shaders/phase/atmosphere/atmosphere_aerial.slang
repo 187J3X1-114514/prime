@@ -107,8 +107,8 @@ void aerialStepGroup(
             * (direct + multiple)
             * terrainSunVisibility;
     transmittance = exp(-stepLength * coefficients.extinction);
-    float4 safeExtinction = max(coefficients.extinction, float4(1.0e-7));
-    radiance = (source - source * transmittance) / safeExtinction;
+    radiance = source
+            * atmHomogeneousSegmentIntegral(coefficients.extinction, stepLength);
 }
 
 struct AerialSegment {

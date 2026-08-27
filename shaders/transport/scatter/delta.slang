@@ -32,7 +32,23 @@ import "transport/surface/access.slang";
 import "transport/surface/accumulate.slang";
 import "transport/surface/medium.slang";
 import "bsdf/compact/contract/volume.slang";
+import "contract/material/normal.slang";
 
+PrimePathScatter primeEnforceDiscreteGeometricSupport(
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        PrimeOpenPbrVolumeStack originalVolumeStack,
+        PrimePathScatter scatter) {
+    if (!primeGeometricSampleSupport(
+            primeMaterialUsesNormalMap(surface.opticalControl),
+            surface.geometricNormal,
+            viewDirection,
+            scatter.bsdf)) {
+        scatter.bsdf = primeInvalidBsdfSample();
+        scatter.volumeStack = originalVolumeStack;
+    }
+    return scatter;
+}
 
 // Delta chaining rejects foliage before asking either supported family for traits. This keeps the
 // phase independent of the foliage closure while preserving the exact terminal classification.
@@ -119,7 +135,8 @@ public PrimePathScatter primeSampleDiscretePathSurface(
                 viewDirection,
                 volumeStack);
     }
-    return result;
+    return primeEnforceDiscreteGeometricSupport(
+            surface, viewDirection, volumeStack, result);
 }
 
 public PrimePathScatter primeSampleDiscreteGuideContinuation(
@@ -147,7 +164,8 @@ public PrimePathScatter primeSampleDiscreteGuideContinuation(
                         primeUsesAirGap());
         result.bsdf = guide.bsdfSample;
         result.volumeStack = guide.volumeStack;
-        return result;
+        return primeEnforceDiscreteGeometricSupport(
+                surface, viewDirection, volumeStack, result);
     }
     return primeSampleDiscretePathSurface(
             context, surface, viewDirection, float3(0.5), volumeStack);
@@ -220,5 +238,7 @@ public PrimeGuidedPathScatter primeSampleGuidedDiscretePathSurface(
                 viewDirection,
                 volumeStack);
     }
+    result.scatter = primeEnforceDiscreteGeometricSupport(
+            surface, viewDirection, volumeStack, result.scatter);
     return result;
 }

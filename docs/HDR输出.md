@@ -35,6 +35,10 @@ SDR 参考白。最终合成阶段先对 HDR 世界和原版 RGBA8 UI 分别执�
 以及 [`DISPLAYCONFIG_SDR_WHITE_LEVEL`](https://learn.microsoft.com/windows/win32/api/wingdi/ns-wingdi-displayconfig_sdr_white_level)
 契约。
 
+原版 UI 先在 RGBA8 目标中完成后再按最终 alpha 与 HDR 世界合成。普通 source-over coverage
+可由该结果正确恢复；原版管线中的非 source-over 混合模式已经丢失中间操作，不能由最终颜色
+与 alpha 精确重建。Prime 明确接受这项 HDR UI 近似，不修改 UI shader 或提升整条 UI 管线。
+
 ## 不变量
 
 - 不得让 RGBA8 中间结果成为 HDR 世界颜色的来源，高于 1.0 的信息会在此处不可逆丢失。

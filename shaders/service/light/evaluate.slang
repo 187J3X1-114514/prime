@@ -67,7 +67,7 @@ public LightEvaluation primeEvaluateAreaLight(
             primeEmitterUv(
                     emitters[emitterIndex].uvsTint.xyz,
                     parentBarycentric),
-            surface.textureLod);
+            0.0);
     float3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
 
     uint64_t worldNodeAddress = sections[surface.sectionIndex].worldLightAddress;

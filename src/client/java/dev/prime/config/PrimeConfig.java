@@ -11,6 +11,7 @@ import dev.prime.render.MinimumBounceSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.TransparentNeeMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -215,6 +216,10 @@ public final class PrimeConfig {
         update(settings.withBlockLightQuarterSteps(quarterSteps));
     }
 
+    public static void setTransparentNeeMode(TransparentNeeMode mode) {
+        update(settings.withTransparentNeeMode(mode));
+    }
+
     public static void setFinalExposureQuarterSteps(int quarterSteps) {
         update(settings.withFinalExposureQuarterSteps(quarterSteps));
     }
@@ -261,6 +266,7 @@ public final class PrimeConfig {
                 .withSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS)
                 .withStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS)
                 .withBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS)
+                .withTransparentNeeMode(TransparentNeeMode.DEFAULT)
                 .withFinalExposureQuarterSteps(
                         DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS)
                 .withAutoExposureCompensationSteps(

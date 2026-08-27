@@ -154,6 +154,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')
 				|| !schema.pathControl.airGapMask.toString().equalsIgnoreCase('0x04000000')
 				|| !schema.pathControl.vanillaPbrPresetsMask.toString().equalsIgnoreCase('0x08000000')
+				|| !schema.pathControl.transparentNeeUnbiasedMask.toString().equalsIgnoreCase('0x10000000')
 				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
 				|| schema.pathControl.transparentGuideModeShift != 29
@@ -382,6 +383,7 @@ public final class ShaderAbi {
     public static final int PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
     public static final int PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
     public static final int PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
+    public static final int PATH_TRANSPARENT_NEE_UNBIASED_MASK = ${schema.pathControl.transparentNeeUnbiasedMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
     public static final int PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
@@ -496,6 +498,7 @@ static const uint PRIME_PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLo
 static const uint PRIME_PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
 static const uint PRIME_PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
 static const uint PRIME_PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
+static const uint PRIME_PATH_TRANSPARENT_NEE_UNBIASED_MASK = ${schema.pathControl.transparentNeeUnbiasedMask};
 static const uint PRIME_PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
 static const uint PRIME_PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
 static const uint PRIME_PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};

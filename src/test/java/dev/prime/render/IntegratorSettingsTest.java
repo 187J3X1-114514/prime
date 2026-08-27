@@ -21,6 +21,33 @@ final class IntegratorSettingsTest {
     }
 
     @Test
+    void transparentNeeModeUsesOnlyItsReservedPathBit() {
+        AstronomySettings astronomy = AstronomySettings.defaults();
+        int approximation = IntegratorSettings.packSampleControl(
+                41,
+                astronomy,
+                true,
+                true,
+                true,
+                TransparentNeeMode.STRAIGHT_APPROXIMATION);
+        int unbiased = IntegratorSettings.packSampleControl(
+                41,
+                astronomy,
+                true,
+                true,
+                true,
+                TransparentNeeMode.UNBIASED_BSDF_ONLY);
+
+        assertEquals(0, approximation & ShaderAbi.PATH_TRANSPARENT_NEE_UNBIASED_MASK);
+        assertEquals(
+                ShaderAbi.PATH_TRANSPARENT_NEE_UNBIASED_MASK,
+                unbiased & ShaderAbi.PATH_TRANSPARENT_NEE_UNBIASED_MASK);
+        assertEquals(
+                ShaderAbi.PATH_TRANSPARENT_NEE_UNBIASED_MASK,
+                approximation ^ unbiased);
+    }
+
+    @Test
     void pathControlKeepsCameraMediumSeparateFromJitterAndBounceFields() {
         AstronomySettings astronomy = new AstronomySettings(-73, 271);
         int dry = IntegratorSettings.packPathControl(

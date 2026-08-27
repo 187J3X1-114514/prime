@@ -201,6 +201,12 @@ public final class VulkanRenderer implements AutoCloseable {
                 || !(atlas.getSampler() instanceof VulkanGpuSampler atlasSampler)) {
             throw new IllegalStateException("Prime expected Vulkan block atlas resources");
         }
+        if (atlasView.texture().getFormat() != com.mojang.blaze3d.GpuFormat.RGBA8_UNORM
+                || atlasView.texture().getDepthOrLayers() != 1) {
+            throw new IllegalStateException(
+                    "Prime requires a two-dimensional RGBA8 block atlas for sRGB sampling");
+        }
+        dev.prime.render.vulkan.SrgbTextureView.imageView(atlasView);
         LabPbrAtlasFrame labPbrFrame = this.labPbrSource.ensure(minecraft, atlas);
         this.terrain.setLabPbrMaterials(
                 this.materialTextures.ensure(labPbrFrame, atlasView.vkImageView()));
@@ -275,7 +281,9 @@ public final class VulkanRenderer implements AutoCloseable {
             }
             textures.add(new TraceBackend.SceneTexture(
                     view.texture().vkImage(),
-                    view.vkImageView(),
+                    texture.sampling() == DynamicSceneFrame.Sampling.SRGB_COLOR
+                            ? dev.prime.render.vulkan.SrgbTextureView.imageView(view)
+                            : view.vkImageView(),
                     sampler.vkSampler()));
         }
         List<TraceBackend.SceneTexture> capturedTextures =

@@ -33,16 +33,12 @@ public bool primeApplyPathScatter(
         inout PathState path,
         SurfaceInteraction surface,
         BsdfSample bsdf) {
-    if (primeMaterialUsesNormalMap(surface.opticalControl)) {
-        float geometricSide = dot(surface.geometricNormal, -path.rayDirection)
-                * dot(surface.geometricNormal, bsdf.direction);
-        bool reflection = (bsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u;
-        bool transmission = (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u;
-        bool diffuse = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
-        if (diffuse && ((reflection && geometricSide < 0.0)
-                || (transmission && geometricSide >= 0.0))) {
-            return false;
-        }
+    if (!primeGeometricSampleSupport(
+            primeMaterialUsesNormalMap(surface.opticalControl),
+            surface.geometricNormal,
+            -path.rayDirection,
+            bsdf)) {
+        return false;
     }
     float3 nextThroughput =
             primeProductOver(path.throughput, bsdf.response, bsdf.pdf);

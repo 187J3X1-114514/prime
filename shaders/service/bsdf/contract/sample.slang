@@ -1,6 +1,31 @@
 #language slang 2026
 module "service/bsdf/contract/sample.slang";
 
+public bool primeGeometricReflectionSupport(
+        float3 geometricNormal,
+        float3 viewDirection,
+        float3 scatterDirection)
+{
+    return dot(geometricNormal, viewDirection)
+            * dot(geometricNormal, scatterDirection) > 0.0;
+}
+
+public bool primeGeometricEventSupport(
+        float3 geometricNormal,
+        float3 viewDirection,
+        float3 scatterDirection,
+        uint eventFlags)
+{
+    bool reflection = (eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u;
+    bool transmission = (eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u;
+    if (reflection == transmission) {
+        return false;
+    }
+    float geometricSide = dot(geometricNormal, viewDirection)
+            * dot(geometricNormal, scatterDirection);
+    return reflection ? geometricSide > 0.0 : geometricSide < 0.0;
+}
+
 public static const float PRIME_PI = 3.14159265358979323846;
 
 public static const uint PRIME_BSDF_EVENT_REFLECTION = 1 << 0;
@@ -41,6 +66,19 @@ public struct BsdfSample
     public float relativeEta;
     public uint eventFlags;
 };
+
+public bool primeGeometricSampleSupport(
+        bool normalMapped,
+        float3 geometricNormal,
+        float3 viewDirection,
+        BsdfSample sample)
+{
+    return !normalMapped || primeGeometricEventSupport(
+            geometricNormal,
+            viewDirection,
+            sample.direction,
+            sample.eventFlags);
+}
 
 public struct EdfEvaluation
 {

@@ -2,6 +2,9 @@
 import "model/material/labpbr.slang";
 import "model/material/defaults.slang";
 import "model/material/translation.slang";
+import "model/material/transparent.slang";
+import "policy/transport/transparent_nee.slang";
+import "service/bsdf/contract/sample.slang";
 import "service/material/normal_mapping.slang";
 
 static const uint PRIME_MATERIAL_INPUT_WORDS = 3;
@@ -74,6 +77,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     uint opticalControl = hasOpticalTexture ? canonical.opticalControl : 0;
     PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
             roughness, opticalControl, PRIME_MATERIAL_FAMILY_OPAQUE);
+    PrimeOpticalMaterial translatedThin = primeDecodeOpticalMaterial(
+            roughness,
+            opticalControl,
+            PRIME_MATERIAL_FAMILY_DIELECTRIC | PRIME_MATERIAL_THIN_WALLED);
     float normalLengthSquared = dot(decoded.tangentNormal, decoded.tangentNormal);
     primeMaterialClassify(mask, decoded.tangentNormal);
     primeMaterialClassify(mask, normalLengthSquared);
@@ -145,8 +152,107 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             || !primeMaterialUnit(translated.subsurfaceWeight)
             || (primeFresnelIsConductor(translated.fresnelCode)
                     && !primeIsSupportedConductorCode(translated.fresnelCode))
-            || translated.thinWalled != 0) {
+            || translated.thinWalled != 0
+            || translated.subsurfaceWeight != 0.0
+            || translatedThin.thinWalled != 1
+            || translatedThin.subsurfaceWeight
+                    != (hasOpticalTexture
+                            ? float(min(expectedSubsurfaceCode, 190u)) / 190.0
+                            : 0.0)) {
         mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    float previousF0 = PRIME_COMMON_DIELECTRIC_F0_MINIMUM;
+    for (uint code = 1u; code <= 230u; code++) {
+        float f0 = primeDecodeDielectricF0(code);
+        primeMaterialClassify(mask, f0);
+        if (f0 < PRIME_COMMON_DIELECTRIC_F0_MINIMUM
+                || f0 > PRIME_COMMON_DIELECTRIC_F0_MAXIMUM
+                || f0 < previousF0) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        previousF0 = f0;
+    }
+    float3 geometricNormal = float3(0.0, 0.0, 1.0);
+    float3 incident = normalize(float3(0.25, -0.1, 1.0));
+    float3 sameSide = normalize(float3(-0.2, 0.3, 1.0));
+    float3 oppositeSide = normalize(float3(0.1, 0.2, -1.0));
+    float3 boundary = float3(1.0, 0.0, 0.0);
+    if (!primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    sameSide,
+                    PRIME_BSDF_EVENT_REFLECTION)
+            || primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    oppositeSide,
+                    PRIME_BSDF_EVENT_REFLECTION)
+            || primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    sameSide,
+                    PRIME_BSDF_EVENT_TRANSMISSION)
+            || !primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    oppositeSide,
+                    PRIME_BSDF_EVENT_TRANSMISSION)
+            || primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    boundary,
+                    PRIME_BSDF_EVENT_REFLECTION)
+            || primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    boundary,
+                    PRIME_BSDF_EVENT_TRANSMISSION)
+            || primeGeometricEventSupport(
+                    geometricNormal,
+                    incident,
+                    sameSide,
+                    PRIME_BSDF_EVENT_REFLECTION
+                            | PRIME_BSDF_EVENT_TRANSMISSION)) {
+        mask |= PRIME_TEST_FAILURE_HEMISPHERE;
+    }
+    float shadowDistance = 7.0;
+    float interfaceDistance = 2.25;
+    PrimeTransparentNeeInterfaceDecision straightNee =
+            primeTransparentNeeInterfaceDecision(
+                    false, shadowDistance, interfaceDistance);
+    PrimeTransparentNeeInterfaceDecision unbiasedNee =
+            primeTransparentNeeInterfaceDecision(
+                    true, shadowDistance, interfaceDistance);
+    float3 startingExtinction = float3(0.2, 0.4, 0.8);
+    float3 straightStartingSegment = primeShadowOpticalDepth(
+            primeShadowBoundaryOpticalDepthMoment(
+                    float3(0.0), startingExtinction, interfaceDistance, false),
+            float3(0.0),
+            float4(startingExtinction, 0.0),
+            float4(0.0),
+            1u,
+            shadowDistance);
+    float3 unbiasedStartingSegment = primeShadowOpticalDepth(
+            float3(0.0),
+            float3(0.0),
+            float4(startingExtinction, 1.0),
+            float4(0.0),
+            1u,
+            unbiasedNee.terminalDistance);
+    float3 straightAir = primeShadowOpticalDepth(
+            float3(0.0), float3(0.0), float4(0.0), float4(0.0), 0u,
+            straightNee.terminalDistance);
+    float3 unbiasedAir = primeShadowOpticalDepth(
+            float3(0.0), float3(0.0), float4(0.0), float4(0.0), 0u,
+            unbiasedNee.terminalDistance);
+    if (straightNee.blocks
+            || straightNee.terminalDistance != shadowDistance
+            || !unbiasedNee.blocks
+            || unbiasedNee.terminalDistance != interfaceDistance
+            || any(straightAir != float3(0.0))
+            || any(unbiasedAir != float3(0.0))
+            || any(straightStartingSegment != unbiasedStartingSegment)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
     }
     uint smoothWater = PRIME_MATERIAL_FAMILY_DIELECTRIC
             | PRIME_MATERIAL_MEDIUM_WATER;

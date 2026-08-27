@@ -13,6 +13,7 @@ import dev.prime.render.MinimumBounceSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.TransparentNeeMode;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
@@ -35,6 +36,8 @@ public final class PrimeVideoOptions {
             List.of(ReconstructionQualityMode.values());
     private static final List<SurfaceDetailMode> SURFACE_DETAIL_MODES =
             List.of(SurfaceDetailMode.values());
+    private static final List<TransparentNeeMode> TRANSPARENT_NEE_MODES =
+            List.of(TransparentNeeMode.values());
     private static final List<RendererImageView> RENDERER_IMAGE_VIEWS =
             List.of(RendererImageView.values());
     private static final List<RrInputView> RR_INPUT_VIEWS = List.of(RrInputView.values());
@@ -61,7 +64,8 @@ public final class PrimeVideoOptions {
                         season(),
                         sunExposure(),
                         starExposure(),
-                        blockLightExposure()),
+                        blockLightExposure(),
+                        transparentNeeMode()),
                 new Display(
                         hdr(),
                         referenceWhiteNits(),
@@ -332,6 +336,20 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setBlockLightQuarterSteps);
     }
 
+    private static OptionInstance<TransparentNeeMode> transparentNeeMode() {
+        return new OptionInstance<>(
+                "prime.options.lighting.transparent_nee_mode",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.lighting.transparent_nee_mode.tooltip")),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.lighting.transparent_nee_mode." + mode.id()),
+                new OptionInstance.SliderableEnum<>(
+                        TRANSPARENT_NEE_MODES,
+                        Codec.STRING.xmap(TransparentNeeMode::fromId, TransparentNeeMode::id)),
+                PrimeConfig.settings().transparentNeeMode(),
+                PrimeConfig::setTransparentNeeMode);
+    }
+
     private static OptionInstance<Integer> finalExposure() {
         return exposureOption(
                 "prime.options.display.final_exposure_ev",
@@ -585,7 +603,8 @@ public final class PrimeVideoOptions {
             OptionInstance<Integer> season,
             OptionInstance<Integer> sunExposure,
             OptionInstance<Integer> starExposure,
-            OptionInstance<Integer> blockLightExposure) {
+            OptionInstance<Integer> blockLightExposure,
+            OptionInstance<TransparentNeeMode> transparentNeeMode) {
     }
 
     public record Display(

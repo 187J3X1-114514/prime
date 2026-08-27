@@ -45,7 +45,8 @@ public final class IntegratorSettings {
                 astronomy,
                 seamlessGlass,
                 airGap,
-                MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
+                MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS,
+                TransparentNeeMode.DEFAULT);
     }
 
     public static int packSampleControl(
@@ -54,6 +55,22 @@ public final class IntegratorSettings {
             boolean seamlessGlass,
             boolean airGap,
             boolean vanillaPbrPresets) {
+        return packSampleControl(
+                sampleIndex,
+                astronomy,
+                seamlessGlass,
+                airGap,
+                vanillaPbrPresets,
+                TransparentNeeMode.DEFAULT);
+    }
+
+    public static int packSampleControl(
+            int sampleIndex,
+            AstronomySettings astronomy,
+            boolean seamlessGlass,
+            boolean airGap,
+            boolean vanillaPbrPresets,
+            TransparentNeeMode transparentNeeMode) {
         if (sampleIndex < 0
                 || (sampleIndex & ~ShaderAbi.PATH_SAMPLE_INDEX_MASK) != 0) {
             throw new IllegalArgumentException(
@@ -65,12 +82,16 @@ public final class IntegratorSettings {
             throw new IllegalArgumentException(
                     "Solar longitude does not fit the path-control ABI");
         }
+        java.util.Objects.requireNonNull(transparentNeeMode, "transparentNeeMode");
         return sampleIndex
                 | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT
                 | (seamlessGlass ? ShaderAbi.PATH_SEAMLESS_GLASS_MASK : 0)
                 | (airGap ? ShaderAbi.PATH_AIR_GAP_MASK : 0)
                 | (vanillaPbrPresets
                         ? ShaderAbi.PATH_VANILLA_PBR_PRESETS_MASK
+                        : 0)
+                | (transparentNeeMode == TransparentNeeMode.UNBIASED_BSDF_ONLY
+                        ? ShaderAbi.PATH_TRANSPARENT_NEE_UNBIASED_MASK
                         : 0);
     }
 

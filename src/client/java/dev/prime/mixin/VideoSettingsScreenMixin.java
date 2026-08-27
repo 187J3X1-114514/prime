@@ -13,6 +13,7 @@ import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.TransparentNeeMode;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
@@ -82,6 +83,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$options.lighting().sunExposure());
             list.addBig(this.prime$options.lighting().starExposure());
             list.addBig(this.prime$options.lighting().blockLightExposure());
+            list.addBig(this.prime$options.lighting().transparentNeeMode());
             list.addHeader(PRIME$DISPLAY_HEADER);
             list.addBig(this.prime$options.display().hdr());
             AbstractWidget hdrWidget = list.findOption(this.prime$options.display().hdr());
@@ -169,6 +171,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$options.lighting().blockLightExposure(),
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+        this.prime$refresh(
+                this.prime$options.lighting().transparentNeeMode(),
+                TransparentNeeMode.DEFAULT);
         this.prime$refresh(
                 this.prime$options.display().finalExposure(),
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);

@@ -5,7 +5,7 @@
     "url": "https://svs.gsfc.nasa.gov/4851/",
     "sha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",
     "projection": "plate carree celestial ICRF/J2000; centered at 0h right ascension; right ascension increases to the left",
-    "encoding": "linear RGB, OpenEXR HALF",
+    "encoding": "scene-linear RGB, primaries and white point unknown, OpenEXR HALF",
     "credit": "NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC. Constellation figures based on those developed for the IAU by Alan MacRobert of Sky and Telescope magazine (Roger Sinnott and Rick Fienberg)."
   },
   "image": {

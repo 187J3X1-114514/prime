@@ -15,8 +15,10 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -75,6 +77,9 @@ public final class TerrainStreamer implements AutoCloseable {
             .thenComparingLong(ClusterRequest::key));
     private final ArrayDeque<CompletedCluster> readyForUpload = new ArrayDeque<>();
     private final ArrayList<CompiledCluster> uploadBatch = new ArrayList<>();
+    private final ArrayList<Long> uploadResourceGenerations = new ArrayList<>();
+    // Render-thread-owned: compatibility reports never introduce worker synchronization.
+    private final Set<CompatibilityReportKey> reportedCompatibility = new HashSet<>();
     private final ArrayList<ClusterRequest> unloadedRequests =
             new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
     private final ArrayList<ClusterRequest> blockedRequests =
@@ -94,6 +99,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private int workerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private int workerJobs;
     private boolean discardResidentMaterialGeneration;
+    private long reportedResourceGeneration = Long.MIN_VALUE;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
@@ -485,6 +491,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 if (this.scene.contains(request.key())) {
                     CompletedCluster result = new CompletedCluster(
                             this.generations.worldEpoch(),
+                            resourceEpoch.id(),
                             request.key(),
                             request.generation(),
                             clusterX,
@@ -546,6 +553,7 @@ public final class TerrainStreamer implements AutoCloseable {
                     }
                     CompletedCluster completedCluster = new CompletedCluster(
                             worldEpoch,
+                            resourceEpoch.id(),
                             request.key(),
                             request.generation(),
                             clusterX,
@@ -625,6 +633,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private void uploadReady(double cameraX, double cameraY, double cameraZ) {
         List<CompiledCluster> uploads = this.uploadBatch;
         uploads.clear();
+        this.uploadResourceGenerations.clear();
         long uploadBytes = 0L;
         while (!this.readyForUpload.isEmpty()) {
             CompletedCluster next = this.readyForUpload.peekFirst();
@@ -644,6 +653,7 @@ public final class TerrainStreamer implements AutoCloseable {
             uploadBytes = nextEndOffset;
             uploads.add(new CompiledCluster(
                     next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), mesh));
+            this.uploadResourceGenerations.add(next.resourceGeneration());
         }
         if (this.discardResidentMaterialGeneration) {
             for (long key : this.scene.residentStaticKeys()) {
@@ -660,6 +670,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 CompiledCluster upload = uploads.get(index);
                 CompletedCluster result = new CompletedCluster(
                         this.generations.worldEpoch(),
+                        this.uploadResourceGenerations.get(index),
                         upload.key(),
                         this.generations.current(upload.key()),
                         upload.clusterX(),
@@ -676,6 +687,11 @@ public final class TerrainStreamer implements AutoCloseable {
         }
         this.pendingEvictions.clear();
         this.discardResidentMaterialGeneration = false;
+        for (int index = 0; index < uploads.size(); index++) {
+            this.reportCompatibility(
+                    this.uploadResourceGenerations.get(index),
+                    uploads.get(index).mesh().compatibilityIssues());
+        }
         for (long key : evictions) {
             this.empty.remove(key);
         }
@@ -684,6 +700,25 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.empty.add(upload.key());
             } else {
                 this.empty.remove(upload.key());
+            }
+        }
+    }
+
+    private void reportCompatibility(
+            long resourceGeneration,
+            Set<StaticCompatibilityIssue> issues) {
+        if (this.reportedResourceGeneration != resourceGeneration) {
+            this.reportedCompatibility.clear();
+            this.reportedResourceGeneration = resourceGeneration;
+        }
+        for (StaticCompatibilityIssue issue : issues) {
+            CompatibilityReportKey key = new CompatibilityReportKey(
+                    resourceGeneration, issue.type(), issue.textureId());
+            if (this.reportedCompatibility.add(key)) {
+                PrimeInfo.LOGGER.warn(
+                        "Prime static scene compatibility (TextureId {}): {}",
+                        issue.textureId(),
+                        issue.type().description());
             }
         }
     }
@@ -808,6 +843,7 @@ public final class TerrainStreamer implements AutoCloseable {
 
     private record CompletedCluster(
             long worldEpoch,
+            long resourceGeneration,
             long key,
             long generation,
             int clusterX,
@@ -822,5 +858,11 @@ public final class TerrainStreamer implements AutoCloseable {
             }
             throw new IllegalStateException("Only successful terrain work has a mesh");
         }
+    }
+
+    private record CompatibilityReportKey(
+            long resourceGeneration,
+            StaticCompatibilityIssue.Type type,
+            int textureId) {
     }
 }

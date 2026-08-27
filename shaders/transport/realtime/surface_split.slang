@@ -9,6 +9,7 @@ import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
+import "service/bsdf/support/sanitization.slang";
 import "contract/realtime/guide.slang";
 import "model/atmosphere/sky.slang";
 import "service/reconstruct/nrd/common.slang";
@@ -45,6 +46,7 @@ import "state/realtime/transparent.slang";
 import "state/realtime/transport.slang";
 import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
+import "contract/material/normal.slang";
 import "policy/transport/path.slang";
 import "contract/realtime/ordinary.slang";
 import "contract/realtime/transparent.slang";
@@ -108,6 +110,23 @@ public uint primeInitializeTransparentWavefront(
             surface.adjacentBaseColor,
             surface.adjacentInterfaceControl,
             primeUsesAirGap());
+    bool normalMapped = primeMaterialUsesNormalMap(surface.opticalControl);
+    if (!primeGeometricSampleSupport(
+            normalMapped,
+            surface.geometricNormal,
+            viewDirection,
+            primarySample.paths.transmission.bsdfSample)) {
+        primarySample.paths.transmission.bsdfSample = primeInvalidBsdfSample();
+        primarySample.paths.transmission.volumeStack = volumeStack;
+    }
+    if (!primeGeometricSampleSupport(
+            normalMapped,
+            surface.geometricNormal,
+            viewDirection,
+            primarySample.paths.reflection.bsdfSample)) {
+        primarySample.paths.reflection.bsdfSample = primeInvalidBsdfSample();
+        primarySample.paths.reflection.volumeStack = volumeStack;
+    }
     PrimeDenoiseAlbedos albedos = primarySample.albedos;
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     initialResult.guides.primaryDistance =

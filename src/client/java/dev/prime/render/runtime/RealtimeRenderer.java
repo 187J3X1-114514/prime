@@ -47,6 +47,7 @@ final class RealtimeRenderer implements Destroyable {
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private MaterialSettings.Snapshot materialSettings;
+    private TransparentNeeMode transparentNeeMode;
     private boolean destroyed;
 
     RealtimeRenderer(
@@ -234,7 +235,10 @@ final class RealtimeRenderer implements Destroyable {
                 input.sceneTextures());
         boolean materialChanged = !settings.material().equals(this.materialSettings);
         this.materialSettings = settings.material();
-        boolean reconfigured = resized || materialChanged;
+        boolean transparentNeeChanged = settings.lighting().transparentNeeMode()
+                != this.transparentNeeMode;
+        this.transparentNeeMode = settings.lighting().transparentNeeMode();
+        boolean reconfigured = resized || materialChanged || transparentNeeChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return;

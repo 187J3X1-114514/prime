@@ -37,12 +37,31 @@ final class TwoSidedQuadReducer {
 
     static List<ResolvedQuad> resolve(
             List<CapturedSectionGeometry.Quad> quads) {
+        java.util.IdentityHashMap<CapturedSectionGeometry.Quad, TransmissiveTopology> topology =
+                new java.util.IdentityHashMap<>();
+        for (CapturedSectionGeometry.Quad quad : quads) {
+            topology.put(
+                    quad,
+                    ClusterSceneTranslator.isTransmissive(quad.surface())
+                            ? TransmissiveTopology.SOLID
+                            : TransmissiveTopology.NONE);
+        }
+        return resolve(quads, topology);
+    }
+
+    static List<ResolvedQuad> resolve(
+            List<CapturedSectionGeometry.Quad> quads,
+            java.util.IdentityHashMap<CapturedSectionGeometry.Quad, TransmissiveTopology> topology) {
         Objects.requireNonNull(quads, "quads");
+        Objects.requireNonNull(topology, "topology");
         boolean[] removed = new boolean[quads.size()];
         Map<PositionSet, ArrayList<Integer>> pending = new HashMap<>();
         for (int index = 0; index < quads.size(); index++) {
             CapturedSectionGeometry.Quad quad =
                     Objects.requireNonNull(quads.get(index), "quad");
+            if (topology.get(quad) == null) {
+                continue;
+            }
             if (!eligible(quad)) {
                 continue;
             }
@@ -75,6 +94,9 @@ final class TwoSidedQuadReducer {
                 continue;
             }
             CapturedSectionGeometry.Quad quad = quads.get(index);
+            if (topology.get(quad) == null) {
+                continue;
+            }
             if (!directionalEligible(quad)) {
                 continue;
             }
@@ -107,15 +129,21 @@ final class TwoSidedQuadReducer {
         for (int index = 0; index < quads.size(); index++) {
             if (!removed[index]) {
                 CapturedSectionGeometry.Quad quad = quads.get(index);
+                TransmissiveTopology primaryTopology = topology.get(quad);
+                if (primaryTopology == null) {
+                    continue;
+                }
                 SurfaceDefinition.MaterialBinding primary =
-                        SurfaceDefinition.MaterialBinding.of(quad);
+                        SurfaceDefinition.MaterialBinding.of(quad, primaryTopology);
                 int peer = bilateralPeer[index];
                 SurfaceDefinition definition = peer < 0
                         ? SurfaceDefinition.single(primary)
                         : SurfaceDefinition.bilateral(
                                 primary,
                                 bindingInPrimaryOrder(
-                                        quads.get(peer), bilateralOffset[index]));
+                                        quads.get(peer),
+                                        bilateralOffset[index],
+                                        topology.get(quads.get(peer))));
                 result.add(new ResolvedQuad(quad, definition));
             }
         }
@@ -124,7 +152,9 @@ final class TwoSidedQuadReducer {
 
     private static boolean eligible(CapturedSectionGeometry.Quad quad) {
         CapturedSectionGeometry.Surface surface = quad.surface();
-        return surface.fluid() != null || ClusterSceneTranslator.isCutout(surface);
+        return surface.fluid() != null
+                || ClusterSceneTranslator.isCutout(surface)
+                || ClusterSceneTranslator.isTransmissive(surface);
     }
 
     private static boolean directionalEligible(
@@ -132,7 +162,8 @@ final class TwoSidedQuadReducer {
         CapturedSectionGeometry.Surface surface = quad.surface();
         return surface.fluid() == null
                 && surface.lightEmission() == 0
-                && ClusterSceneTranslator.isCutout(surface);
+                && (ClusterSceneTranslator.isCutout(surface)
+                        || ClusterSceneTranslator.isTransmissive(surface));
     }
 
     private static boolean formsRasterPair(
@@ -191,7 +222,8 @@ final class TwoSidedQuadReducer {
 
     private static SurfaceDefinition.MaterialBinding bindingInPrimaryOrder(
             CapturedSectionGeometry.Quad peer,
-            int reverseOffset) {
+            int reverseOffset,
+            TransmissiveTopology topology) {
         int index0 = reverseIndex(reverseOffset, 0);
         int index1 = reverseIndex(reverseOffset, 1);
         int index2 = reverseIndex(reverseOffset, 2);
@@ -202,7 +234,8 @@ final class TwoSidedQuadReducer {
                         peer.u(index0), peer.v(index0),
                         peer.u(index1), peer.v(index1),
                         peer.u(index2), peer.v(index2),
-                        peer.u(index3), peer.v(index3)));
+                        peer.u(index3), peer.v(index3)),
+                topology);
     }
 
     private static boolean opposedNormals(

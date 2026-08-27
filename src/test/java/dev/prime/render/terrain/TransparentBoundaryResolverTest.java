@@ -2,12 +2,116 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.scene.CapturedSectionGeometry;
 import org.junit.jupiter.api.Test;
 
 final class TransparentBoundaryResolverTest {
+    @Test
+    void collisionBackedPaneIsSolidEvenWhenItsCapturedComponentIsOpen() {
+        try (SectionMeshAccumulatorTest.TestSprite glass =
+                new SectionMeshAccumulatorTest.TestSprite("solid_glass_pane")) {
+            CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
+            section.add(
+                    xFaceAt(0.5F, 1.0F, 0.0F, 1.0F, 0.0F, 1.0F),
+                    surface(glass, -1, false, false, 0, 0, 0));
+            CapturedSectionGeometry geometry = section.build();
+            CapturedCluster.Builder captured = new CapturedCluster.Builder(0, 0, 0);
+            captured.add(0, 0, 0, geometry);
+
+            TransmissiveTopologyResolver.Result result =
+                    TransmissiveTopologyResolver.resolve(captured.build());
+
+            assertEquals(
+                    TransmissiveTopology.SOLID,
+                    result.topology(geometry.quads().getFirst()));
+            assertTrue(result.issues().isEmpty());
+        }
+    }
+
+    @Test
+    void exactCoplanarReversePairIsTheOnlyThinSheetProof() {
+        try (SectionMeshAccumulatorTest.TestSprite glass =
+                new SectionMeshAccumulatorTest.TestSprite("proved_thin_sheet")) {
+            CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
+            section.add(
+                    xFaceAt(0.5F, 1.0F, 0.0F, 1.0F, 0.0F, 1.0F),
+                    surface(glass, -1, true, false, 0, 0, 0));
+            section.add(
+                    xFaceAt(0.5F, -1.0F, 0.0F, 1.0F, 0.0F, 1.0F),
+                    surface(glass, -1, true, false, 0, 0, 0));
+            CapturedSectionGeometry geometry = section.build();
+            CapturedCluster.Builder captured = new CapturedCluster.Builder(0, 0, 0);
+            captured.add(0, 0, 0, geometry);
+
+            TransmissiveTopologyResolver.Result result =
+                    TransmissiveTopologyResolver.resolve(captured.build());
+
+            assertEquals(
+                    TransmissiveTopology.THIN_SHEET,
+                    result.topology(geometry.quads().get(0)));
+            assertEquals(
+                    TransmissiveTopology.THIN_SHEET,
+                    result.topology(geometry.quads().get(1)));
+            assertTrue(result.issues().isEmpty());
+        }
+    }
+
+    @Test
+    void exactClosedCollisionEmptyShellIsSolid() {
+        try (SectionMeshAccumulatorTest.TestSprite glass =
+                new SectionMeshAccumulatorTest.TestSprite("proved_closed_shell")) {
+            CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
+            CapturedSectionGeometry.Surface surface =
+                    surface(glass, -1, true, false, 0, 0, 0);
+            section.add(xFaceAt(0.0F, -1.0F, 0.0F, 1.0F, 0.0F, 1.0F), surface);
+            section.add(xFaceAt(1.0F, 1.0F, 0.0F, 1.0F, 0.0F, 1.0F), surface);
+            section.add(yFaceAt(0.0F, -1.0F), surface);
+            section.add(yFaceAt(1.0F, 1.0F), surface);
+            section.add(zFaceAt(0.0F, -1.0F), surface);
+            section.add(zFaceAt(1.0F, 1.0F), surface);
+            CapturedSectionGeometry geometry = section.build();
+            CapturedCluster.Builder captured = new CapturedCluster.Builder(0, 0, 0);
+            captured.add(0, 0, 0, geometry);
+
+            TransmissiveTopologyResolver.Result result =
+                    TransmissiveTopologyResolver.resolve(captured.build());
+
+            for (CapturedSectionGeometry.Quad quad : geometry.quads()) {
+                assertEquals(TransmissiveTopology.SOLID, result.topology(quad));
+            }
+            assertTrue(result.issues().isEmpty());
+        }
+    }
+
+    @Test
+    void ambiguousOpenShellIsOmittedAndReportedOncePerTexture() {
+        try (SectionMeshAccumulatorTest.TestSprite glass =
+                new SectionMeshAccumulatorTest.TestSprite("ambiguous_open_shell")) {
+            CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
+            CapturedSectionGeometry.Surface surface =
+                    surface(glass, -1, true, false, 0, 0, 0);
+            section.add(xFaceAt(0.0F, -1.0F, 0.0F, 1.0F, 0.0F, 1.0F), surface);
+            section.add(yFaceAt(0.0F, -1.0F), surface);
+            CapturedSectionGeometry geometry = section.build();
+            CapturedCluster.Builder captured = new CapturedCluster.Builder(0, 0, 0);
+            captured.add(0, 0, 0, geometry);
+            CapturedCluster cluster = captured.build();
+
+            TransmissiveTopologyResolver.Result result =
+                    TransmissiveTopologyResolver.resolve(cluster);
+            CpuClusterMesh mesh = translate(cluster);
+
+            assertNull(result.topology(geometry.quads().get(0)));
+            assertNull(result.topology(geometry.quads().get(1)));
+            assertEquals(1, result.issues().size());
+            assertEquals(result.issues(), mesh.compatibilityIssues());
+            assertEquals(0L, mesh.triangleCount());
+        }
+    }
+
     @Test
     void equalSolidMediaRemoveTheSharedFace() {
         try (SectionMeshAccumulatorTest.TestSprite glass =
@@ -415,6 +519,46 @@ final class TransparentBoundaryResolverTest {
             quad.v[vertex] = vertex >= 2 ? 1.0F : 0.0F;
         }
         quad.normalX = normal;
+        return quad;
+    }
+
+    private static CapturedSectionGeometry.MutableQuad yFaceAt(float plane, float normal) {
+        CapturedSectionGeometry.MutableQuad quad =
+                new CapturedSectionGeometry.MutableQuad();
+        float[] x = normal > 0.0F
+                ? new float[] {0.0F, 0.0F, 1.0F, 1.0F}
+                : new float[] {0.0F, 1.0F, 1.0F, 0.0F};
+        float[] z = normal > 0.0F
+                ? new float[] {0.0F, 1.0F, 1.0F, 0.0F}
+                : new float[] {0.0F, 0.0F, 1.0F, 1.0F};
+        for (int vertex = 0; vertex < 4; vertex++) {
+            quad.x[vertex] = x[vertex];
+            quad.y[vertex] = plane;
+            quad.z[vertex] = z[vertex];
+            quad.u[vertex] = x[vertex];
+            quad.v[vertex] = z[vertex];
+        }
+        quad.normalY = normal;
+        return quad;
+    }
+
+    private static CapturedSectionGeometry.MutableQuad zFaceAt(float plane, float normal) {
+        CapturedSectionGeometry.MutableQuad quad =
+                new CapturedSectionGeometry.MutableQuad();
+        float[] x = normal > 0.0F
+                ? new float[] {0.0F, 1.0F, 1.0F, 0.0F}
+                : new float[] {0.0F, 0.0F, 1.0F, 1.0F};
+        float[] y = normal > 0.0F
+                ? new float[] {0.0F, 0.0F, 1.0F, 1.0F}
+                : new float[] {0.0F, 1.0F, 1.0F, 0.0F};
+        for (int vertex = 0; vertex < 4; vertex++) {
+            quad.x[vertex] = x[vertex];
+            quad.y[vertex] = y[vertex];
+            quad.z[vertex] = plane;
+            quad.u[vertex] = x[vertex];
+            quad.v[vertex] = y[vertex];
+        }
+        quad.normalZ = normal;
         return quad;
     }
 

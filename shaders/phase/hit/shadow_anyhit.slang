@@ -6,6 +6,7 @@ import glsl;
 import "prime_abi_types.slang";
 import "math/packed_geometry.slang";
 import "policy/runtime/config.slang";
+import "policy/transport/transparent_nee.slang";
 import "model/material/defaults.slang";
 import "service/material/access.slang";
 import "model/material/transparent.slang";
@@ -125,6 +126,18 @@ public void primePhase(in BuiltInTriangleIntersectionAttributes attributes)
         return;
     }
     if (!primeRecipeIsTransmissive(recipeControl)) {
+        return;
+    }
+    // BSDF-only transparent transport is unbiased without MNEE: a shadow ray may retain
+    // absorption from its starting medium, but it cannot cross a specular interface.
+    PrimeTransparentNeeInterfaceDecision transparentNee =
+            primeTransparentNeeInterfaceDecision(
+                    primeUsesUnbiasedTransparentNee(),
+                    primeShadowPayload.terminalExtinctionRayDistance.w,
+                    RayTCurrent());
+    primeShadowPayload.terminalExtinctionRayDistance.w =
+            transparentNee.terminalDistance;
+    if (transparentNee.blocks) {
         return;
     }
     float3 extinction;

@@ -68,8 +68,8 @@ float4 integrateSkyGroup(int group, float3 origin, float3 direction, AtmRaySegme
                 * (coefficients.aerosolScattering + coefficients.molecularScattering);
         float4 source = atmSolarSpectrum(group) * (direct + multiple);
         float4 stepTransmittance = exp(-stepLength * coefficients.extinction);
-        float4 safeExtinction = max(coefficients.extinction, float4(1.0e-7));
-        radiance += transmittance * (source - source * stepTransmittance) / safeExtinction;
+        radiance += transmittance * source
+                * atmHomogeneousSegmentIntegral(coefficients.extinction, stepLength);
         transmittance *= stepTransmittance;
     }
     if (segment.hitsGround) {

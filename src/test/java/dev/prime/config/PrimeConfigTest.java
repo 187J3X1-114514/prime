@@ -11,6 +11,7 @@ import dev.prime.render.MaximumBounceSettings;
 import dev.prime.render.MinimumBounceSettings;
 import dev.prime.render.SpecularBounceSettings;
 import dev.prime.render.SurfaceDetailMode;
+import dev.prime.render.TransparentNeeMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -29,6 +30,64 @@ final class PrimeConfigTest {
 
         assertFalse(decoded.rewriteNeeded());
         assertEquals(encoded, PrimeConfigCodec.encode(decoded.data()));
+    }
+
+    @Test
+    void transparentNeeModeMigratesMissingAndInvalidValuesToTheDefault() throws Exception {
+        Properties properties = new Properties();
+        properties.load(new StringReader(PrimeConfig.serializedContents()));
+        properties.remove("lighting.transparent_nee_mode");
+
+        PrimeConfigCodec.DecodeResult missing = PrimeConfigCodec.decode(properties);
+
+        assertTrue(missing.rewriteNeeded());
+        assertEquals(
+                TransparentNeeMode.STRAIGHT_APPROXIMATION,
+                missing.data().settings().transparentNeeMode());
+        assertTrue(PrimeConfigCodec.encode(missing.data()).contains(
+                "lighting.transparent_nee_mode=straight_approximation\n"));
+
+        properties.setProperty("lighting.transparent_nee_mode", "mnee");
+        PrimeConfigCodec.DecodeResult invalid = PrimeConfigCodec.decode(properties);
+        assertTrue(invalid.rewriteNeeded());
+        assertEquals(
+                TransparentNeeMode.STRAIGHT_APPROXIMATION,
+                invalid.data().settings().transparentNeeMode());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfigCodec.parseTransparentNeeMode("mnee"));
+    }
+
+    @Test
+    void transparentNeeModeChangeAdvancesOnlyTheLightingRevision() {
+        PrimeSettings initial = PrimeSettings.defaults();
+
+        PrimeSettings changed = initial.withTransparentNeeMode(
+                TransparentNeeMode.UNBIASED_BSDF_ONLY);
+
+        assertEquals(initial.lightingRevision() + 1L, changed.lightingRevision());
+        assertEquals(
+                TransparentNeeMode.UNBIASED_BSDF_ONLY,
+                changed.transparentNeeMode());
+        assertEquals(changed, changed.withTransparentNeeMode(
+                TransparentNeeMode.UNBIASED_BSDF_ONLY));
+    }
+
+    @Test
+    void liveTransparentNeeModeChangeInvalidatesAccumulation() {
+        TransparentNeeMode previous = PrimeConfig.settings().transparentNeeMode();
+        long previousRevision = PrimeConfig.rendererSettings().revision();
+        TransparentNeeMode replacement = previous == TransparentNeeMode.STRAIGHT_APPROXIMATION
+                ? TransparentNeeMode.UNBIASED_BSDF_ONLY
+                : TransparentNeeMode.STRAIGHT_APPROXIMATION;
+        try {
+            PrimeConfig.setTransparentNeeMode(replacement);
+
+            assertEquals(replacement, PrimeConfig.settings().transparentNeeMode());
+            assertEquals(previousRevision + 1L, PrimeConfig.rendererSettings().revision());
+        } finally {
+            PrimeConfig.setTransparentNeeMode(previous);
+        }
     }
 
     @Test
@@ -342,6 +401,8 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("astronomy.latitude_degrees=30\n"));
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
+        assertTrue(serialized.contains(
+                "lighting.transparent_nee_mode=straight_approximation\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
         assertTrue(serialized.contains("display.hdr=false\n"));
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.6\n"));

@@ -53,7 +53,7 @@ public final class ClusterSceneTranslator {
                             materials,
                             settings));
         }
-        return cluster.build();
+        return cluster.build().withCompatibilityIssues(boundaries.issues());
     }
 
     private static CpuSectionGeometry translateSection(
@@ -86,7 +86,9 @@ public final class ClusterSceneTranslator {
                     capturedSurface.animated(),
                     transmissive,
                     capturedSurface.foliage()
-                            || transmissive && capturedSurface.collisionEmpty(),
+                            || definition.primary()
+                                    .transmissiveTopology()
+                                    .thinWalled(),
                     capturedSurface.water(),
                     capturedSurface.foliage(),
                     capturedSurface.mergeable(),

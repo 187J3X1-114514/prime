@@ -4,7 +4,7 @@ package dev.prime.render.diagnostic;
 public final class RrResponsivity {
     public static final float MINIMUM = -1.0F;
     public static final float MAXIMUM = 1.0F;
-    public static final float DEFAULT = -0.5F;
+    public static final float DEFAULT = -0.25F;
 
     private RrResponsivity() {}
 

@@ -12,7 +12,7 @@ final class RrResponsivityTest {
         assertEquals(-0.5F, RrResponsivity.fromSlider(0.25));
         assertEquals(0.0F, RrResponsivity.fromSlider(0.5));
         assertEquals(1.0F, RrResponsivity.fromSlider(1.0));
-        assertEquals(0.25, RrResponsivity.toSlider(RrResponsivity.DEFAULT));
+        assertEquals(0.375, RrResponsivity.toSlider(RrResponsivity.DEFAULT));
     }
 
     @Test

@@ -59,7 +59,8 @@ public final class PrimeVideoOptions {
                         voxelTextureSurfaceStrength(),
                         screenshotMode(),
                         postProcessingMode(),
-                        qualityMode()),
+                        qualityMode(),
+                        rrResponsivity()),
                 new Lighting(
                         latitude(),
                         season(),
@@ -82,7 +83,6 @@ public final class PrimeVideoOptions {
                         rawOutput(),
                         rendererImageView(diagnosticChanged),
                         rrInputView(diagnosticChanged),
-                        rrResponsivity(),
                         nrdInputView(diagnosticChanged)));
     }
 
@@ -311,9 +311,10 @@ public final class PrimeVideoOptions {
     private static OptionInstance<Float> rrResponsivity() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
-                "prime.options.debug.rr_responsivity",
+                "prime.options.post_processing.rr_responsivity",
                 OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.debug.rr_responsivity.tooltip")),
+                        Component.translatable(
+                                "prime.options.post_processing.rr_responsivity.tooltip")),
                 (caption, value) -> Options.genericValueLabel(
                         caption,
                         Component.literal(String.format(Locale.ROOT, "%+.2f", value))),
@@ -613,7 +614,8 @@ public final class PrimeVideoOptions {
             OptionInstance<Integer> voxelTextureSurfaceStrength,
             OptionInstance<Boolean> screenshotMode,
             OptionInstance<PostProcessingMode> postProcessingMode,
-            OptionInstance<ReconstructionQualityMode> qualityMode) {
+            OptionInstance<ReconstructionQualityMode> qualityMode,
+            OptionInstance<Float> rrResponsivity) {
     }
 
     public record Lighting(
@@ -644,7 +646,6 @@ public final class PrimeVideoOptions {
             OptionInstance<Boolean> rawOutput,
             OptionInstance<RendererImageView> rendererImageView,
             OptionInstance<RrInputView> rrInputView,
-            OptionInstance<Float> rrResponsivity,
             OptionInstance<NrdInputView> nrdInputView) {
     }
 }

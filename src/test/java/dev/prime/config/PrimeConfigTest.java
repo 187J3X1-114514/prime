@@ -383,9 +383,9 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertFalse(serialized.contains("renderer.sharc="));
-        assertTrue(serialized.contains("renderer.additional_specular_bounces=8\n"));
+        assertTrue(serialized.contains("renderer.additional_specular_bounces=16\n"));
         assertTrue(serialized.contains("renderer.minimum_bounces=2\n"));
-        assertTrue(serialized.contains("renderer.maximum_bounces=8\n"));
+        assertTrue(serialized.contains("renderer.maximum_bounces=16\n"));
         assertFalse(serialized.contains("renderer.primary_chain_limit="));
         assertFalse(serialized.contains("renderer.wavefront_prefix_rounds="));
         assertFalse(serialized.contains("renderer.scatter_count="));

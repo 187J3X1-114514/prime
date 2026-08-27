@@ -79,6 +79,7 @@ public abstract class VideoSettingsScreenMixin {
                     this.prime$options.rendering().surfaceDetailMode(),
                     this.prime$options.rendering().voxelTextureSurfaceStrength());
             list.addSmall(this.prime$options.rendering().postProcessingMode(), this.prime$options.rendering().qualityMode());
+            list.addBig(this.prime$options.rendering().rrResponsivity());
             list.addHeader(PRIME$LIGHTING_HEADER);
             list.addSmall(this.prime$options.lighting().latitude(), this.prime$options.lighting().season());
             list.addBig(this.prime$options.lighting().sunExposure());
@@ -107,7 +108,6 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$options.diagnostics().rawOutput());
             list.addBig(this.prime$options.diagnostics().rendererImageView());
             list.addBig(this.prime$options.diagnostics().rrInputView());
-            list.addBig(this.prime$options.diagnostics().rrResponsivity());
             list.addBig(this.prime$options.diagnostics().nrdInputView());
             list.addBig(Button.builder(
                             Component.translatable("prime.options.open_repository"),
@@ -158,6 +158,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$options.rendering().screenshotMode(), false);
         this.prime$refresh(this.prime$options.rendering().postProcessingMode(), PostProcessingMode.DEFAULT);
         this.prime$refresh(this.prime$options.rendering().qualityMode(), ReconstructionQualityMode.DEFAULT);
+        this.prime$refresh(
+                this.prime$options.rendering().rrResponsivity(),
+                RrResponsivity.DEFAULT);
         this.prime$refresh(
                 this.prime$options.lighting().latitude(),
                 AstronomySettings.DEFAULT_LATITUDE_DEGREES);
@@ -210,9 +213,6 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$options.diagnostics().rawOutput(), false);
         this.prime$refresh(this.prime$options.diagnostics().rendererImageView(), RendererImageView.OFF);
         this.prime$refresh(this.prime$options.diagnostics().rrInputView(), RrInputView.OFF);
-        this.prime$refresh(
-                this.prime$options.diagnostics().rrResponsivity(),
-                RrResponsivity.DEFAULT);
         this.prime$refresh(this.prime$options.diagnostics().nrdInputView(), NrdInputView.OFF);
     }
 
@@ -228,9 +228,6 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$refresh(
                     this.prime$options.diagnostics().rrInputView(),
                     runtime.rrInputView());
-            this.prime$refresh(
-                    this.prime$options.diagnostics().rrResponsivity(),
-                    runtime.rrResponsivity());
             this.prime$refresh(
                     this.prime$options.diagnostics().nrdInputView(),
                     runtime.nrdInputView());

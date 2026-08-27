@@ -8,37 +8,8 @@ public static const uint PRIME_DIRECT_SAMPLE_SUN = 2u;
 static const uint PRIME_DIRECT_SAMPLE_STREAM_COUNT = 3u;
 static const uint PRIME_ZSOBOL_LOG2_SAMPLES_PER_PIXEL = 16u;
 static const uint PRIME_ZSOBOL_LOG4_SAMPLES_PER_PIXEL = 8u;
-static const uint PRIME_ZSOBOL_MATRIX_SIZE = 52u;
 static const float PRIME_ZSOBOL_UINT_SCALE = 1.0 / 4294967296.0;
 static const float PRIME_ZSOBOL_ONE_MINUS_EPSILON = 0.9999999403953552;
-
-// First two pbrt-v4 Sobol dimensions only. Dimension zero is bit reversal; these are
-// dimension one's 52 Joe-Kuo generator columns in the pinned pbrt-v4 revision.
-static const uint PRIME_ZSOBOL_DIMENSION_ONE[PRIME_ZSOBOL_MATRIX_SIZE] = {
-    0x80000000, 0xc0000000, 0xa0000000, 0xf0000000,
-    0x88000000, 0xcc000000, 0xaa000000, 0xff000000,
-    0x80800000, 0xc0c00000, 0xa0a00000, 0xf0f00000,
-    0x88880000, 0xcccc0000, 0xaaaa0000, 0xffff0000,
-    0x80008000, 0xc000c000, 0xa000a000, 0xf000f000,
-    0x88008800, 0xcc00cc00, 0xaa00aa00, 0xff00ff00,
-    0x80808080, 0xc0c0c0c0, 0xa0a0a0a0, 0xf0f0f0f0,
-    0x88888888, 0xcccccccc, 0xaaaaaaaa, 0xffffffff,
-    0x80000000, 0xc0000000, 0xa0000000, 0xf0000000,
-    0x88000000, 0xcc000000, 0xaa000000, 0xff000000,
-    0x80800000, 0xc0c00000, 0xa0a00000, 0xf0f00000,
-    0x88880000, 0xcccc0000, 0xaaaa0000, 0xffff0000,
-    0x80008000, 0xc000c000, 0xa000a000, 0xf000f000
-};
-
-// The complete lexicographic set used by pbrt-v4's ZSobolSampler.
-static const uint PRIME_ZSOBOL_PERMUTATIONS[96] = {
-    0, 1, 2, 3,  0, 1, 3, 2,  0, 2, 1, 3,  0, 2, 3, 1,
-    0, 3, 2, 1,  0, 3, 1, 2,  1, 0, 2, 3,  1, 0, 3, 2,
-    1, 2, 0, 3,  1, 2, 3, 0,  1, 3, 2, 0,  1, 3, 0, 2,
-    2, 1, 0, 3,  2, 1, 3, 0,  2, 0, 1, 3,  2, 0, 3, 1,
-    2, 3, 0, 1,  2, 3, 1, 0,  3, 1, 2, 0,  3, 1, 0, 2,
-    3, 2, 1, 0,  3, 2, 0, 1,  3, 0, 2, 1,  3, 0, 1, 2
-};
 
 public struct PrimeDirectSampleBase
 {
@@ -90,12 +61,7 @@ uint64_t primeZSobolMorton(uint2 pixel)
 uint primeZSobolResolutionDigits(uint2 extent)
 {
     uint remaining = max(extent.x, extent.y) - 1u;
-    uint digits = 0u;
-    while (remaining != 0u) {
-        ++digits;
-        remaining >>= 1u;
-    }
-    return digits;
+    return remaining == 0u ? 0u : uint(firstbithigh(remaining)) + 1u;
 }
 
 public PrimeDirectSampleBase primeMakeDirectSampleBase(
@@ -119,42 +85,70 @@ public PrimeDirectSampleBase primeMakeDirectSampleBase(
     return result;
 }
 
+// Exact remainder without the out-of-line NVIDIA u64 division helper. 2^32 is 16
+// modulo 24, and the high limb only needs its residue modulo 3.
+uint primeZSobolModulo24(uint64_t value)
+{
+    uint remainder = uint(value) % 24u
+            + 16u * (uint(value >> 32u) % 3u);
+    remainder -= remainder >= 24u ? 24u : 0u;
+    remainder -= remainder >= 24u ? 24u : 0u;
+    return remainder;
+}
+
+// Four two-bit outputs are packed in each byte. The byte order is the exact pbrt-v4
+// table order; it is not the conventional factoradic permutation order.
+uint primeZSobolPermutation(uint permutation, uint digit)
+{
+    uint word = 0x78d8b4e4u;
+    uint wordIndex = permutation >> 2u;
+    word = wordIndex == 1u ? 0xb1e19c6cu : word;
+    word = wordIndex == 2u ? 0x8d2d39c9u : word;
+    word = wordIndex == 3u ? 0x72d236c6u : word;
+    word = wordIndex == 4u ? 0x87271e4eu : word;
+    word = wordIndex == 5u ? 0x93634b1bu : word;
+    uint packed = word >> ((permutation & 3u) * 8u);
+    return (packed >> (digit * 2u)) & 3u;
+}
+
 uint64_t primeZSobolSampleIndex(PrimeDirectSampleBase base, uint dimension)
 {
+    uint64_t source = base.mortonIndex
+            << (64u - 2u * base.digitCount);
+    uint64_t higherDigits = uint64_t(0);
     uint64_t sampleIndex = uint64_t(0);
-    uint digitIndex = base.digitCount;
-    while (digitIndex != 0u) {
-        --digitIndex;
-        uint digitShift = 2u * digitIndex;
-        uint digit = uint((base.mortonIndex >> digitShift) & uint64_t(3));
-        uint64_t higherDigits = base.mortonIndex >> (digitShift + 2u);
-        uint dimensionHash = 0x55555555u * dimension;
-        uint permutation = uint(
-                (primeZSobolMixBits(higherDigits ^ uint64_t(dimensionHash))
-                        >> 24u) % uint64_t(24));
-        digit = PRIME_ZSOBOL_PERMUTATIONS[permutation * 4u + digit];
-        sampleIndex |= uint64_t(digit) << digitShift;
+    uint remainingDigits = base.digitCount;
+    uint dimensionHash = 0x55555555u * dimension;
+    while (remainingDigits != 0u) {
+        uint digit = uint(source >> 62u);
+        uint permutation = primeZSobolModulo24(
+                primeZSobolMixBits(
+                        higherDigits ^ uint64_t(dimensionHash)) >> 24u);
+        sampleIndex = (sampleIndex << 2u)
+                | uint64_t(primeZSobolPermutation(permutation, digit));
+        higherDigits = (higherDigits << 2u) | uint64_t(digit);
+        source <<= 2u;
+        --remainingDigits;
     }
     return sampleIndex;
 }
 
-uint primeZSobolDimensionOne(uint64_t sampleIndex)
+// The pinned dimension-one columns are reversebits((1 + x)^i). Folding the limbs
+// accounts for their 32-column period. Returning the reversed-domain value also
+// cancels FastOwen's immediately following input reversal.
+uint primeZSobolDimensionOneReversed(uint64_t sampleIndex)
 {
-    uint value = 0u;
-    uint column = 0u;
-    while (sampleIndex != uint64_t(0)) {
-        if ((sampleIndex & uint64_t(1)) != uint64_t(0)) {
-            value ^= PRIME_ZSOBOL_DIMENSION_ONE[column];
-        }
-        sampleIndex >>= 1u;
-        ++column;
-    }
+    uint value = uint(sampleIndex) ^ uint(sampleIndex >> 32u);
+    value ^= (value & 0xaaaaaaaau) >> 1u;
+    value ^= (value & 0xccccccccu) >> 2u;
+    value ^= (value & 0xf0f0f0f0u) >> 4u;
+    value ^= (value & 0xff00ff00u) >> 8u;
+    value ^= (value & 0xffff0000u) >> 16u;
     return value;
 }
 
-uint primeZSobolFastOwen(uint value, uint seed)
+uint primeZSobolFastOwenFromReversed(uint value, uint seed)
 {
-    value = reversebits(value);
     value ^= value * 0x3d20adea;
     value += seed;
     value *= (seed >> 16u) | 1u;
@@ -193,9 +187,9 @@ public float2 primeDirectSample2D(
     uint dimension = base.dimensionBase + stream * 2u;
     uint64_t sampleIndex = primeZSobolSampleIndex(base, dimension);
     uint64_t hash = primeZSobolSampleHash(dimension + 2u, base.seed);
-    uint first = primeZSobolFastOwen(
-            reversebits(uint(sampleIndex)), uint(hash));
-    uint second = primeZSobolFastOwen(
-            primeZSobolDimensionOne(sampleIndex), uint(hash >> 32u));
+    uint first = primeZSobolFastOwenFromReversed(
+            uint(sampleIndex), uint(hash));
+    uint second = primeZSobolFastOwenFromReversed(
+            primeZSobolDimensionOneReversed(sampleIndex), uint(hash >> 32u));
     return float2(primeZSobolFloat(first), primeZSobolFloat(second));
 }

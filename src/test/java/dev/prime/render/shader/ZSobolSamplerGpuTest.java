@@ -136,7 +136,8 @@ final class ZSobolSamplerGpuTest {
             {1920, 1080},
             {2732, 1536},
             {3840, 2160},
-            {8192, 4320}
+            {8192, 4320},
+            {1 << 18, 1 << 18}
         };
         ByteBuffer input = ShaderTestBuffer.inputs(CASE_COUNT, INPUT_WORDS);
         ShaderTestBuffer.setOutputWords(input, OUTPUT_WORDS);

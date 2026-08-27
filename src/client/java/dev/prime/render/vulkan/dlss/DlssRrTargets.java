@@ -22,6 +22,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     static final int MOTION_FORMAT = VK12.VK_FORMAT_R16G16_SFLOAT;
     static final int SPECULAR_MOTION_FORMAT = VK12.VK_FORMAT_R32G32_SFLOAT;
     static final int SPECULAR_HIT_DISTANCE_FORMAT = VK12.VK_FORMAT_R16_SFLOAT;
+    static final int RESPONSIVITY_FORMAT = VK12.VK_FORMAT_R16_SFLOAT;
     private static final int USAGE =
             VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
 
@@ -41,6 +42,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     private final VulkanImage specularHitDistance;
     private final VulkanImage reflectionPosition;
     private final VulkanImage rrOutput;
+    private final VulkanImage responsivity;
     private final VulkanImage[] owned;
     private boolean destroyed;
 
@@ -61,6 +63,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
         this.specularHitDistance = images.get(13);
         this.reflectionPosition = images.get(14);
         this.rrOutput = images.get(15);
+        this.responsivity = images.get(16);
         this.owned = images.toArray(VulkanImage[]::new);
     }
 
@@ -105,6 +108,8 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
                     "Prime RR reflection previous virtual position");
             add(context, images, displayWidth, displayHeight,
                     COLOR_FORMAT, "Prime RR linear HDR output");
+            add(context, images, renderWidth, renderHeight,
+                    RESPONSIVITY_FORMAT, "Prime RR responsivity");
             return new DlssRrTargets(images);
         } catch (RuntimeException exception) {
             for (int index = images.size() - 1; index >= 0; index--) {
@@ -184,6 +189,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     public VulkanImage specularMotion() { return this.specularMotion; }
     public VulkanImage specularHitDistance() { return this.specularHitDistance; }
     public VulkanImage rrOutput() { return this.rrOutput; }
+    public VulkanImage responsivity() { return this.responsivity; }
 
     @Override
     public void destroy() {

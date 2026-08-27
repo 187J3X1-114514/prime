@@ -203,6 +203,7 @@
     "transmissionGgxEnergy": 17,
     "textureRecords": 18,
     "materialNormalPages": 19,
+    "directSampleLut": 24,
     "materialOpticalPages": 49,
     "starmap": 34,
     "sunShadowDepth0": 38,

@@ -4,15 +4,18 @@ import dev.prime.render.diagnostic.ImageDiagnosticSelection;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
+import dev.prime.render.diagnostic.RrResponsivity;
 
 /** Immutable, non-persistent controls owned by the client runtime. */
 public record SessionControls(
         boolean screenshotRequested,
         boolean rendererDiagnostics,
         boolean rawOutput,
-        ImageDiagnosticSelection imageDiagnostics) {
+        ImageDiagnosticSelection imageDiagnostics,
+        float rrResponsivity) {
     public SessionControls {
         imageDiagnostics = java.util.Objects.requireNonNull(imageDiagnostics, "imageDiagnostics");
+        rrResponsivity = RrResponsivity.requireValid(rrResponsivity);
     }
 
     public static SessionControls defaults() {
@@ -20,7 +23,8 @@ public record SessionControls(
                 false,
                 false,
                 false,
-                ImageDiagnosticSelection.off());
+                ImageDiagnosticSelection.off(),
+                RrResponsivity.DEFAULT);
     }
 
     public SessionControls withScreenshotRequested(boolean value) {
@@ -30,7 +34,8 @@ public record SessionControls(
                         value,
                         this.rendererDiagnostics,
                         this.rawOutput,
-                        this.imageDiagnostics);
+                        this.imageDiagnostics,
+                        this.rrResponsivity);
     }
 
     public SessionControls withRendererDiagnostics(boolean value) {
@@ -40,7 +45,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         value,
                         this.rawOutput,
-                        this.imageDiagnostics);
+                        this.imageDiagnostics,
+                        this.rrResponsivity);
     }
 
     public SessionControls withRawOutput(boolean value) {
@@ -50,7 +56,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.rendererDiagnostics,
                         value,
-                        this.imageDiagnostics);
+                        this.imageDiagnostics,
+                        this.rrResponsivity);
     }
 
     public SessionControls withRendererImageView(RendererImageView value) {
@@ -65,6 +72,18 @@ public record SessionControls(
         return withImageDiagnostics(this.imageDiagnostics.withNrd(value));
     }
 
+    public SessionControls withRrResponsivity(float value) {
+        value = RrResponsivity.requireValid(value);
+        return value == this.rrResponsivity
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
+                        this.rendererDiagnostics,
+                        this.rawOutput,
+                        this.imageDiagnostics,
+                        value);
+    }
+
     private SessionControls withImageDiagnostics(ImageDiagnosticSelection value) {
         return value.equals(this.imageDiagnostics)
                 ? this
@@ -72,6 +91,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.rendererDiagnostics,
                         this.rawOutput,
-                        value);
+                        value,
+                        this.rrResponsivity);
     }
 }

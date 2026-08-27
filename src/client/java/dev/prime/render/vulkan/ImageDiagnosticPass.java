@@ -33,6 +33,7 @@ public final class ImageDiagnosticPass implements Destroyable {
     public static final int SH1 = 10;
     public static final int ALBEDO = 11;
     public static final int VISIBILITY_A = 12;
+    public static final int SIGNED = 13;
 
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int PUSH_SIZE = 40;

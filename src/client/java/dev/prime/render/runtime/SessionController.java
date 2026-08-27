@@ -44,6 +44,10 @@ public final class SessionController {
         this.controls = this.controls.withRrInputView(value);
     }
 
+    public void setRrResponsivity(float value) {
+        this.controls = this.controls.withRrResponsivity(value);
+    }
+
     public void setNrdInputView(NrdInputView value) {
         this.controls = this.controls.withNrdInputView(value);
     }

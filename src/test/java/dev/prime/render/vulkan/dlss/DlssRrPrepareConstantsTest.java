@@ -25,6 +25,7 @@ final class DlssRrPrepareConstantsTest {
                 previous,
                 rotation,
                 12.5F,
+                -0.75F,
                 new AerialEpipolarMapping.Epipole(2.0F, -3.0F),
                 jitter);
 
@@ -32,7 +33,7 @@ final class DlssRrPrepareConstantsTest {
         assertMatrix(bytes, DlssRrPrepareConstants.PREVIOUS_WORLD_TO_CLIP, 17.0F);
         assertMatrix(bytes, DlssRrPrepareConstants.VIEW_ROTATION, 33.0F);
         assertEquals(12.5F, bytes.getFloat(DlssRrPrepareConstants.SUN_RADIANCE));
-        assertEquals(0, bytes.getInt(196));
+        assertEquals(-0.75F, bytes.getFloat(DlssRrPrepareConstants.RESPONSIVITY));
         assertEquals(2.0F, bytes.getFloat(DlssRrPrepareConstants.EPIPOLE_X));
         assertEquals(-3.0F, bytes.getFloat(DlssRrPrepareConstants.EPIPOLE_Y));
         assertEquals(0.25F, bytes.getFloat(DlssRrPrepareConstants.JITTER_X));

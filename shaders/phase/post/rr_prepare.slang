@@ -25,13 +25,14 @@ import "service/reconstruct/nrd/common.slang";
 [[vk::binding(14, 0)]] [[vk::image_format("rg32f")]] writeonly RWTexture2D<float4> rrSpecularMotion;
 [[vk::binding(15, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> rrReflectionPreviousVirtualPosition;
 [[vk::binding(16, 0)]] [[vk::image_format("r16f")]] writeonly RWTexture2D<float4> rrSpecularHitDistance;
+[[vk::binding(17, 0)]] [[vk::image_format("r16f")]] writeonly RWTexture2D<float4> rrResponsivity;
 
 struct PrimeRrPreparePushConstants {
     float4x4 currentClipToWorld;
     float4x4 previousWorldToClip;
     float4x4 currentWorldToView;
     float sunRadianceMultiplier;
-    float padding;
+    float responsivity;
     float2 epipoleNdc;
     float2 currentJitterPixels;
 };
@@ -138,6 +139,8 @@ public void primePhase(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupI
     if (any(pixel >= extent)) {
         return;
     }
+
+    primeWriteImageStore(rrResponsivity, pixel, float4(rrPush.responsivity));
 
     float4 material = primeImageLoad(rrDiffuseMaterial, pixel);
     float4 specularMaterial = primeImageLoad(rrSpecularMaterial, pixel);

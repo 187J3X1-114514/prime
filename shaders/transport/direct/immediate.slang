@@ -3,6 +3,7 @@ module "transport/direct/immediate.slang";
 
 import "prime_abi_types.slang";
 import "contract/light.slang";
+import "math/direct_sampling.slang";
 import "math/sampling.slang";
 import "service/trace/context.slang";
 import "transport/direct/contract.slang";
@@ -11,6 +12,8 @@ import "transport/direct/primary.slang";
 import "bsdf/compact/contract/volume.slang";
 
 public struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
+    public PrimeDirectSampleBase directSample;
+
     float3 estimate(
             inout PrimeIntegratorContext context,
             IntegratorRecord integrator,
@@ -25,15 +28,15 @@ public struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
                 integrator,
                 surface,
                 viewDirection,
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                primeDirectSample2D(
+                        this.directSample, PRIME_DIRECT_SAMPLE_SUN),
                 volumeStack);
     }
 }
 
 public struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
+    public PrimeDirectSampleBase directSample;
+
     bool enabled() { return true; }
     PrimeDirectLightingSplit estimatePrimary(
             inout PrimeIntegratorContext context,
@@ -42,11 +45,14 @@ public struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
             PrimePreparedSampleBase preparedSample,
             PrimeOpenPbrVolumeStack volumeStack,
             bool conditionalTransparentBranch) {
-        return primeEstimatePrimaryNonsunDirect(
+        return primeEstimatePrimaryNonsunDirectSampled(
                 context,
                 surface,
                 viewDirection,
-                preparedSample,
+                primeDirectSample2D(
+                        this.directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY),
+                primeDirectSample2D(
+                        this.directSample, PRIME_DIRECT_SAMPLE_AREA_SECONDARY),
                 volumeStack,
                 conditionalTransparentBranch);
     }
@@ -60,14 +66,10 @@ public struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
                 context,
                 surface,
                 viewDirection,
-                primeSobolSample3D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY).xy,
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                        PRIME_SAMPLE_DIMENSION_SECONDARY),
+                primeDirectSample2D(
+                        this.directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY),
+                primeDirectSample2D(
+                        this.directSample, PRIME_DIRECT_SAMPLE_AREA_SECONDARY),
                 volumeStack);
     }
 }

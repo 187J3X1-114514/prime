@@ -7,7 +7,7 @@ import "prime_realtime_abi.slang";
 import "contract/light.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
-import "math/sampling.slang";
+import "math/direct_sampling.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
 import "service/light/sample.slang";
@@ -43,29 +43,22 @@ public void primeEvaluateLandingDirect(
         return;
     }
 
-    PrimePreparedSampleBase preparedSample = primePreparePathSample(
-            path.sampleSeed,
+    PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
+            pixel,
             primeSampleIndex(),
-            primePathBounce(path.control) + 1u);
+            primeSampleEpoch(),
+            primePathBounce(path.control) + 1u,
+            uint(recordIndex >= primeWavefrontPixelCount()));
     bool guideDual = primeWavefrontGuideEnabled(control)
             && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
-    float cellSample = guideDual
-            ? primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY).y
-            : primeSobolSample3D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY).y;
+    float cellSample = primeDirectSample2D(
+            directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY).y;
     AreaLightSample area = primeSampleAreaLightSelection(
             surface.position,
             selection.area,
             cellSample,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY));
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_AREA_SECONDARY));
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
             primePush.sunDirection,
@@ -78,10 +71,8 @@ public void primeEvaluateLandingDirect(
                 integrator,
                 surface,
                 viewDirection,
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                primeDirectSample2D(
+                        directSample, PRIME_DIRECT_SAMPLE_SUN),
                 volumeStack,
                 false);
         PrimeDirectLightingSplit nonsun =
@@ -110,10 +101,8 @@ public void primeEvaluateLandingDirect(
             integrator,
             surface,
             viewDirection,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_SUN),
             volumeStack);
     direct += primeEstimateDirectPreparedAreaLight(
             context,

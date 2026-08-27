@@ -17,6 +17,9 @@ header pin requires rebuilding the bridge and rerunning `DlssRrNativeContractTes
 
 The bridge fixes every supported quality mode to Ray Reconstruction render preset F. Its private
 ABI exposes that selection so the Java loader and contract test reject a mismatched bridge.
+ABI v8 appends an optional input-resolution `VK_FORMAT_R16_SFLOAT` responsivity image. An all-zero
+image descriptor is the explicit absent value and is forwarded to NGX as a null
+`pInResponsivityMask`; every nonzero descriptor must satisfy the exact format and extent contract.
 
 Copy `prime_dlss_rr.dll` beside the release `nvngx_dlssd.dll` in
 `src/client/resources/prime/natives/windows-x86_64`. The bundled runtime is `310.7.128.0` with

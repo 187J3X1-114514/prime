@@ -32,7 +32,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Converts raw path-tracing signals into the exact low-resolution image set submitted to NGX. */
 final class DlssRrPreparePass implements Destroyable {
-    private static final int IMAGE_COUNT = 17;
+    private static final int IMAGE_COUNT = 18;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int LOCAL_SIZE = 8;
     private static final String SHADER = GeneratedShaderPrograms.resource("rr_prepare");
@@ -93,7 +93,8 @@ final class DlssRrPreparePass implements Destroyable {
                 targets.rrNormalRoughness(),
                 targets.specularMotion(),
                 targets.reflectionPosition(),
-                targets.specularHitDistance());
+                targets.specularHitDistance(),
+                targets.responsivity());
         long setLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;
@@ -179,7 +180,8 @@ final class DlssRrPreparePass implements Destroyable {
             FrameCamera previousCamera,
             SubpixelJitter currentJitterPixels,
             SunDirection sunDirection,
-            float sunRadianceMultiplier) {
+            float sunRadianceMultiplier,
+            float responsivity) {
         VulkanSync.memoryBarrier(
                 commandBuffer,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
@@ -198,6 +200,7 @@ final class DlssRrPreparePass implements Destroyable {
                     this.previousWorldToClip,
                     camera.viewRotation(),
                     sunRadianceMultiplier,
+                    responsivity,
                     this.atmosphere.aerialEpipole(camera, sunDirection),
                     currentJitterPixels);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);

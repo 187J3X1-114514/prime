@@ -55,6 +55,7 @@ final class ShaderAbiTest {
         assertEquals(17, ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY);
         assertEquals(18, ShaderAbi.DESCRIPTOR_TEXTURE_RECORDS);
         assertEquals(19, ShaderAbi.DESCRIPTOR_MATERIAL_NORMAL_PAGES);
+        assertEquals(24, ShaderAbi.DESCRIPTOR_DIRECT_SAMPLE_LUT);
         assertEquals(49, ShaderAbi.DESCRIPTOR_MATERIAL_OPTICAL_PAGES);
         assertEquals(16, ShaderAbi.MATERIAL_PAGE_COUNT);
         assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);

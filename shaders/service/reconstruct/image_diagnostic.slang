@@ -63,6 +63,10 @@ public float3 primeDiagnosticValue(float4 source)
     if (mode == 10u) return clamp(primeDiagnosticFinite(source.rgb) * 0.5 + 0.5, 0.0, 1.0);
     if (mode == 11u) return clamp(primeDiagnosticFinite(source.rgb), 0.0, 1.0);
     if (mode == 12u) return float3(clamp(source.a, 0.0, 1.0));
+    if (mode == 13u) {
+        if (isnan(source.r) || isinf(source.r)) return float3(1.0, 0.0, 1.0);
+        return float3(clamp(source.r * 0.5 + 0.5, 0.0, 1.0));
+    }
     return clamp(primeDiagnosticFinite(source.rgb), 0.0, 1.0);
 }
 

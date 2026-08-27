@@ -5,7 +5,7 @@ import "prime_abi_types.slang";
 import "prime_realtime_abi.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
-import "math/sampling.slang";
+import "math/direct_sampling.slang";
 import "policy/runtime/config.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/bsdf/dispatch/traits.slang";
@@ -28,30 +28,22 @@ public void primeSelectLandingLight(uint launchIndex) {
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PrimeStagedLightSelection selection = primeDisabledStagedLightSelection();
     if (surface.hitKind == PRIME_HIT_SURFACE) {
-        PathState path = primeWavefrontPath(
-                primeWavefrontPixel(recordIndex), record);
+        uint2 pixel = primeWavefrontPixel(recordIndex);
+        PathState path = primeWavefrontPath(pixel, record);
         PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
         float3 viewDirection = -path.rayDirection;
         PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
                 surface, viewDirection, volumeStack, primeUsesAirGap());
         if (primeClosureSupports(
                 closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
-            uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-            bool guideDual = primeWavefrontGuideEnabled(control)
-                    && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
-            PrimePreparedSampleBase preparedSample = primePreparePathSample(
-                    path.sampleSeed,
+            PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
+                    pixel,
                     primeSampleIndex(),
-                    primePathBounce(path.control) + 1u);
-            float treeSample = guideDual
-                    ? primeSobolSample2D(
-                            preparedSample,
-                            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                            PRIME_SAMPLE_DIMENSION_PRIMARY).x
-                    : primeSobolSample3D(
-                            preparedSample,
-                            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                            PRIME_SAMPLE_DIMENSION_PRIMARY).x;
+                    primeSampleEpoch(),
+                    primePathBounce(path.control) + 1u,
+                    uint(recordIndex >= primeWavefrontPixelCount()));
+            float treeSample = primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY).x;
             selection.area = primeSelectAreaLight(
                     surface.position,
                     primeAreaLightReceiverNormal(surface, viewDirection),

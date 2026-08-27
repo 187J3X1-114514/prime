@@ -19,7 +19,7 @@
 
 namespace {
 
-constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 7;
+constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 8;
 constexpr auto PRIME_DLSS_RR_RENDER_PRESET = NVSDK_NGX_RayReconstruction_Hint_Render_Preset_F;
 constexpr char PROJECT_ID[] = "7bc01faf-de5e-4c7c-9936-43cb5c301232";
 constexpr std::uint32_t EXTENSION_NAME_STRIDE = 256;
@@ -85,6 +85,7 @@ enum ImageIndex : std::size_t {
     MOTION_VECTORS,
     SPECULAR_MOTION_VECTORS,
     SPECULAR_HIT_DISTANCE,
+    RESPONSIVITY,
     IMAGE_COUNT
 };
 
@@ -109,7 +110,7 @@ static_assert(sizeof(PrimeInitDescription) == 56);
 static_assert(sizeof(PrimeOptimalSettings) == 32);
 static_assert(sizeof(PrimeFeatureDescription) == 48);
 static_assert(sizeof(PrimeImage) == 32);
-static_assert(sizeof(PrimeEvaluateDescription) == 464);
+static_assert(sizeof(PrimeEvaluateDescription) == 496);
 
 struct Context {
     VkDevice device{};
@@ -155,6 +156,16 @@ bool validImage(
             && image.format == format
             && image.width == width
             && image.height == height
+            && image.reserved == 0;
+}
+
+bool absentImage(const PrimeImage& image) {
+    // The private ABI reserves an all-zero descriptor as explicit absence for optional inputs.
+    return image.image == 0
+            && image.view == 0
+            && image.format == 0
+            && image.width == 0
+            && image.height == 0
             && image.reserved == 0;
 }
 
@@ -499,14 +510,25 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
                     description->images[SPECULAR_HIT_DISTANCE],
                     VK_FORMAT_R16_SFLOAT,
                     feature->renderWidth,
-                    feature->renderHeight);
+                    feature->renderHeight)
+            && (absentImage(description->images[RESPONSIVITY])
+                    || validImage(
+                            description->images[RESPONSIVITY],
+                            VK_FORMAT_R16_SFLOAT,
+                            feature->renderWidth,
+                            feature->renderHeight));
     if (!validScalars || !validImages) {
         return -2;
     }
     std::array<NVSDK_NGX_Resource_VK, IMAGE_COUNT> resources{};
-    for (std::size_t index = 0; index < resources.size(); ++index) {
+    for (std::size_t index = 0; index < RESPONSIVITY; ++index) {
         resources[index] = imageResource(
                 description->images[index], index == OUTPUT_COLOR);
+    }
+    const bool hasResponsivity = !absentImage(description->images[RESPONSIVITY]);
+    if (hasResponsivity) {
+        resources[RESPONSIVITY] = imageResource(
+                description->images[RESPONSIVITY], false);
     }
     NVSDK_NGX_VK_DLSSD_Eval_Params evaluate{};
     evaluate.pInDiffuseAlbedo = &resources[DIFFUSE_ALBEDO];
@@ -523,6 +545,7 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
     // preserves spatial separation between reflected surfaces.
     evaluate.pInColorBeforeTransparency = nullptr;
     evaluate.pInSpecularHitDistance = &resources[SPECULAR_HIT_DISTANCE];
+    evaluate.pInResponsivityMask = hasResponsivity ? &resources[RESPONSIVITY] : nullptr;
     evaluate.pInWorldToViewMatrix = description->worldToView;
     evaluate.pInViewToClipMatrix = description->viewToClip;
     evaluate.InJitterOffsetX = description->jitterX;

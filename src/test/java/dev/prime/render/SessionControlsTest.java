@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
+import dev.prime.render.diagnostic.RrResponsivity;
 import org.junit.jupiter.api.Test;
 
 final class SessionControlsTest {
@@ -19,7 +20,8 @@ final class SessionControlsTest {
                 .withScreenshotRequested(true)
                 .withRendererDiagnostics(true)
                 .withRawOutput(true)
-                .withRendererImageView(RendererImageView.NORMAL);
+                .withRendererImageView(RendererImageView.NORMAL)
+                .withRrResponsivity(0.25F);
 
         assertFalse(defaults.screenshotRequested());
         assertFalse(defaults.rendererDiagnostics());
@@ -27,13 +29,16 @@ final class SessionControlsTest {
         assertEquals(RendererImageView.OFF, defaults.imageDiagnostics().renderer());
         assertEquals(RrInputView.OFF, defaults.imageDiagnostics().rr());
         assertEquals(NrdInputView.OFF, defaults.imageDiagnostics().nrd());
+        assertEquals(RrResponsivity.DEFAULT, defaults.rrResponsivity());
         assertTrue(changed.screenshotRequested());
         assertTrue(changed.rendererDiagnostics());
         assertTrue(changed.rawOutput());
         assertEquals(RendererImageView.NORMAL, changed.imageDiagnostics().renderer());
+        assertEquals(0.25F, changed.rrResponsivity());
         assertNotSame(defaults, changed);
         assertSame(changed, changed.withRendererDiagnostics(true));
         assertSame(changed, changed.withRawOutput(true));
+        assertSame(changed, changed.withRrResponsivity(0.25F));
     }
 
     @Test

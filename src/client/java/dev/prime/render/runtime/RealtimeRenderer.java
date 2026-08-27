@@ -292,7 +292,9 @@ final class RealtimeRenderer implements Destroyable {
         ReconstructionFrameParameters postParameters =
                 frameInput.reconstructionInput(sampleFrame.reset());
         ReconstructionDebugSettings debugSettings =
-                new ReconstructionDebugSettings(input.controls().imageDiagnostics());
+                new ReconstructionDebugSettings(
+                        input.controls().imageDiagnostics(),
+                        input.controls().rrResponsivity());
         VulkanReconstructionProcessor.Frame postFrame =
                 processor.beginFrame(postParameters, debugSettings);
         ReconstructionFrame reconstructionFrame = postFrame.semantic();

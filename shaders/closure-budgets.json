@@ -83,11 +83,11 @@
     },
     "entry/post/image_diagnostic_rgba16.compute.slang": {
       "maxFiles": 5,
-      "maxBytes": 21266
+      "maxBytes": 21435
     },
     "entry/post/image_diagnostic_rgba8.compute.slang": {
       "maxFiles": 5,
-      "maxBytes": 21267
+      "maxBytes": 21436
     },
     "entry/post/noisy_composite.compute.slang": {
       "maxFiles": 8,
@@ -114,12 +114,12 @@
       "maxBytes": 217584
     },
     "entry/realtime/landing_light_select.raygeneration.slang": {
-      "maxFiles": 78,
-      "maxBytes": 258259
+      "maxFiles": 79,
+      "maxBytes": 260216
     },
     "entry/realtime/landing_direct.raygeneration.slang": {
-      "maxFiles": 106,
-      "maxBytes": 410968
+      "maxFiles": 107,
+      "maxBytes": 412926
     },
     "entry/realtime/landing_scatter.raygeneration.slang": {
       "maxFiles": 144,
@@ -130,7 +130,7 @@
       "maxBytes": 349115
     },
     "entry/realtime/visible_direct.raygeneration.slang": {
-      "maxFiles": 117,
+      "maxFiles": 118,
       "maxBytes": 463322
     },
     "entry/realtime/surface_split.raygeneration.slang": {
@@ -146,11 +146,11 @@
       "maxBytes": 130000
     },
     "entry/realtime/fixed_light_select.raygeneration.slang": {
-      "maxFiles": 80,
+      "maxFiles": 81,
       "maxBytes": 270000
     },
     "entry/realtime/fixed_direct.raygeneration.slang": {
-      "maxFiles": 108,
+      "maxFiles": 109,
       "maxBytes": 425000
     },
     "entry/realtime/fixed_scatter.raygeneration.slang": {
@@ -162,7 +162,7 @@
       "maxBytes": 130000
     },
     "entry/realtime/tail.raygeneration.slang": {
-      "maxFiles": 134,
+      "maxFiles": 135,
       "maxBytes": 590000
     },
     "entry/realtime/branch_resolve.raygeneration.slang": {

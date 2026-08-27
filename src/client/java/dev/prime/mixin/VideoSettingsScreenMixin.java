@@ -16,6 +16,7 @@ import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
+import dev.prime.render.diagnostic.RrResponsivity;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -104,6 +105,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$options.diagnostics().rawOutput());
             list.addBig(this.prime$options.diagnostics().rendererImageView());
             list.addBig(this.prime$options.diagnostics().rrInputView());
+            list.addBig(this.prime$options.diagnostics().rrResponsivity());
             list.addBig(this.prime$options.diagnostics().nrdInputView());
             list.addBig(Button.builder(
                             Component.translatable("prime.options.open_repository"),
@@ -203,6 +205,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$options.diagnostics().rawOutput(), false);
         this.prime$refresh(this.prime$options.diagnostics().rendererImageView(), RendererImageView.OFF);
         this.prime$refresh(this.prime$options.diagnostics().rrInputView(), RrInputView.OFF);
+        this.prime$refresh(
+                this.prime$options.diagnostics().rrResponsivity(),
+                RrResponsivity.DEFAULT);
         this.prime$refresh(this.prime$options.diagnostics().nrdInputView(), NrdInputView.OFF);
     }
 
@@ -218,6 +223,9 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$refresh(
                     this.prime$options.diagnostics().rrInputView(),
                     runtime.rrInputView());
+            this.prime$refresh(
+                    this.prime$options.diagnostics().rrResponsivity(),
+                    runtime.rrResponsivity());
             this.prime$refresh(
                     this.prime$options.diagnostics().nrdInputView(),
                     runtime.nrdInputView());

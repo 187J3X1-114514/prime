@@ -6,6 +6,7 @@ import "prime_realtime_abi.slang";
 import "prime_abi_types.slang";
 import "contract/path.slang";
 import "math/sampling.slang";
+import "math/direct_sampling.slang";
 import "model/atmosphere/sky.slang";
 import "model/realtime/transport.slang";
 import "policy/runtime/config.slang";
@@ -168,9 +169,19 @@ public bool primeIntegrateRealtimeTailSurface(
             primeSampleIndex(),
             primePathBounce(path.control) + 1u);
     if (supportsSolidAngle) {
+        PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
+                primeWavefrontPixel(pathIndex),
+                primeSampleIndex(),
+                primeSampleEpoch(),
+                primePathBounce(path.control) + 1u,
+                uint(pathIndex >= primeWavefrontPixelCount()));
+        PrimeImmediateSecondarySunNee sunNee;
+        sunNee.directSample = directSample;
+        PrimeImmediateSecondaryAreaNee areaNee;
+        areaNee.directSample = directSample;
         float3 direct = path.throughput * primeEstimateDirectLighting(
-                PrimeImmediateSecondarySunNee(),
-                PrimeImmediateSecondaryAreaNee(),
+                sunNee,
+                areaNee,
                 context,
                 integrator,
                 surface,

@@ -255,6 +255,14 @@ public final class PrimeRuntime {
         this.session.setRrInputView(value);
     }
 
+    public float rrResponsivity() {
+        return this.session.controls().rrResponsivity();
+    }
+
+    public void setRrResponsivity(float value) {
+        this.session.setRrResponsivity(value);
+    }
+
     public NrdInputView nrdInputView() {
         return this.session.controls().imageDiagnostics().nrd();
     }

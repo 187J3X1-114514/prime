@@ -180,6 +180,50 @@ final class TracePipelinesContractTest {
     }
 
     @Test
+    void directSampleLutStaysInsideRealtimeDirectEntries() throws IOException {
+        List<String> directStages = List.of(
+                "visible_direct",
+                "landing_light_select",
+                "landing_direct",
+                "fixed_light_select",
+                "fixed_direct",
+                "tail");
+        List<String> unrelatedStages = List.of(
+                "camera_trace",
+                "surface_split",
+                "delta_walk",
+                "landing_scatter",
+                "fixed_bridge_trace",
+                "fixed_scatter",
+                "tail_admission",
+                "branch_resolve",
+                "noisy_output_resolve");
+        for (String suffix : List.of("", "_ser")) {
+            for (String stage : directStages) {
+                assertTrue(descriptorBindings(
+                                List.of(wavefrontShader("realtime", stage, suffix)), 0)
+                        .contains(ShaderAbi.DESCRIPTOR_DIRECT_SAMPLE_LUT));
+            }
+            for (String stage : unrelatedStages) {
+                assertFalse(descriptorBindings(
+                                List.of(wavefrontShader("realtime", stage, suffix)), 0)
+                        .contains(ShaderAbi.DESCRIPTOR_DIRECT_SAMPLE_LUT));
+            }
+            assertFalse(descriptorBindings(
+                            wavefrontShaders(
+                                    "offline",
+                                    suffix,
+                                    List.of(
+                                            "camera_surface_step",
+                                            "path_surface_step",
+                                            "area_shadow",
+                                            "sample_resolve")),
+                            0)
+                    .contains(ShaderAbi.DESCRIPTOR_DIRECT_SAMPLE_LUT));
+        }
+    }
+
+    @Test
     void raygenScheduleRejectsInvalidParallelMetadataAtItsBoundary() {
         assertThrows(IllegalArgumentException.class, () -> RaygenSchedule.of(
                 List.of("module"), new int[] {0}, new int[0]));

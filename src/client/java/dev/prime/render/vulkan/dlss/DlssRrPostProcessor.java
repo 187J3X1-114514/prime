@@ -6,6 +6,7 @@ import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.SunDirection;
 import dev.prime.render.diagnostic.RrInputView;
 import dev.prime.render.diagnostic.RendererImageView;
+import dev.prime.render.diagnostic.RrResponsivity;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
@@ -167,10 +168,12 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
             long sceneRevision,
             long textureRevision,
             boolean forceRestart,
-            RrInputView debugView) {
+            RrInputView debugView,
+            float responsivity) {
         requireOpen();
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(debugView, "debugView");
+        responsivity = RrResponsivity.requireValid(responsivity);
         SubmittedFrame<TemporalReconstructionState.Plan> temporal = this.history.plan(
                 new TemporalReconstructionState.Input(
                         camera,
@@ -183,7 +186,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 this,
                 temporal,
                 jitter,
-                debugView);
+                debugView,
+                responsivity);
     }
 
     @Override
@@ -196,7 +200,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 parameters.sceneRevision(),
                 parameters.textureRevision(),
                 parameters.forceRestart(),
-                debugSettings.images().rr());
+                debugSettings.images().rr(),
+                debugSettings.rrResponsivity());
     }
 
     public void prepareForRayTrace(
@@ -239,7 +244,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 temporal.historyCamera(),
                 token.jitter,
                 sunDirection,
-                sunRadianceMultiplier);
+                sunRadianceMultiplier,
+                token.responsivity);
         NrdCameraTransform.projectionForNrd(
                 temporal.camera().projection(), this.ngxProjection);
         this.feature.evaluate(
@@ -263,7 +269,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                         this.targets.viewZ(),
                         this.targets.motion(),
                         this.targets.specularMotion(),
-                        this.targets.specularHitDistance()));
+                        this.targets.specularHitDistance(),
+                        this.targets.responsivity()));
         allCommandsToCompute(commandBuffer);
         this.displayTransform.record(
                 commandBuffer,
@@ -400,6 +407,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         private final SubpixelJitter jitter;
         private final ReconstructionFrame semantic;
         private final RrInputView debugView;
+        private final float responsivity;
         private boolean recorded;
         private boolean submitted;
         private boolean abandoned;
@@ -408,13 +416,15 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 DlssRrPostProcessor owner,
                 SubmittedFrame<TemporalReconstructionState.Plan> temporal,
                 SubpixelJitter jitter,
-                RrInputView debugView) {
+                RrInputView debugView,
+                float responsivity) {
             this.owner = owner;
             this.temporal = temporal;
             this.jitter = jitter;
             this.semantic = new ReconstructionFrame(
                     temporal.plan().frameIndex(), jitter, temporal.plan().restart());
             this.debugView = debugView;
+            this.responsivity = responsivity;
         }
 
         @Override public ReconstructionFrame semantic() {

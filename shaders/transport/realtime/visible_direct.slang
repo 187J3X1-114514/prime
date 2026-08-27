@@ -9,7 +9,7 @@ import "service/bsdf/contract/sample.slang";
 import "contract/realtime/guide.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
-import "math/sampling.slang";
+import "math/direct_sampling.slang";
 import "model/material/defaults.slang";
 import "service/bsdf/dispatch/traits.slang";
 import "service/trace/context.slang";
@@ -47,18 +47,22 @@ public void primeShadeVisibleDirect(
         return;
     }
 
-    PrimePreparedSampleBase preparedSample =
-            primePreparePathSample(
-                    path.sampleSeed,
-                    primeSampleIndex(),
-                    primePathBounce(path.control) + 1u);
+    PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
+            pixel,
+            primeSampleIndex(),
+            primeSampleEpoch(),
+            primePathBounce(path.control) + 1u,
+            uint(recordIndex >= primeWavefrontPixelCount()));
     bool transparent = primeMaterialIsTransmissive(surface.materialControl);
 
-    PrimeDirectLightingSplit area = primeEstimatePrimaryNonsunDirect(
+    PrimeDirectLightingSplit area = primeEstimatePrimaryNonsunDirectSampled(
             context,
             surface,
             viewDirection,
-            preparedSample,
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY),
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_AREA_SECONDARY),
             volumeStack,
             transparent);
     area.diffuse *= path.throughput;
@@ -84,10 +88,8 @@ public void primeShadeVisibleDirect(
             integrator,
             surface,
             viewDirection,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_SUN),
             volumeStack,
             transparent);
     PrimeDirectLightingSplit direct = sun.lighting;

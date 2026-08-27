@@ -16,6 +16,7 @@ import dev.prime.render.SurfaceDetailMode;
 import dev.prime.render.diagnostic.NrdInputView;
 import dev.prime.render.diagnostic.RendererImageView;
 import dev.prime.render.diagnostic.RrInputView;
+import dev.prime.render.diagnostic.RrResponsivity;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.TerrainWorkerSettings;
@@ -77,6 +78,7 @@ public final class PrimeVideoOptions {
                         rawOutput(),
                         rendererImageView(diagnosticChanged),
                         rrInputView(diagnosticChanged),
+                        rrResponsivity(),
                         nrdInputView(diagnosticChanged)));
     }
 
@@ -300,6 +302,22 @@ public final class PrimeVideoOptions {
                     runtime.setRrInputView(value);
                     changed.run();
                 });
+    }
+
+    private static OptionInstance<Float> rrResponsivity() {
+        PrimeRuntime runtime = PrimeRuntime.instance();
+        return new OptionInstance<>(
+                "prime.options.debug.rr_responsivity",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.debug.rr_responsivity.tooltip")),
+                (caption, value) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(String.format(Locale.ROOT, "%+.2f", value))),
+                OptionInstance.UnitDouble.INSTANCE.xmap(
+                        RrResponsivity::fromSlider,
+                        RrResponsivity::toSlider),
+                runtime.rrResponsivity(),
+                runtime::setRrResponsivity);
     }
 
     private static OptionInstance<Integer> sunExposure() {
@@ -607,6 +625,7 @@ public final class PrimeVideoOptions {
             OptionInstance<Boolean> rawOutput,
             OptionInstance<RendererImageView> rendererImageView,
             OptionInstance<RrInputView> rrInputView,
+            OptionInstance<Float> rrResponsivity,
             OptionInstance<NrdInputView> nrdInputView) {
     }
 }

@@ -18,9 +18,10 @@ public PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         PrimePreparedSampleBase preparedSample,
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
-    AreaLightSample area = primeSampleAreaLight(
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
+    return primeEstimatePrimaryDirectAreaLightSampled(
+            context,
+            surface,
+            viewDirection,
             primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
@@ -28,7 +29,24 @@ public PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY));
+                    PRIME_SAMPLE_DIMENSION_SECONDARY),
+            volumeStack,
+            conditionalTransparentBranch);
+}
+
+public PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLightSampled(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float2 treeSample,
+        float2 positionSample,
+        PrimeOpenPbrVolumeStack volumeStack,
+        bool conditionalTransparentBranch) {
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            treeSample,
+            positionSample);
     return primeEstimatePrimaryDirectPreparedAreaLight(
             context,
             surface,
@@ -72,6 +90,24 @@ public PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
             surface,
             viewDirection,
             preparedSample,
+            volumeStack,
+            conditionalTransparentBranch);
+}
+
+public PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirectSampled(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float2 treeSample,
+        float2 positionSample,
+        PrimeOpenPbrVolumeStack volumeStack,
+        bool conditionalTransparentBranch) {
+    return primeEstimatePrimaryDirectAreaLightSampled(
+            context,
+            surface,
+            viewDirection,
+            treeSample,
+            positionSample,
             volumeStack,
             conditionalTransparentBranch);
 }

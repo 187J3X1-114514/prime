@@ -5,7 +5,7 @@ import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
-import "math/sampling.slang";
+import "math/direct_sampling.slang";
 import "model/atmosphere/sky.slang";
 import "policy/runtime/config.slang";
 import "service/light/sample.slang";
@@ -42,22 +42,20 @@ public void primeEvaluateFixedDirect(
         return;
     }
 
-    PrimePreparedSampleBase preparedSample = primePreparePathSample(
-            path.sampleSeed,
+    PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
+            pixel,
             primeSampleIndex(),
-            primePathBounce(path.control) + 1u);
-    float3 areaSample = primeSobolSample3D(
-            preparedSample,
-            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+            primeSampleEpoch(),
+            primePathBounce(path.control) + 1u,
+            uint(recordIndex >= primeWavefrontPixelCount()));
+    float2 areaSample = primeDirectSample2D(
+            directSample, PRIME_DIRECT_SAMPLE_AREA_PRIMARY);
     AreaLightSample area = primeSampleAreaLightSelection(
             surface.position,
             selection.area,
             areaSample.y,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY));
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_AREA_SECONDARY));
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
             primePush.sunDirection,
@@ -69,10 +67,8 @@ public void primeEvaluateFixedDirect(
             integrator,
             surface,
             viewDirection,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeDirectSample2D(
+                    directSample, PRIME_DIRECT_SAMPLE_SUN),
             volumeStack);
     direct += primeEstimateDirectPreparedAreaLight(
             context,

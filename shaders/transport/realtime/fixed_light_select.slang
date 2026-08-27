@@ -4,7 +4,7 @@ module "transport/realtime/fixed_light_select.slang";
 import "prime_abi_types.slang";
 import "contract/light_sample.slang";
 import "contract/path.slang";
-import "math/sampling.slang";
+import "math/direct_sampling.slang";
 import "policy/runtime/config.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/bsdf/dispatch/traits.slang";
@@ -26,8 +26,8 @@ public void primeSelectFixedLight(uint sourceQueue, uint launchIndex) {
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PrimeStagedLightSelection selection = primeDisabledStagedLightSelection();
     if (surface.hitKind == PRIME_HIT_SURFACE) {
-        PathState path = primeWavefrontPath(
-                primeWavefrontPixel(recordIndex), record);
+        uint2 pixel = primeWavefrontPixel(recordIndex);
+        PathState path = primeWavefrontPath(pixel, record);
         PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
         float3 viewDirection = -path.rayDirection;
         PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
@@ -35,17 +35,18 @@ public void primeSelectFixedLight(uint sourceQueue, uint launchIndex) {
         if (primeClosureSupports(
                 closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
             selection.area = primeInvalidAreaLightSelection();
-            PrimePreparedSampleBase preparedSample = primePreparePathSample(
-                    path.sampleSeed,
+            PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
+                    pixel,
                     primeSampleIndex(),
-                    primePathBounce(path.control) + 1u);
+                    primeSampleEpoch(),
+                    primePathBounce(path.control) + 1u,
+                    uint(recordIndex >= primeWavefrontPixelCount()));
             selection.area = primeSelectAreaLight(
                     surface.position,
                     primeAreaLightReceiverNormal(surface, viewDirection),
-                    primeSobolSample3D(
-                            preparedSample,
-                            PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                            PRIME_SAMPLE_DIMENSION_PRIMARY).x);
+                    primeDirectSample2D(
+                            directSample,
+                            PRIME_DIRECT_SAMPLE_AREA_PRIMARY).x);
         }
     }
     primeStoreStagedLightSelection(recordIndex, selection);

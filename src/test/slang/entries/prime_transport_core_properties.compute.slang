@@ -739,6 +739,69 @@ void primeCheckPointLightNodeMetric(
     result.third = float4(receiverNormal, 0.0);
 }
 
+void primeCheckLightLeafTargets(
+        inout PrimeTransportResult result,
+        uint count,
+        uint probe,
+        float4 first,
+        float4 second,
+        float4 third,
+        float4 fourth,
+        float2 scales)
+{
+    float2 metrics[PRIME_LIGHT_LEAF_MAX_ENTRIES] = {
+        first.xy, first.zw, second.xy, second.zw,
+        third.xy, third.zw, fourth.xy, fourth.zw
+    };
+    float weights[PRIME_LIGHT_LEAF_MAX_ENTRIES];
+    uint lastPositive;
+    float total = primeLightLeafTargetWeights(
+            metrics, count, weights, lastPositive);
+
+    float2 scaledMetrics[PRIME_LIGHT_LEAF_MAX_ENTRIES];
+    [[unroll]]
+    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
+        scaledMetrics[offset] = metrics[offset] * scales;
+    }
+    float scaledWeights[PRIME_LIGHT_LEAF_MAX_ENTRIES];
+    uint scaledLastPositive;
+    float scaledTotal = primeLightLeafTargetWeights(
+            scaledMetrics, count, scaledWeights, scaledLastPositive);
+
+    float probabilitySum = 0.0;
+    float scaledProbabilitySum = 0.0;
+    [[unroll]]
+    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
+        float probability = weights[offset] / total;
+        float scaledProbability = scaledWeights[offset] / scaledTotal;
+        primeTransportClassify(result.mask, float3(
+                weights[offset], probability, scaledProbability));
+        if (offset < count) {
+            probabilitySum += probability;
+            scaledProbabilitySum += scaledProbability;
+            if (probability < 0.0
+                    || !primeTestClose(
+                            probability, scaledProbability, 2.0e-7, 2.0e-6)) {
+                result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        } else if (weights[offset] != 0.0 || scaledWeights[offset] != 0.0) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+    }
+    if (!(total > 0.0) || !(scaledTotal > 0.0)
+            || lastPositive >= count || scaledLastPositive != lastPositive
+            || !primeTestClose(probabilitySum, 1.0, 2.0e-7, 2.0e-6)
+            || !primeTestClose(scaledProbabilitySum, 1.0, 2.0e-7, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    result.first = float4(
+            weights[probe], total, probabilitySum, float(lastPositive));
+    result.second = float4(
+            scaledWeights[probe], scaledTotal, scaledProbabilitySum,
+            float(scaledLastPositive));
+    result.third = float4(metrics[probe], scaledMetrics[probe]);
+}
+
 [numthreads(64, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -813,6 +876,16 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                 result, control, asuint(first), asuint(second.xy));
     } else if (kind == 16) {
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
+    } else if (kind == 17) {
+        primeCheckLightLeafTargets(
+                result,
+                control.y,
+                control.z,
+                first,
+                second,
+                third,
+                fourth,
+                fifth.xy);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

@@ -29,6 +29,10 @@ LightTreePick primePickLightTree(
         LightNode* nodes,
         LightLeaf* leaves,
         LightLeafEntry* entries,
+        SectionRecord* sections,
+        uint64_t emitterAddress,
+        uint entryLimit,
+        uint leafMode,
         uint root,
         float3 point,
         float3 receiverNormal,
@@ -42,8 +46,7 @@ LightTreePick primePickLightTree(
         if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
             uint leafIndex = childOrLeaf & PRIME_LIGHT_INDEX_MASK;
             LightLeaf leaf = leaves[leafIndex];
-            float totalPower = nodes[nodeIndex].centroidPower.w;
-            if (!(totalPower > 0.0) || leaf.entryCount == 0u
+            if (leaf.entryCount == 0u
                     || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
                 return primeInvalidLightTreePick();
             }
@@ -51,29 +54,54 @@ LightTreePick primePickLightTree(
                     (seed - lowerBound) / pdf,
                     0.0,
                     asfloat(0x3f7fffffu));
-            float entryLower = 0.0;
+            if (leaf.entryCount == 1u) {
+                LightLeafEntry entry = entries[leaf.firstEntry];
+                if (entry.index >= entryLimit) return primeInvalidLightTreePick();
+                LightTreePick result;
+                result.index = entry.index;
+                result.pdf = pdf;
+                result.remapped = localSeed;
+                result.valid = 1u;
+                return result;
+            }
+            float entryWeights[PRIME_LIGHT_LEAF_MAX_ENTRIES];
+            uint lastPositive;
+            float totalWeight = primeLoadLightLeafTargetWeights(
+                    leaf,
+                    entries,
+                    sections,
+                    emitterAddress,
+                    entryLimit,
+                    leafMode,
+                    point,
+                    receiverNormal,
+                    entryWeights,
+                    lastPositive);
+            if (!(totalWeight > 0.0)) return primeInvalidLightTreePick();
+            float targetWeight = localSeed * totalWeight;
+            float lowerWeight = 0.0;
             [[unroll]]
             for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
                 if (offset >= leaf.entryCount) break;
                 LightLeafEntry entry = entries[leaf.firstEntry + offset];
-                float entryProbability = entry.power / totalPower;
-                float entryUpper = entryLower + entryProbability;
-                bool selected = localSeed < entryUpper || offset + 1u == leaf.entryCount;
+                float entryWeight = entryWeights[offset];
+                float upperWeight = lowerWeight + entryWeight;
+                bool selected = targetWeight < upperWeight || offset == lastPositive;
                 if (selected) {
-                    if (!(entryProbability > 0.0)) {
+                    if (!(entryWeight > 0.0)) {
                         return primeInvalidLightTreePick();
                     }
                     LightTreePick result;
                     result.index = entry.index;
-                    result.pdf = pdf * entryProbability;
+                    result.pdf = pdf * (entryWeight / totalWeight);
                     result.remapped = clamp(
-                            (localSeed - entryLower) / entryProbability,
+                            (targetWeight - lowerWeight) / entryWeight,
                             0.0,
                             asfloat(0x3f7fffffu));
                     result.valid = 1u;
                     return result;
                 }
-                entryLower = entryUpper;
+                lowerWeight = upperWeight;
             }
             return primeInvalidLightTreePick();
         }
@@ -130,6 +158,10 @@ public AreaLightSelection primeSelectAreaLight(
             worldNodes,
             worldLeaves,
             worldEntries,
+            sections,
+            uint64_t(0),
+            PRIME_NO_LIGHT_INDEX,
+            PRIME_LIGHT_LEAF_WORLD,
             0u,
             surfacePosition,
             receiverNormal,
@@ -146,6 +178,10 @@ public AreaLightSelection primeSelectAreaLight(
             (LightNode*)sectionBuffer[0].nodeAddress,
             (LightLeaf*)sectionBuffer[0].leafAddress,
             (LightLeafEntry*)sectionBuffer[0].entryAddress,
+            sections,
+            sectionBuffer[0].emitterAddress,
+            sectionBuffer[0].emitterCount,
+            PRIME_LIGHT_LEAF_EMITTER,
             sectionBuffer[0].root,
             surfacePosition - sections[worldPick.index].translation,
             receiverNormal,

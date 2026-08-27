@@ -60,7 +60,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 17;
+        int kinds = 18;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -564,7 +564,7 @@ final class PrimeProductionMathGpuTest {
                             0.0F);
                 } else if (kind == 12) {
                     putLightEmissionBoundCase(input, index, words, local, random);
-                } else if (kind == 13 || kind == 17) {
+                } else if (kind == 13) {
                     float[] point = {
                         random.nextFloat() * 128.0F - 64.0F,
                         random.nextFloat() * 128.0F - 64.0F,
@@ -698,6 +698,8 @@ final class PrimeProductionMathGpuTest {
                                     + (geometry == 1 ? 0 : cutoutPrimitiveCount);
                     putInt(input, index, words, 2, 0, transmissiveMacroBase);
                     putInt(input, index, words, 2, 1, expectedPrimitive);
+                } else if (kind == 17) {
+                    putLightLeafTargetCase(input, index, words, local, random);
                 } else {
                     putVec4(
                             input,
@@ -712,6 +714,49 @@ final class PrimeProductionMathGpuTest {
             }
         }
         return input;
+    }
+
+    private static void putLightLeafTargetCase(
+            ByteBuffer input,
+            int index,
+            int words,
+            int local,
+            SplittableRandom random) {
+        int count = 1 + local % 8;
+        int probe = (local / 8) % count;
+        putInt(input, index, words, 0, 1, count);
+        putInt(input, index, words, 0, 2, probe);
+        for (int entry = 0; entry < 8; entry++) {
+            float distanceSquared = positiveFloat(random, -16, 16);
+            if ((local & 31) == 0 && entry < count) {
+                distanceSquared = entry == probe ? 0.0F : distanceSquared;
+            }
+            float power = positiveFloat(random, -16, 16);
+            int component = entry * 2;
+            putFloat(
+                    input,
+                    index,
+                    words,
+                    1 + component / 4,
+                    component % 4,
+                    distanceSquared);
+            putFloat(
+                    input,
+                    index,
+                    words,
+                    1 + component / 4,
+                    component % 4 + 1,
+                    power);
+        }
+        putVec4(
+                input,
+                index,
+                words,
+                5,
+                powerOfTwo(random.nextInt(-8, 9)),
+                powerOfTwo(random.nextInt(-8, 9)),
+                0.0F,
+                0.0F);
     }
 
     private static void putLightEmissionBoundCase(

@@ -9,7 +9,8 @@ import "service/light/emission.slang";
 public static const uint PRIME_LIGHT_LEAF_FLAG = 0x80000000u;
 public static const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
 public static const uint PRIME_LIGHT_TREE_MAX_DEPTH = 27u;
-public static const uint PRIME_LIGHT_LEAF_MAX_ENTRIES = 8u;
+public static const uint PRIME_LIGHT_LEAF_WORLD = 0u;
+public static const uint PRIME_LIGHT_LEAF_EMITTER = 1u;
 
 public LightNode* primeWorldLightNodes(uint64_t worldLightAddress) {
     return (LightNode*)worldLightAddress;
@@ -123,4 +124,71 @@ public float2 primeLoadEmitterMetrics(
             entry.power,
             point,
             receiverNormal);
+}
+
+bool primeLoadWorldLeafEntryMetrics(
+        SectionRecord* sections,
+        LightLeafEntry entry,
+        float3 point,
+        float3 receiverNormal,
+        out float2 metrics) {
+    SectionRecord section = sections[entry.index];
+    if (section.lightAddress == uint64_t(0)) {
+        metrics = float2(0.0);
+        return false;
+    }
+    SectionLightHeader* header = (SectionLightHeader*)section.lightAddress;
+    if (header[0].nodeAddress == uint64_t(0) || header[0].emitterCount == 0u) {
+        metrics = float2(0.0);
+        return false;
+    }
+    metrics = primeLoadLightNodeMetrics(
+            (LightNode*)header[0].nodeAddress,
+            header[0].root,
+            point - section.translation,
+            receiverNormal);
+    return true;
+}
+
+// A leaf has at most eight entries. Internal nodes use the same target family at their centroids;
+// the terminal world leaf resolves each section root and the terminal section leaf resolves the
+// actual emitter bounds. This is still a light proposal: OpenPBR evaluation remains independent.
+public float primeLoadLightLeafTargetWeights(
+        LightLeaf leaf,
+        LightLeafEntry* entries,
+        SectionRecord* sections,
+        uint64_t emitterAddress,
+        uint entryLimit,
+        uint leafMode,
+        float3 point,
+        float3 receiverNormal,
+        out float weights[PRIME_LIGHT_LEAF_MAX_ENTRIES],
+        out uint lastPositive) {
+    [[unroll]]
+    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
+        weights[offset] = 0.0;
+    }
+    lastPositive = 0u;
+    LightEmitter* emitters = (LightEmitter*)emitterAddress;
+    float2 metrics[PRIME_LIGHT_LEAF_MAX_ENTRIES];
+    [[unroll]]
+    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
+        if (offset >= leaf.entryCount) break;
+        LightLeafEntry entry = entries[leaf.firstEntry + offset];
+        if (entry.index >= entryLimit) return 0.0;
+        bool valid;
+        if (leafMode == PRIME_LIGHT_LEAF_WORLD) {
+            valid = primeLoadWorldLeafEntryMetrics(
+                    sections, entry, point, receiverNormal, metrics[offset]);
+        } else if (leafMode == PRIME_LIGHT_LEAF_EMITTER) {
+            metrics[offset] = primeLoadEmitterMetrics(
+                    emitters, entry, point, receiverNormal);
+            valid = true;
+        } else {
+            return 0.0;
+        }
+        if (!valid) return 0.0;
+    }
+    return primeLightLeafTargetWeights(
+            metrics, leaf.entryCount, weights, lastPositive);
 }

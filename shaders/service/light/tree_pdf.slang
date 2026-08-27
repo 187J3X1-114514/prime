@@ -13,6 +13,10 @@ public float primeLightTreeSelectionPdf(
         LightNode* nodes,
         LightLeaf* leaves,
         LightLeafEntry* entries,
+        SectionRecord* sections,
+        uint64_t emitterAddress,
+        uint entryLimit,
+        uint leafMode,
         uint root,
         uint packedPath,
         uint expectedIndex,
@@ -54,16 +58,35 @@ public float primeLightTreeSelectionPdf(
     uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
     if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) == 0u) return 0.0;
     LightLeaf leaf = leaves[childOrLeaf & PRIME_LIGHT_INDEX_MASK];
-    float totalPower = nodes[nodeIndex].centroidPower.w;
-    if (!(totalPower > 0.0) || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
+    if (leaf.entryCount == 0u
+            || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
         return 0.0;
     }
+    if (leaf.entryCount == 1u) {
+        LightLeafEntry entry = entries[leaf.firstEntry];
+        return entry.index == expectedIndex && entry.index < entryLimit ? pdf : 0.0;
+    }
+    float entryWeights[PRIME_LIGHT_LEAF_MAX_ENTRIES];
+    uint lastPositive;
+    float totalWeight = primeLoadLightLeafTargetWeights(
+            leaf,
+            entries,
+            sections,
+            emitterAddress,
+            entryLimit,
+            leafMode,
+            point,
+            receiverNormal,
+            entryWeights,
+            lastPositive);
+    if (!(totalWeight > 0.0)) return 0.0;
     [[unroll]]
     for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
         if (offset >= leaf.entryCount) break;
         LightLeafEntry entry = entries[leaf.firstEntry + offset];
         if (entry.index == expectedIndex) {
-            return entry.power > 0.0 ? pdf * entry.power / totalPower : 0.0;
+            float entryWeight = entryWeights[offset];
+            return entryWeight > 0.0 ? pdf * entryWeight / totalWeight : 0.0;
         }
     }
     return 0.0;

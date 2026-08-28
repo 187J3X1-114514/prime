@@ -6,7 +6,7 @@ record WavefrontLayout(
         int queueEntriesPerPixel,
         int queueStorageEntriesPerPixel,
         int pathRecordSize,
-        int areaRecordSize,
+        int scratchRecordSize,
         int queueCount,
         int commandStride,
         int indexSize,
@@ -27,19 +27,19 @@ record WavefrontLayout(
 
     long queueBytes(int width, int height) {
         long pixels = pixels(width, height);
-        long areas = Math.multiplyExact(pixels, this.areaRecordSize);
+        long scratch = Math.multiplyExact(pixels, this.scratchRecordSize);
         long commands = Math.multiplyExact(this.queueCount, this.commandStride);
         long indices = Math.multiplyExact(
                 Math.multiplyExact(pixels, this.queueStorageEntriesPerPixel),
                 this.indexSize);
-        return Math.addExact(areas, Math.addExact(commands, indices));
+        return Math.addExact(scratch, Math.addExact(commands, indices));
     }
 
     long queueCommandOffset(int width, int height) {
         long pixels = pixels(width, height);
         return Math.addExact(
                 queueOffset(width, height),
-                Math.multiplyExact(pixels, this.areaRecordSize));
+                Math.multiplyExact(pixels, this.scratchRecordSize));
     }
 
     void validateRanges(int width, int height, long maximumRange) {

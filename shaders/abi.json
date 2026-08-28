@@ -270,9 +270,10 @@
     "activeMask": "0x1"
   },
   "offlineWavefrontContract": {
-    "pathRecordSize": 176,
+    "pathRecordSize": 128,
     "pathSlotsPerPixel": 1,
-    "areaRecordSize": 0,
+    "surfaceRecordSize": 92,
+    "stageRecordSize": 104,
     "queueEntriesPerPixel": 1,
     "queueStorageEntriesPerPixel": 2,
     "queueCount": 2,

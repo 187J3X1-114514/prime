@@ -74,11 +74,17 @@ final class TracePipelinesContractTest {
                 () -> RealtimeRayTracingPipeline.dispatchCount(9));
         assertEquals(24, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(4, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(25, OfflineRayTracingPipeline.dispatchCount(12));
-        assertEquals(3, OfflineRayTracingPipeline.dispatchCount(1));
-        assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
+        assertEquals(10, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(6, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(49, OfflineRayTracingPipeline.dispatchCount(12));
+        assertEquals(5, OfflineRayTracingPipeline.dispatchCount(1));
+        assertEquals(257, OfflineRayTracingPipeline.dispatchCount(64));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OfflineRayTracingPipeline.dispatchCount(0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OfflineRayTracingPipeline.dispatchCount(65));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(List.of(
@@ -99,12 +105,12 @@ final class TracePipelinesContractTest {
                 .map(RealtimeRayTracingPipeline::raygenControl)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 1, 2, 2, 3), java.util.stream.IntStream
+        assertEquals(List.of(0, 1, 2, 3, 4, 1, 2, 3, 4, 5), java.util.stream.IntStream
                 .range(0, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(OfflineRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 257, 2, 258, 4), java.util.stream.IntStream
+        assertEquals(List.of(0, 0, 0, 0, 0, 1, 1, 1, 1, 0), java.util.stream.IntStream
                 .range(0, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(OfflineRayTracingPipeline::raygenControl)
                 .boxed()
@@ -162,6 +168,31 @@ final class TracePipelinesContractTest {
                 realtime.moduleResource(12));
         assertEquals(11, RealtimeRayTracingPipeline.dispatchCount(1));
         assertEquals(39, RealtimeRayTracingPipeline.dispatchCount(8));
+    }
+
+    @Test
+    void offlineScheduleKeepsItsFourStageGroupsAndResources() {
+        RaygenSchedule offline = OfflineGroups.schedule("_ser.rgen.spv");
+        assertEquals(OfflineGroups.MODULE_COUNT, offline.moduleCount());
+        assertEquals(OfflineGroups.GROUP_COUNT, offline.groupCount());
+        assertEquals(
+                "/prime/shaders/offline_wavefront_camera_trace_ser.rgen.spv",
+                offline.moduleResource(0));
+        assertEquals(
+                "/prime/shaders/offline_wavefront_bridge_trace_ser.rgen.spv",
+                offline.moduleResource(1));
+        assertEquals(
+                "/prime/shaders/offline_wavefront_light_select.rgen.spv",
+                offline.moduleResource(2));
+        assertEquals(
+                "/prime/shaders/offline_wavefront_direct_ser.rgen.spv",
+                offline.moduleResource(3));
+        assertEquals(
+                "/prime/shaders/offline_wavefront_scatter_ser.rgen.spv",
+                offline.moduleResource(4));
+        assertEquals(
+                "/prime/shaders/offline_wavefront_sample_resolve.rgen.spv",
+                offline.moduleResource(5));
     }
 
     @Test
@@ -232,9 +263,11 @@ final class TracePipelinesContractTest {
                             "offline",
                             suffix,
                             List.of(
-                                    "camera_surface_step",
-                                    "path_surface_step",
-                                    "area_shadow",
+                                    "camera_trace",
+                                    "bridge_trace",
+                                    "light_select",
+                                    "direct",
+                                    "scatter",
                                     "sample_resolve")),
                     1);
             assertEquals(Set.of(
@@ -256,9 +289,11 @@ final class TracePipelinesContractTest {
                             "offline",
                             suffix,
                             List.of(
-                                    "camera_surface_step",
-                                    "path_surface_step",
-                                    "area_shadow",
+                                    "camera_trace",
+                                    "bridge_trace",
+                                    "light_select",
+                                    "direct",
+                                    "scatter",
                                     "sample_resolve")),
                     0);
             assertFalse(offline.contains(ShaderAbi.DESCRIPTOR_REALTIME_STBN));
@@ -334,17 +369,30 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "visible_direct", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
-                    Set.of(tracePayload, shadowPayload),
+                    Set.of(tracePayload),
                     payloadShapes(
-                            wavefrontShader("offline", "camera_surface_step", suffix),
+                            wavefrontShader("offline", "camera_trace", suffix),
                             STORAGE_RAY_PAYLOAD));
-            for (String stage : List.of("path_surface_step")) {
-                Set<String> payloads = payloadShapes(
-                        wavefrontShader("offline", stage, suffix),
-                        STORAGE_RAY_PAYLOAD);
-                assertTrue(payloads.contains(tracePayload), "offline " + stage + suffix);
-                assertTrue(payloads.contains(shadowPayload), "offline " + stage + suffix);
-            }
+            assertEquals(
+                    Set.of(tracePayload),
+                    payloadShapes(
+                            wavefrontShader("offline", "bridge_trace", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader("offline", "light_select", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader("offline", "direct", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(),
+                    payloadShapes(
+                            wavefrontShader("offline", "scatter", suffix),
+                            STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(),
                     payloadShapes(
@@ -361,11 +409,6 @@ final class TracePipelinesContractTest {
                     payloadShapes(
                             wavefrontShader(
                                     "realtime", "noisy_output_resolve", suffix),
-                            STORAGE_RAY_PAYLOAD));
-            assertEquals(
-                    Set.of(shadowPayload),
-                    payloadShapes(
-                            wavefrontShader("offline", "area_shadow", suffix),
                             STORAGE_RAY_PAYLOAD));
         }
     }
@@ -419,13 +462,39 @@ final class TracePipelinesContractTest {
     }
 
     @Test
+    void offlineStagesCompactOnlyAtScatter() throws IOException {
+        Set<Integer> scatter = parse(
+                wavefrontShader("offline", "scatter", "_ser")).opcodes;
+        assertTrue(scatter.contains(OP_GROUP_NON_UNIFORM_ELECT));
+        assertTrue(scatter.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
+        assertTrue(scatter.contains(OP_GROUP_NON_UNIFORM_BALLOT));
+        assertTrue(scatter.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
+
+        for (String suffix : List.of("", "_ser")) {
+            for (String stage : List.of(
+                    "camera_trace", "bridge_trace", "light_select", "direct")) {
+                Set<Integer> opcodes = parse(
+                        wavefrontShader("offline", stage, suffix)).opcodes;
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_ELECT), stage + suffix);
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST), stage + suffix);
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_BALLOT), stage + suffix);
+                assertFalse(opcodes.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT), stage + suffix);
+            }
+        }
+    }
+
+    @Test
     void wavefrontBackingHasDeclaredFourKSize() {
         assertEquals(4_080_844_896L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
-        assertEquals(1_526_169_632L,
+        assertEquals(1_990_656_032L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));
+        assertEquals(928_972_832L,
+                OfflineRayTracingPipeline.queueBytes(3840, 2160));
+        assertEquals(1_924_300_800L,
+                OfflineRayTracingPipeline.queueCommandOffset(3840, 2160));
         assertEquals(
-                1455.4687805175781,
+                1898.4375305175781,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160)
                         / (1024.0 * 1024.0));
         assertThrows(
@@ -474,7 +543,11 @@ final class TracePipelinesContractTest {
                     ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
                     ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
             assertRecordStride(
-                    wavefrontShader("offline", "path_surface_step", suffix),
+                    wavefrontShader("offline", "direct", suffix),
+                    ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS,
+                    ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE);
+            assertRecordStride(
+                    wavefrontShader("offline", "scatter", suffix),
                     ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS,
                     ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE);
         }
@@ -494,6 +567,8 @@ final class TracePipelinesContractTest {
                                 && "noisy_output_resolve".equals(stage))
                         || ("offline".equals(renderer)
                                 && "sample_resolve".equals(stage))
+                        || ("offline".equals(renderer)
+                                && "light_select".equals(stage))
                         || ("realtime".equals(renderer) && "visible_direct".equals(stage)))) {
             suffix = "";
         }

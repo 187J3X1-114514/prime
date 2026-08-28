@@ -203,11 +203,15 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							[compile: [''], alias: ['_ser': '']],
 					'realtime_wavefront_noisy_output_resolve':
 							[compile: [''], alias: ['_ser': '']],
-					'offline_wavefront_camera_surface_step':
+					'offline_wavefront_camera_trace':
 							[compile: ['', '_ser'], alias: [:]],
-					'offline_wavefront_path_surface_step':
+					'offline_wavefront_bridge_trace':
 							[compile: ['', '_ser'], alias: [:]],
-					'offline_wavefront_area_shadow':
+					'offline_wavefront_light_select':
+							[compile: [''], alias: ['_ser': '']],
+					'offline_wavefront_direct':
+							[compile: ['', '_ser'], alias: [:]],
+					'offline_wavefront_scatter':
 							[compile: ['', '_ser'], alias: [:]],
 					'offline_wavefront_sample_resolve':
 							[compile: [''], alias: ['_ser': '']]

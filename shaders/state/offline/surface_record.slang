@@ -1,0 +1,77 @@
+#language slang 2026
+module "state/offline/surface_record.slang";
+
+import "prime_abi_types.slang";
+
+// Raw uint lanes make retained f32 fields and the packed source identity bit-exact across stages.
+public struct PrimeOfflineSurfaceScratch {
+    public uint4 geometry;
+    public uint4 identity;
+    public uint4 baseOpacity;
+    public uint4 materialAdjacentX;
+    public uint4 adjacentPositionX;
+    public uint3 positionYzMotion;
+};
+
+public PrimeOfflineSurfaceScratch primePackOfflineSurfaceScratch(
+        SurfaceInteraction surface) {
+    PrimeOfflineSurfaceScratch scratch;
+    scratch.geometry = uint4(
+            asuint(surface.t),
+            asuint(surface.geometricNormal.x),
+            asuint(surface.geometricNormal.y),
+            asuint(surface.geometricNormal.z));
+    scratch.identity = uint4(
+            surface.hitKind,
+            surface.materialControl,
+            surface.sectionIndex,
+            surface.emitterIndex);
+    scratch.baseOpacity = uint4(
+            asuint(surface.baseColor.x),
+            asuint(surface.baseColor.y),
+            asuint(surface.baseColor.z),
+            asuint(surface.opacity));
+    scratch.materialAdjacentX = uint4(
+            surface.shadingNormal,
+            asuint(surface.roughness),
+            surface.opticalControl,
+            asuint(surface.adjacentBaseColor.x));
+    scratch.adjacentPositionX = uint4(
+            asuint(surface.adjacentBaseColor.y),
+            asuint(surface.adjacentBaseColor.z),
+            surface.adjacentInterfaceControl,
+            asuint(surface.position.x));
+    scratch.positionYzMotion = uint3(
+            asuint(surface.position.y),
+            asuint(surface.position.z),
+            surface.motionZFlags);
+    return scratch;
+}
+
+public SurfaceInteraction primeUnpackOfflineSurfaceScratch(
+        PrimeOfflineSurfaceScratch scratch) {
+    SurfaceInteraction surface;
+    surface.t = asfloat(scratch.geometry.x);
+    surface.geometricNormal = asfloat(scratch.geometry.yzw);
+    surface.hitKind = scratch.identity.x;
+    surface.materialControl = scratch.identity.y;
+    surface.sectionIndex = scratch.identity.z;
+    surface.emitterIndex = scratch.identity.w;
+    surface.baseColor = asfloat(scratch.baseOpacity.xyz);
+    surface.textureLod = 0.0;
+    surface.opacity = asfloat(scratch.baseOpacity.w);
+    surface.shadingNormal = scratch.materialAdjacentX.x;
+    surface.roughness = asfloat(scratch.materialAdjacentX.y);
+    surface.opticalControl = scratch.materialAdjacentX.z;
+    surface.motionZFlags = scratch.positionYzMotion.z;
+    surface.adjacentBaseColor = float3(
+            asfloat(scratch.materialAdjacentX.w),
+            asfloat(scratch.adjacentPositionX.x),
+            asfloat(scratch.adjacentPositionX.y));
+    surface.adjacentInterfaceControl = scratch.adjacentPositionX.z;
+    surface.position = float3(
+            asfloat(scratch.adjacentPositionX.w),
+            asfloat(scratch.positionYzMotion.x),
+            asfloat(scratch.positionYzMotion.y));
+    return surface;
+}

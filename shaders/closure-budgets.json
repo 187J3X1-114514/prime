@@ -49,21 +49,29 @@
       "maxFiles": 6,
       "maxBytes": 16766
     },
-    "entry/offline/area_shadow.raygeneration.slang": {
-      "maxFiles": 128,
-      "maxBytes": 472785
+    "entry/offline/bridge_trace.raygeneration.slang": {
+      "maxFiles": 44,
+      "maxBytes": 154000
     },
-    "entry/offline/camera_surface_step.raygeneration.slang": {
-      "maxFiles": 136,
-      "maxBytes": 508500
+    "entry/offline/camera_trace.raygeneration.slang": {
+      "maxFiles": 42,
+      "maxBytes": 153500
+    },
+    "entry/offline/direct.raygeneration.slang": {
+      "maxFiles": 117,
+      "maxBytes": 443000
+    },
+    "entry/offline/light_select.raygeneration.slang": {
+      "maxFiles": 69,
+      "maxBytes": 206000
     },
     "entry/offline/sample_resolve.raygeneration.slang": {
       "maxFiles": 19,
       "maxBytes": 91555
     },
-    "entry/offline/path_surface_step.raygeneration.slang": {
-      "maxFiles": 135,
-      "maxBytes": 506000
+    "entry/offline/scatter.raygeneration.slang": {
+      "maxFiles": 97,
+      "maxBytes": 321000
     },
     "entry/post/auto_exposure_histogram.compute.slang": {
       "maxFiles": 3,

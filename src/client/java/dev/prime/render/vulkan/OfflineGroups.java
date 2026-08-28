@@ -1,13 +1,21 @@
 package dev.prime.render.vulkan;
 
-/** Offline camera/path/area/output group order. */
+/** Offline four-stage transport topology. */
 final class OfflineGroups {
-    static final int CAMERA_SURFACE_STEP = 0;
-    static final int SAMPLE_RESOLVE = 5;
-    static final int GROUP_COUNT = 6;
-    static final int MODULE_COUNT = 4;
-    private static final int[] MODULES = {0, 1, 1, 2, 2, 3};
-    private static final int[] CONTROLS = {0, 1, 257, 2, 258, 4};
+    static final int CAMERA_TRACE = 0;
+    static final int BRIDGE_TRACE_0 = 1;
+    static final int LIGHT_SELECT_0 = 2;
+    static final int DIRECT_0 = 3;
+    static final int SCATTER_0 = 4;
+    static final int BRIDGE_TRACE_1 = 5;
+    static final int LIGHT_SELECT_1 = 6;
+    static final int DIRECT_1 = 7;
+    static final int SCATTER_1 = 8;
+    static final int SAMPLE_RESOLVE = 9;
+    static final int GROUP_COUNT = 10;
+    static final int MODULE_COUNT = 6;
+    private static final int[] MODULES = {0, 1, 2, 3, 4, 1, 2, 3, 4, 5};
+    private static final int[] CONTROLS = {0, 0, 0, 0, 0, 1, 1, 1, 1, 0};
 
     private OfflineGroups() {
     }
@@ -29,12 +37,20 @@ final class OfflineGroups {
         return CONTROLS[group];
     }
 
-    static int pathSurfaceStep(int queue) {
-        return queued(queue, 1, 2);
+    static int bridgeTrace(int queue) {
+        return queued(queue, BRIDGE_TRACE_0, BRIDGE_TRACE_1);
     }
 
-    static int areaShadow(int queue) {
-        return queued(queue, 3, 4);
+    static int lightSelect(int queue) {
+        return queued(queue, LIGHT_SELECT_0, LIGHT_SELECT_1);
+    }
+
+    static int direct(int queue) {
+        return queued(queue, DIRECT_0, DIRECT_1);
+    }
+
+    static int scatter(int queue) {
+        return queued(queue, SCATTER_0, SCATTER_1);
     }
 
     private static int queued(int queue, int first, int second) {

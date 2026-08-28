@@ -6,15 +6,15 @@ import "prime_offline_abi.slang";
 import "policy/queue/wavefront.slang";
 import "state/offline/contract.slang";
 import "state/offline/index.slang";
+import "state/offline/queue_layout.slang";
 
 public uint primeOfflineQueueCommandWord(uint queue) {
-    return queue * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u);
+    return primeOfflineQueueCommandWord(primeOfflinePixelCount(), queue);
 }
 
 public uint primeOfflineQueueWord(uint queue, uint entry) {
-    uint commandWords = PRIME_WAVEFRONT_QUEUE_COUNT
-            * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u);
-    return commandWords + queue * primeOfflinePixelCount() + entry;
+    return primeOfflineQueueWord(
+            primeOfflinePixelCount(), queue, entry);
 }
 
 public uint primeOfflineQueuedPath(uint queue, uint entry) {

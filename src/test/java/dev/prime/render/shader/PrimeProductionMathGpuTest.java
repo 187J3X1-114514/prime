@@ -61,7 +61,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 18;
+        int kinds = 20;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -701,6 +701,28 @@ final class PrimeProductionMathGpuTest {
                     putInt(input, index, words, 2, 1, expectedPrimitive);
                 } else if (kind == 17) {
                     putLightBranchTargetCase(input, index, words, local, random);
+                } else if (kind == 18) {
+                    putInt(input, index, words, 0, 1, random.nextInt());
+                    putInt(input, index, words, 0, 2, random.nextInt());
+                    putInt(input, index, words, 0, 3, random.nextInt());
+                    for (int word = 1; word < words; word++) {
+                        for (int component = 0; component < 4; component++) {
+                            putInt(
+                                    input,
+                                    index,
+                                    words,
+                                    word,
+                                    component,
+                                    random.nextInt());
+                        }
+                    }
+                } else if (kind == 19) {
+                    int pixelCount = random.nextInt(1, 8_294_401);
+                    int queue = local & 1;
+                    int entry = random.nextInt(pixelCount);
+                    putInt(input, index, words, 0, 1, pixelCount);
+                    putInt(input, index, words, 0, 2, queue);
+                    putInt(input, index, words, 0, 3, entry);
                 } else {
                     putVec4(
                             input,

@@ -33,7 +33,7 @@ cutout、透明边界和微小位移几何都必须正常参与遍历。
 
 ## 3. 阴影线段端点
 
-Area NEE 的阴影请求保存：
+Area NEE 的阴影连接使用：
 
 - 源图元身份 `(sectionIndex, globalTriangleIndex)`；
 - 目标发光体身份 `(sectionIndex, emitterIndex)`；
@@ -41,7 +41,7 @@ Area NEE 的阴影请求保存：
 
 阴影遍历使用 `tMin = 0` 和完整 `tMax`。any-hit 只忽略精确源语义图元和精确目标 emitter，
 不缩短线段，也不扩大忽略范围。线段中的其他不透明面、cutout、透明界面和参与吸收的介质
-边界必须保留。这一规则同时适用于实时立即阴影和离线 deferred Area 阴影。
+边界必须保留。这一规则同时适用于实时阴影和离线 Direct 阶段的立即阴影。
 
 太阳没有有限目标 emitter，但仍携带源图元身份并采用相同的起点规则。阴影的 Beer-Lambert
 累计、边界绕数和遮挡距离都作用于真实物理线段，不能通过端点偏移“修正”结果。

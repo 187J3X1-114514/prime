@@ -150,9 +150,12 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime realtime scheduler must preserve its execution-mode queue ABI')
 		}
-		if (offlineWavefrontContract.pathRecordSize != 176
+		if (offlineWavefrontContract.pathRecordSize != 128
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
-				|| offlineWavefrontContract.areaRecordSize != 0
+				|| offlineWavefrontContract.surfaceRecordSize != 92
+				|| offlineWavefrontContract.stageRecordSize != 104
+				|| offlineWavefrontContract.stageRecordSize
+						!= offlineWavefrontContract.surfaceRecordSize + 12
 				|| offlineWavefrontContract.queueEntriesPerPixel != 1
 				|| offlineWavefrontContract.queueStorageEntriesPerPixel != 2
 				|| offlineWavefrontContract.queueCount != 2
@@ -160,7 +163,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| offlineWavefrontContract.queueIndexSize != 4
 				|| !offlineWavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
-					'Prime offline scheduler must preserve its single-slot 176-byte queue ABI')
+					'Prime offline scheduler must preserve its single-slot four-stage queue ABI')
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
 				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')
@@ -371,6 +374,8 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
     public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
     public static final int OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
+    public static final int OFFLINE_WAVEFRONT_SURFACE_RECORD_SIZE = ${offlineWavefrontContract.surfaceRecordSize};
+    public static final int OFFLINE_WAVEFRONT_STAGE_RECORD_SIZE = ${offlineWavefrontContract.stageRecordSize};
     public static final int OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
     public static final int OFFLINE_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueStorageEntriesPerPixel};
     public static final int OFFLINE_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
@@ -832,7 +837,8 @@ public static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDesc
 public static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
 public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
 public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
-public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${offlineWavefrontContract.areaRecordSize};
+public static const uint PRIME_OFFLINE_WAVEFRONT_SURFACE_RECORD_SIZE = ${offlineWavefrontContract.surfaceRecordSize};
+public static const uint PRIME_OFFLINE_WAVEFRONT_STAGE_RECORD_SIZE = ${offlineWavefrontContract.stageRecordSize};
 public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueStorageEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};

@@ -1,4 +1,6 @@
 #include "core/prime_test_abi.slang"
+import "prime_offline_abi.slang";
+import "prime_abi_types.slang";
 import "service/bsdf/contract/sample.slang";
 import "math/color_space.slang";
 import "math/light_receiver.slang";
@@ -7,6 +9,8 @@ import "math/transport.slang";
 import "math/packed_geometry.slang";
 import "model/material/transparent.slang";
 import "state/realtime/medium.slang";
+import "state/offline/queue_layout.slang";
+import "state/offline/surface_record.slang";
 
 import "bsdf/compact/contract/volume.slang";
 import "contract/path.slang";
@@ -696,6 +700,84 @@ void primeCheckLightBranchTargets(
     result.third = float4(scaledFirst, scaledSecond);
 }
 
+void primeCheckOfflineSurfaceScratch(
+        inout PrimeTransportResult result,
+        uint4 control,
+        float4 first,
+        float4 second,
+        float4 third,
+        float4 fourth,
+        float4 fifth)
+{
+    SurfaceInteraction surface;
+    surface.t = first.x;
+    surface.geometricNormal = first.yzw;
+    surface.hitKind = PRIME_HIT_SURFACE;
+    surface.materialControl = control.y;
+    surface.sectionIndex = control.z;
+    surface.emitterIndex = control.w;
+    surface.baseColor = second.xyz;
+    surface.textureLod = fifth.w;
+    surface.opacity = second.w;
+    surface.shadingNormal = asuint(third.x);
+    surface.roughness = third.y;
+    surface.opticalControl = asuint(third.z);
+    surface.motionZFlags = asuint(third.w);
+    surface.adjacentBaseColor = fourth.xyz;
+    surface.adjacentInterfaceControl = asuint(fourth.w);
+    surface.position = fifth.xyz;
+
+    PrimeOfflineSurfaceScratch packed = primePackOfflineSurfaceScratch(surface);
+    SurfaceInteraction unpacked = primeUnpackOfflineSurfaceScratch(packed);
+    PrimeOfflineSurfaceScratch roundTrip = primePackOfflineSurfaceScratch(unpacked);
+    bool exact = all(packed.geometry == roundTrip.geometry)
+            && all(packed.identity == roundTrip.identity)
+            && all(packed.baseOpacity == roundTrip.baseOpacity)
+            && all(packed.materialAdjacentX == roundTrip.materialAdjacentX)
+            && all(packed.adjacentPositionX == roundTrip.adjacentPositionX)
+            && all(packed.positionYzMotion == roundTrip.positionYzMotion)
+            && asuint(unpacked.textureLod) == 0u
+            && primeSurfaceTriangleIndex(unpacked)
+                    == (surface.motionZFlags & PRIME_SURFACE_TRIANGLE_MASK);
+    if (!exact) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = asfloat(packed.geometry);
+    result.second = asfloat(uint4(
+            packed.positionYzMotion, primeSurfaceTriangleIndex(unpacked)));
+    result.third = float4(unpacked.position, unpacked.textureLod);
+}
+
+void primeCheckOfflineQueueLayout(
+        inout PrimeTransportResult result,
+        uint pixelCount,
+        uint queue,
+        uint entry)
+{
+    uint stageEnd = primeOfflineStageWords(pixelCount);
+    uint commandWord = primeOfflineQueueCommandWord(pixelCount, queue);
+    uint indexBegin = primeOfflineQueueCommandWord(
+            pixelCount, PRIME_WAVEFRONT_QUEUE_COUNT);
+    uint indexWord = primeOfflineQueueWord(
+            pixelCount, queue, entry);
+    uint indexEnd = indexBegin
+            + pixelCount * PRIME_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL;
+    bool exact = commandWord == stageEnd
+                    + queue * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u)
+            && indexBegin == stageEnd
+                    + PRIME_WAVEFRONT_QUEUE_COUNT
+                            * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u)
+            && indexWord == indexBegin + queue * pixelCount + entry
+            && indexWord >= indexBegin
+            && indexWord < indexEnd;
+    if (!exact) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = asfloat(uint4(
+            stageEnd, commandWord, indexBegin, indexWord));
+    result.second = asfloat(uint4(indexEnd, pixelCount, queue, entry));
+}
+
 [numthreads(64, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -772,6 +854,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
     } else if (kind == 17) {
         primeCheckLightBranchTargets(result, first, third.xy);
+    } else if (kind == 18) {
+        primeCheckOfflineSurfaceScratch(
+                result, control, first, second, third, fourth, fifth);
+    } else if (kind == 19) {
+        primeCheckOfflineQueueLayout(
+                result, control.y, control.z, control.w);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

@@ -24,12 +24,13 @@ import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Offline-only full-path pipeline with a single 176-byte slot per pixel. */
+/** Offline-only full-path pipeline with a four-stage per-bounce wavefront. */
 public final class OfflineRayTracingPipeline implements Destroyable {
     static final int RAYGEN_GROUP_COUNT = OfflineGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = OfflineGroups.MODULE_COUNT;
     static int dispatchCount(int maximumBounces) {
-        return 2 * Math.max(maximumBounces - 1, 0) + 3;
+        dev.prime.render.MaximumBounceSettings.validateCount(maximumBounces);
+        return 4 * maximumBounces + 1;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 3;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
@@ -37,7 +38,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_STORAGE_ENTRIES_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE,
-            0,
+            ShaderAbi.OFFLINE_WAVEFRONT_STAGE_RECORD_SIZE,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COUNT,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_INDEX_SIZE,
@@ -186,22 +187,16 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             this.bind(commandBuffer, stack, RayTracingPushConstants.encode(stack, input, scene));
-            long commandOffset = queueOffset(width, height);
+            long commandOffset = queueCommandOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
             this.trace(
                     commandBuffer,
                     stack,
                     width,
                     height,
-                    OfflineGroups.CAMERA_SURFACE_STEP);
+                    OfflineGroups.CAMERA_TRACE);
             this.wavefrontBarrier(commandBuffer, stack);
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    OfflineGroups.areaShadow(0),
-                    commandOffset,
-                    0);
-            this.wavefrontBarrier(commandBuffer, stack);
+            this.recordShadingRound(commandBuffer, stack, commandOffset, 0);
             int sourceQueue = 1;
             for (int bounce = 1; bounce < input.maximumBounces(); bounce++) {
                 this.recordRound(commandBuffer, stack, commandOffset, sourceQueue);
@@ -224,14 +219,37 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         this.traceIndirect(
                 commandBuffer,
                 stack,
-                OfflineGroups.pathSurfaceStep(sourceQueue),
+                OfflineGroups.bridgeTrace(sourceQueue),
+                commandOffset,
+                sourceQueue);
+        this.wavefrontBarrier(commandBuffer, stack);
+        this.recordShadingRound(
+                commandBuffer, stack, commandOffset, sourceQueue);
+    }
+
+    private void recordShadingRound(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            long commandOffset,
+            int sourceQueue) {
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                OfflineGroups.lightSelect(sourceQueue),
                 commandOffset,
                 sourceQueue);
         this.wavefrontBarrier(commandBuffer, stack);
         this.traceIndirect(
                 commandBuffer,
                 stack,
-                OfflineGroups.areaShadow(sourceQueue),
+                OfflineGroups.direct(sourceQueue),
+                commandOffset,
+                sourceQueue);
+        this.wavefrontBarrier(commandBuffer, stack);
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                OfflineGroups.scatter(sourceQueue),
                 commandOffset,
                 sourceQueue);
         this.wavefrontBarrier(commandBuffer, stack);
@@ -325,6 +343,10 @@ public final class OfflineRayTracingPipeline implements Destroyable {
 
     static long queueBytes(int width, int height) {
         return WAVEFRONT_LAYOUT.queueBytes(width, height);
+    }
+
+    static long queueCommandOffset(int width, int height) {
+        return WAVEFRONT_LAYOUT.queueCommandOffset(width, height);
     }
 
     static void validateRanges(int width, int height, long maximumRange) {

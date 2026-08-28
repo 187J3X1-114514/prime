@@ -56,7 +56,6 @@ public float3 primeEvaluateLocalHitEmission(
             path.physicalOrigin,
             path.rayDirection,
             primePathPreviousLightNormal(path.control),
-            path.previousLightBrdf,
             evaluateAreaPdf);
     float hitAreaWeight = primeAreaHitMisWeightValue(
             previousUsedAreaNee,

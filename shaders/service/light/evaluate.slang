@@ -9,8 +9,6 @@ import "math/light_receiver.slang";
 import "math/projected_solid_angle_domain.slang";
 import "service/material/surface.slang";
 import "service/light/area_common.slang";
-import "service/light/brdf_common.slang";
-import "service/light/brdf_ltc.slang";
 import "service/light/emission.slang";
 import "service/light/tree_common.slang";
 import "service/light/tree_pdf.slang";
@@ -20,7 +18,6 @@ public LightEvaluation primeEvaluateAreaLight(
         float3 rayOrigin,
         float3 rayDirection,
         uint packedReceiverNormal,
-        uint packedReceiverBrdf,
         bool evaluatePdf) {
     LightEvaluation result;
     result.radiance = float3(0.0);
@@ -135,26 +132,17 @@ public LightEvaluation primeEvaluateAreaLight(
             lightCosine,
             textureAreaPdf);
     float3 lightCorner = emitterCornerArea.xyz + sectionTranslation;
-    PrimeAreaProposal proposal = primeAreaProposal(
-            lightCorner, firstEdge, secondEdge, rayOrigin,
-            receiverNormal, packedReceiverNormal, packedReceiverBrdf);
-    bool diffuseActive = primeProjectedSolidAngleReliable(proposal.data.z);
-    bool specularActive = primeProjectedSolidAngleReliable(proposal.data.w);
-    float diffuseRatio = proposal.data.y;
-    float diffusePdf = selectionPdf * primeProjectedSolidAnglePdf(
-            proposal.data.z, receiverNormal, rayDirection);
-    float specularPdf = 0.0;
-    if (specularActive) {
-        PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
-        specularPdf = selectionPdf * primeGgxLtcPdf(
-                ltc, proposal.data.w, rayDirection);
-    }
+    float projectedArea = primePrepareProjectedSolidAngleTriangle(
+            lightCorner,
+            firstEdge,
+            secondEdge,
+            rayOrigin,
+            receiverNormal).area;
+    float projectedPdf = selectionPdf * primeProjectedSolidAnglePdf(
+            projectedArea, receiverNormal, rayDirection);
     result.pdf = primeAreaMixturePdf(
             texturePdf,
-            diffusePdf,
-            specularPdf,
-            diffuseActive,
-            specularActive,
-            diffuseRatio);
+            projectedPdf,
+            primeProjectedSolidAngleReliable(projectedArea));
     return result;
 }

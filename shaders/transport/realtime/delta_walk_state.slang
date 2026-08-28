@@ -10,12 +10,10 @@ import "math/packed_geometry.slang";
 import "math/queued_psr.slang";
 import "policy/runtime/config.slang";
 import "math/sampling.slang";
-import "transport/guide/coincidence.slang";
 import "model/material/defaults.slang";
 import "service/bsdf/contract/albedo.slang";
 import "service/trace/context.slang";
 import "transport/realtime/trace.slang";
-import "transport/realtime/delta_walk_guide.slang";
 
 import "transport/scatter/contract.slang";
 import "transport/scatter/delta.slang";
@@ -113,7 +111,6 @@ public bool primeAdvanceOrdinaryDeltaWalk(
             path,
             surface,
             bsdf,
-            0u,
             0u)) {
         return false;
     }
@@ -137,9 +134,7 @@ public bool primeAdvanceTransparentDeltaWalk(
         uint recordIndex,
         PrimeWavefrontTransportRecord record,
         SurfaceInteraction surface,
-        uint control,
-        uint completedTransitions,
-        uint limit) {
+        uint control) {
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
@@ -148,11 +143,15 @@ public bool primeAdvanceTransparentDeltaWalk(
             (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
     bool hadGuide =
             (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
-    bool guideProbeFallback = primeWavefrontGuideProbeFallback(
+    bool guideFallback = primeWavefrontGuideFallback(
             record.sourceAndPathControl.w);
     bool observesGuide = guideEnabled
             && !hadGuide
-            && !guideProbeFallback;
+            && !guideFallback;
+    if (observesGuide && primeSurfaceHasMotion(surface)) {
+        guideFallback = true;
+        observesGuide = false;
+    }
     bool diffusePath =
             (control & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
     uint guideBounce =
@@ -188,9 +187,6 @@ public bool primeAdvanceTransparentDeltaWalk(
             guideEnabled ? diffusePath : transmissionBranch,
             primeEvaluateDeltaHitEmission(context, path, surface));
     float3 viewDirection = -path.rayDirection;
-    float3 guidePreviousPosition = path.physicalOrigin;
-    float3 guideThroughput = path.throughput;
-    uint forkBounce = primePathBounce(path.control);
     PrimePreparedSampleBase preparedSample =
             primePreparePathSample(
                     path.sampleSeed,
@@ -206,33 +202,10 @@ public bool primeAdvanceTransparentDeltaWalk(
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             volumeStack);
     BsdfSample bsdf = scatter.bsdf;
-    PrimePathScatter guideScatter;
-    guideScatter.bsdf = primeInvalidBsdfSample();
-    guideScatter.volumeStack = volumeStack;
-    bool comparesGuide = primeTransparentGuideNeedsCanonicalComparison(
-            observesGuide,
-            primeMaterialIsTransmissive(surface.materialControl),
-            bsdf);
-    if (comparesGuide) {
-        guideScatter = primeSampleDeltaWalkGuideContinuation(
-                context, surface, viewDirection, volumeStack);
-    }
-    bool guideReusable = !comparesGuide
-            || primeTransparentGuideContinuationReusable(
-                    scatter.bsdf,
-                    scatter.volumeStack,
-                    guideScatter.bsdf,
-                    guideScatter.volumeStack);
-    bool forkGuide = primeTransparentGuideForkRequired(
-            observesGuide,
-            primeSurfaceHasMotion(surface),
-            comparesGuide,
-            guideReusable);
-    guideProbeFallback = guideProbeFallback || forkGuide;
     if (!primeHasScatter(bsdf)) {
         return false;
     }
-    if (observesGuide && !forkGuide) {
+    if (observesGuide) {
         psrState = primeAppendQueuedPsrDiscrete(
                 psrState, path.physicalOrigin, surface, bsdf);
     }
@@ -242,7 +215,6 @@ public bool primeAdvanceTransparentDeltaWalk(
             path,
             surface,
             bsdf,
-            0u,
             0u)) {
         return false;
     }
@@ -259,10 +231,10 @@ public bool primeAdvanceTransparentDeltaWalk(
                     guideBounce,
                     directionalGuide,
                     control,
-                    guideProbeFallback,
+                    guideFallback,
                     true);
     primeStoreWavefrontTransportRecord(recordIndex, updated);
-    if (observesGuide && !forkGuide) {
+    if (observesGuide) {
         primeStoreWavefrontPsrState(recordIndex, psrState);
     } else {
         primeStoreWavefrontPreviousLightNormal(
@@ -275,19 +247,5 @@ public bool primeAdvanceTransparentDeltaWalk(
             false,
             (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
             result);
-    if (forkGuide && !primeSurfaceHasMotion(surface)) {
-        primeTraceDeltaWalkGuideFork(
-                context,
-                recordIndex,
-                control,
-                guidePreviousPosition,
-                guideThroughput,
-                forkBounce,
-                surface,
-                guideScatter,
-                psrState,
-                completedTransitions,
-                limit);
-    }
     return true;
 }

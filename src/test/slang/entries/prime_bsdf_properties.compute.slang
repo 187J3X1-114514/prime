@@ -4,7 +4,6 @@
 #define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
 #define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #include "core/prime_test_abi.slang"
-import "transport/guide/coincidence.slang";
 
 bool primeUsesAirGap() {
     return true;
@@ -667,29 +666,23 @@ void primeAdapterProperties(
                 roughness,
                 opticalControl);
         PrimeTransmissiveBsdfSample sampled =
-                primeSampleMinecraftTransparentContinuation(
-                baseColor,
-                opacity,
-                outwardNormal,
-                materialControl,
-                roughness,
-                opticalControl,
-                viewDirection,
-                rayT,
-                stack);
+                primeSampleMinecraftRefractedTransmissionFromState(
+                        state,
+                        outwardNormal,
+                        viewDirection,
+                        float3(1.0),
+                        true,
+                        stack);
         result.first = sampled.bsdfSample;
         result.stackCounts.x = sampled.volumeStack.count;
         PrimeTransmissiveBsdfSample repeated =
-                primeSampleMinecraftTransparentContinuation(
-                baseColor,
-                opacity,
-                outwardNormal,
-                materialControl,
-                roughness,
-                opticalControl,
-                viewDirection,
-                rayT,
-                stack);
+                primeSampleMinecraftRefractedTransmissionFromState(
+                        state,
+                        outwardNormal,
+                        viewDirection,
+                        float3(1.0),
+                        true,
+                        stack);
         result.albedos.diffuse = state.transmissionTint;
         result.albedos.specular = float3(0.0);
         bool thinWalled = state.geometryThinWalled != 0u;
@@ -1045,19 +1038,24 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
         PrimeTransmissiveBsdfSample sampled =
-                primeSampleMinecraftTransparentContinuation(
-                        baseColor,
-                        opacity,
+                primeSampleMinecraftRefractedTransmissionFromState(
+                        state,
                         outwardNormal,
-                        materialControl,
-                        roughness,
-                        opticalControl,
                         viewDirection,
-                        rayT,
-                        stack,
-                        adjacentBaseColor,
-                        adjacentInterfaceControl,
-                        primeUsesAirGap());
+                        float3(1.0),
+                        true,
+                        stack);
+        sampled = primeApplyAdjacentMediumTransition(
+                sampled,
+                state,
+                stack,
+                baseColor,
+                opacity,
+                materialControl,
+                opticalControl,
+                adjacentBaseColor,
+                adjacentInterfaceControl,
+                primeUsesAirGap());
         result.first = sampled.bsdfSample;
         result.stackCounts.x = sampled.volumeStack.count;
         float expectedInterfaceIor = state.originalIor / adjacent.ior;
@@ -1133,19 +1131,24 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
         PrimeTransmissiveBsdfSample sampled =
-                primeSampleMinecraftTransparentContinuation(
-                        baseColor,
-                        opacity,
+                primeSampleMinecraftRefractedTransmissionFromState(
+                        state,
                         outwardNormal,
-                        materialControl,
-                        roughness,
-                        opticalControl,
                         viewDirection,
-                        rayT,
-                        stack,
-                        adjacentBaseColor,
-                        adjacentInterfaceControl,
-                        primeUsesAirGap());
+                        float3(1.0),
+                        true,
+                        stack);
+        sampled = primeApplyAdjacentMediumTransition(
+                sampled,
+                state,
+                stack,
+                baseColor,
+                opacity,
+                materialControl,
+                opticalControl,
+                adjacentBaseColor,
+                adjacentInterfaceControl,
+                primeUsesAirGap());
         result.first = sampled.bsdfSample;
         result.stackCounts.x = sampled.volumeStack.count;
         bool expectedEntering = dot(outwardNormal, viewDirection) >= 0.0;
@@ -1251,45 +1254,6 @@ void primeAdapterProperties(
         PrimeOpenPbrVolumeStack expectedStack = expected.eventFlags == 0u
                 ? stack
                 : reference.volumeStack;
-        if (primeClosureIsDiscreteOnly(transmissionTraits)) {
-            PrimeTransmissiveBsdfSample canonical =
-                    primeSampleMinecraftTransparentContinuationFromState(
-                            state,
-                            baseColor,
-                            opacity,
-                            materialControl,
-                            outwardNormal,
-                            viewDirection,
-                            stack);
-            bool reusable = primeTransparentGuideContinuationReusable(
-                    result.first,
-                    sampled.volumeStack,
-                    canonical.bsdfSample,
-                    canonical.volumeStack);
-            bool transportValid = result.first.eventFlags != 0u;
-            bool guideValid = canonical.bsdfSample.eventFlags != 0u;
-            uint guideEventMask = PRIME_BSDF_EVENT_REFLECTION
-                    | PRIME_BSDF_EVENT_TRANSMISSION
-                    | PRIME_BSDF_EVENT_DISCRETE;
-            bool expectedReusable = !transportValid || !guideValid
-                    ? transportValid == guideValid
-                    : (result.first.eventFlags & guideEventMask)
-                                    == (canonical.bsdfSample.eventFlags
-                                            & guideEventMask)
-                            && (result.first.eventFlags
-                                    & PRIME_BSDF_EVENT_DISCRETE) != 0u
-                            && sampled.volumeStack.count
-                                    == canonical.volumeStack.count;
-            if (reusable != expectedReusable
-                    || (result.first.eventFlags != 0u
-                            && !primeTransparentGuideContinuationReusable(
-                                    result.first,
-                                    sampled.volumeStack,
-                                    result.first,
-                                    sampled.volumeStack))) {
-                result.mask |= PRIME_TEST_FAILURE_STATE;
-            }
-        }
         if (!primeAdapterSameSample(result.first, expected)
                 || !primeAdapterSameStack(sampled.volumeStack, expectedStack)
                 || !primeAdapterSameSample(

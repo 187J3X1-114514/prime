@@ -27,7 +27,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * offline, atmosphere and sun-shadow programs only borrow its descriptor set.
  */
 public final class TraceBackend implements Destroyable {
-    private static final int BINDING_COUNT = 25;
+    private static final int BINDING_COUNT = 23;
     private static final int STARMAP_UPLOAD = 1;
     private static final int BSDF_LOOKUP_UPLOAD = 1 << 1;
     private static final int ALL_RT_STAGES =
@@ -252,8 +252,6 @@ public final class TraceBackend implements Destroyable {
         }
         int[] sampledBindings = new int[] {
             ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY,
-            ShaderAbi.DESCRIPTOR_GGX_LTC_MATRIX,
-            ShaderAbi.DESCRIPTOR_GGX_LTC_AMPLITUDE,
             ShaderAbi.DESCRIPTOR_STARMAP
         };
         for (int binding : sampledBindings) {
@@ -419,7 +417,7 @@ public final class TraceBackend implements Destroyable {
                 sizes.get(2)
                         .type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                         .descriptorCount(ShaderAbi.SCENE_TEXTURE_COUNT
-                                + 2 * ShaderAbi.MATERIAL_PAGE_COUNT + 4);
+                                + 2 * ShaderAbi.MATERIAL_PAGE_COUNT + 2);
                 sizes.get(3)
                         .type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                         .descriptorCount(1);
@@ -461,7 +459,7 @@ public final class TraceBackend implements Destroyable {
                     }
                     int atmosphereStart = ShaderAbi.SCENE_TEXTURE_COUNT;
                     int sampledStart = atmosphereStart + 5;
-                    int normalStart = sampledStart + 3;
+                    int normalStart = sampledStart + 1;
                     int opticalStart = normalStart + ShaderAbi.MATERIAL_PAGE_COUNT;
                     int starmapIndex = opticalStart + ShaderAbi.MATERIAL_PAGE_COUNT;
                     int shadowStart = starmapIndex + 1;
@@ -497,14 +495,6 @@ public final class TraceBackend implements Destroyable {
                     infos.get(sampledStart)
                             .sampler(bsdfLookup.sampler())
                             .imageView(bsdfLookup.transmissionGgxEnergy().view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    infos.get(sampledStart + 1)
-                            .sampler(bsdfLookup.sampler())
-                            .imageView(bsdfLookup.ggxLtcMatrix().view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    infos.get(sampledStart + 2)
-                            .sampler(bsdfLookup.sampler())
-                            .imageView(bsdfLookup.ggxLtcAmplitude().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                     for (int index = 0; index < ShaderAbi.MATERIAL_PAGE_COUNT; index++) {
                         VulkanImage normal = normalPages.get(
@@ -597,22 +587,6 @@ public final class TraceBackend implements Destroyable {
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                             .pImageInfo(VkDescriptorImageInfo.create(
                                     infos.get(sampledStart).address(), 1));
-                    writes.get(write++)
-                            .sType$Default()
-                            .dstSet(set)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_GGX_LTC_MATRIX)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(
-                                    infos.get(sampledStart + 1).address(), 1));
-                    writes.get(write++)
-                            .sType$Default()
-                            .dstSet(set)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_GGX_LTC_AMPLITUDE)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(
-                                    infos.get(sampledStart + 2).address(), 1));
                     writes.get(write++)
                             .sType$Default()
                             .dstSet(set)

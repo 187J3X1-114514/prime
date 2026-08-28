@@ -139,38 +139,6 @@ public PrimePathScatter primeSampleDiscretePathSurface(
             surface, viewDirection, volumeStack, result);
 }
 
-public PrimePathScatter primeSampleDiscreteGuideContinuation(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction surface,
-        float3 viewDirection,
-        PrimeOpenPbrVolumeStack volumeStack) {
-    PrimePathScatter result;
-    result.bsdf = primeInvalidBsdfSample();
-    result.volumeStack = volumeStack;
-    if (primeMaterialIsTransmissive(surface.materialControl)) {
-        PrimeTransmissiveBsdfSample guide =
-                primeSampleMinecraftTransparentContinuation(
-                        surface.baseColor,
-                        primeSurfaceOpacity(surface),
-                        primeSurfaceOutwardShadingNormal(surface),
-                        surface.materialControl,
-                        surface.roughness,
-                        surface.opticalControl,
-                        viewDirection,
-                        surface.t,
-                        volumeStack,
-                        surface.adjacentBaseColor,
-                        surface.adjacentInterfaceControl,
-                        primeUsesAirGap());
-        result.bsdf = guide.bsdfSample;
-        result.volumeStack = guide.volumeStack;
-        return primeEnforceDiscreteGeometricSupport(
-                surface, viewDirection, volumeStack, result);
-    }
-    return primeSampleDiscretePathSurface(
-            context, surface, viewDirection, float3(0.5), volumeStack);
-}
-
 public PrimeGuidedPathScatter primeSampleGuidedDiscretePathSurface(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,

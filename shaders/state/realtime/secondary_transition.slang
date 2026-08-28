@@ -21,5 +21,5 @@ public PrimeWavefrontTransportRecord primeEnterSecondaryRecord(
             << PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT);
     record.rayDirectionAndDenoiserControl.w = asfloat(control);
     record = primeWavefrontWithQueuedPsrControl(record, 0u);
-    return primeWavefrontWithGuideProbeFallback(record, false);
+    return primeWavefrontWithGuideFallback(record, false);
 }

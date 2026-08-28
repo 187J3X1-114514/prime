@@ -58,13 +58,13 @@ public PrimeWavefrontTransportRecord primeWavefrontWithQueuedPsrControl(
     return record;
 }
 
-public PrimeWavefrontTransportRecord primeWavefrontWithGuideProbeFallback(
+public PrimeWavefrontTransportRecord primeWavefrontWithGuideFallback(
         PrimeWavefrontTransportRecord record,
         bool fallback) {
     if (fallback) {
-        record.sourceAndPathControl.w |= PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK;
+        record.sourceAndPathControl.w |= PRIME_WAVEFRONT_GUIDE_FALLBACK;
     } else {
-        record.sourceAndPathControl.w &= ~PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK;
+        record.sourceAndPathControl.w &= ~PRIME_WAVEFRONT_GUIDE_FALLBACK;
     }
     return record;
 }
@@ -182,8 +182,7 @@ public PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
                     << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
     record.rayDirectionAndDenoiserControl =
             float4(path.rayDirection, asfloat(denoiserControl));
-    record.throughputAndReserved = float4(
-            path.throughput, asfloat(path.previousLightBrdf));
+    record.throughputAndReserved = float4(path.throughput, 0.0);
     return record;
 }
 

@@ -5,7 +5,6 @@ import "math/light_receiver.slang";
 import "math/light_tree.slang";
 import "math/transport.slang";
 import "math/packed_geometry.slang";
-import "transport/guide/coincidence.slang";
 import "model/material/transparent.slang";
 import "state/realtime/medium.slang";
 
@@ -169,72 +168,6 @@ void primeCheckRoulette(
     }
     bool survives = sampleValue < survival;
     if (survives != (sampleValue < primeRussianRouletteSurvival(throughput, etaScale))) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-    BsdfSample transport;
-    transport.direction = float3(0.0, 0.0, 1.0);
-    transport.response = float3(0.25, 0.5, 0.75);
-    transport.pdf = 0.25;
-    transport.relativeEta = 1.5;
-    transport.eventFlags = PRIME_BSDF_EVENT_TRANSMISSION
-            | PRIME_BSDF_EVENT_DISCRETE;
-    BsdfSample guide = transport;
-    guide.direction = float3(1.0, 0.0, 0.0);
-    guide.response = float3(1.0);
-    guide.pdf = 1.0;
-    guide.relativeEta = 2.0;
-    PrimeOpenPbrVolumeStack transportStack;
-    PrimeOpenPbrVolumeStack guideStack;
-    transportStack.count = 0u;
-    guideStack.count = 0u;
-    bool ignoresContinuousState = primeTransparentGuideContinuationReusable(
-            transport, transportStack, guide, guideStack);
-    guide.eventFlags = PRIME_BSDF_EVENT_REFLECTION
-            | PRIME_BSDF_EVENT_DISCRETE;
-    bool rejectsDifferentEvent = !primeTransparentGuideContinuationReusable(
-            transport, transportStack, guide, guideStack);
-    guide.eventFlags = transport.eventFlags;
-    guideStack.count = 1u;
-    bool rejectsDifferentTransition = !primeTransparentGuideContinuationReusable(
-            transport, transportStack, guide, guideStack);
-    guideStack.count = 0u;
-    BsdfSample invalid = guide;
-    invalid.eventFlags = 0u;
-    bool matchesTermination = primeTransparentGuideContinuationReusable(
-            invalid, transportStack, invalid, guideStack);
-    bool rejectsOneSidedTermination = !primeTransparentGuideContinuationReusable(
-            transport, transportStack, invalid, guideStack);
-    bool transmissionReusesWithoutCanonical =
-            !primeTransparentGuideNeedsCanonicalComparison(
-                    true, true, transport);
-    transport.eventFlags = PRIME_BSDF_EVENT_REFLECTION
-            | PRIME_BSDF_EVENT_DISCRETE;
-    bool reflectionRequestsCanonical =
-            primeTransparentGuideNeedsCanonicalComparison(
-                    true, true, transport);
-    bool opaqueReflectionSkipsCanonical =
-            !primeTransparentGuideNeedsCanonicalComparison(
-                    true, false, transport);
-    bool fresnelForks = primeTransparentGuideForkRequired(
-            true, false, true, false);
-    bool tirReuses = !primeTransparentGuideForkRequired(
-            true, false, true, true);
-    bool motionForks = primeTransparentGuideForkRequired(
-            true, true, false, true);
-    bool disabledGuideNeverForks = !primeTransparentGuideForkRequired(
-            false, true, true, false);
-    if (!ignoresContinuousState
-            || !rejectsDifferentEvent
-            || !rejectsDifferentTransition
-            || !matchesTermination
-            || !rejectsOneSidedTermination
-            || !transmissionReusesWithoutCanonical
-            || !reflectionRequestsCanonical
-            || !opaqueReflectionSkipsCanonical
-            || !fresnelForks
-            || !tirReuses
-            || !motionForks
-            || !disabledGuideNeverForks) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
     result.first = float4(throughput, survival);

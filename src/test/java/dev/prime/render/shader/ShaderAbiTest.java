@@ -53,8 +53,6 @@ final class ShaderAbiTest {
         assertEquals(15, ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR);
         assertEquals(16, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL);
         assertEquals(17, ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY);
-        assertEquals(35, ShaderAbi.DESCRIPTOR_GGX_LTC_MATRIX);
-        assertEquals(50, ShaderAbi.DESCRIPTOR_GGX_LTC_AMPLITUDE);
         assertEquals(18, ShaderAbi.DESCRIPTOR_TEXTURE_RECORDS);
         assertEquals(19, ShaderAbi.DESCRIPTOR_MATERIAL_NORMAL_PAGES);
         assertEquals(49, ShaderAbi.DESCRIPTOR_MATERIAL_OPTICAL_PAGES);
@@ -230,7 +228,6 @@ final class ShaderAbiTest {
         assertEquals(44, ShaderAbi.PATH_STATE_CONTROL_OFFSET);
         assertEquals(48, ShaderAbi.PATH_STATE_SOURCE_PRIMITIVE_OFFSET);
         assertEquals(56, ShaderAbi.PATH_STATE_SAMPLE_SEED_OFFSET);
-        assertEquals(60, ShaderAbi.PATH_STATE_PREVIOUS_LIGHT_BRDF_OFFSET);
         assertEquals(0, ShaderAbi.TRACE_PAYLOAD_GEOMETRIC_NORMAL_OFFSET);
         assertEquals(28, ShaderAbi.TRACE_PAYLOAD_MATERIAL_CONTROL_OFFSET);
         assertEquals(32, ShaderAbi.TRACE_PAYLOAD_SECTION_INDEX_OFFSET);

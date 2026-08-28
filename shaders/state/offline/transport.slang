@@ -26,7 +26,7 @@ public PrimeOfflineTransportRecord primeMakeOfflineTransport(
             float4(path.physicalOrigin, path.previousBsdfPdf);
     record.sourceAndPathControl = uint4(
             path.sourcePrimitive,
-            path.previousLightBrdf,
+            0u,
             primePackOfflinePathControl(path));
     uint control = enabled ? PRIME_OFFLINE_CONTROL_ACTIVE : 0u;
     control |= min(volumeStack.count, 2u) << PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT;
@@ -57,7 +57,6 @@ public PathState primeOfflinePath(
             bounce, flags, previousLightNormal);
     path.sourcePrimitive = record.sourceAndPathControl.xy;
     path.sampleSeed = primePathSampleSeed(pixel, primeSampleEpoch(), 0u);
-    path.previousLightBrdf = record.sourceAndPathControl.z;
     return path;
 }
 

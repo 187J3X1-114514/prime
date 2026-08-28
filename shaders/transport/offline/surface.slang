@@ -18,7 +18,6 @@ import "service/light/emission.slang";
 import "service/light/sample.slang";
 import "service/light/area_sample.slang";
 import "service/light/area.slang";
-import "service/light/brdf_pack.slang";
 import "model/material/defaults.slang";
 import "model/material/transparent.slang";
 import "service/bsdf/contract/components.slang";
@@ -64,15 +63,12 @@ public PrimeOfflineAreaRequest primePrepareOfflineArea(
         PathState path,
         SurfaceInteraction surface,
         float3 viewDirection,
-        uint packedReceiverNormal,
-        uint packedReceiverBrdf,
         PrimePreparedSampleBase preparedSample,
         PrimeOpenPbrVolumeStack volumeStack) {
     PrimeOfflineAreaRequest request = primeEmptyOfflineAreaRequest();
     AreaLightSample area = primeSampleAreaLight(
             surface.position,
-            packedReceiverNormal,
-            packedReceiverBrdf,
+            primeAreaLightReceiverNormal(surface, viewDirection),
             primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
@@ -189,13 +185,6 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
             surface, viewDirection, volumeStack, primeUsesAirGap());
     bool neeEligible = primeClosureSupports(
             closureTraits, PRIME_MEASURE_SOLID_ANGLE);
-    uint packedReceiverNormal = neeEligible
-            ? primeAreaLightReceiverNormal(surface, viewDirection)
-            : 0u;
-    uint packedReceiverBrdf = neeEligible
-            ? primePackAreaLightBrdf(
-                    surface, viewDirection, packedReceiverNormal)
-            : 0u;
     if (neeEligible) {
         primeAccumulate(
                 context,
@@ -215,8 +204,6 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
                 path,
                 surface,
                 viewDirection,
-                packedReceiverNormal,
-                packedReceiverBrdf,
                 preparedSample,
                 volumeStack);
     }
@@ -225,8 +212,9 @@ public PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     bool usedAreaNee = neeEligible;
     path.control = primePathWithPreviousLightNormal(
             path.control,
-            packedReceiverNormal);
-    path.previousLightBrdf = packedReceiverBrdf;
+            usedAreaNee
+                    ? primeAreaLightReceiverNormal(surface, viewDirection)
+                    : 0u);
     if (result.areaRequest.valid && !deferArea) {
         PrimeShadowTrace shadow = primeTraceShadow(
                 context,

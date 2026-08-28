@@ -12,7 +12,6 @@ import "state/realtime/queue.slang";
 import "state/realtime/secondary_transition.slang";
 import "state/realtime/transparent.slang";
 import "state/realtime/transport.slang";
-import "transport/realtime/delta_walk_guide.slang";
 import "contract/realtime/transparent.slang";
 
 public PrimeWavefrontTransportRecord primeSealLandingGuide(
@@ -65,7 +64,7 @@ public void primePublishLandingContinuation(
                 && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u
                 && !primeWavefrontDirectionalGuide(control);
         if (transparent && invalidGuide) {
-            primeInvalidateDeltaWalkGuide(recordIndex, record);
+            primeInvalidatePendingTransparentGuide(recordIndex, record);
         }
         if (transparent) {
             record = primeSealLandingGuide(recordIndex, record, control);

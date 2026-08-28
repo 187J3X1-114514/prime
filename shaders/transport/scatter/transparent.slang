@@ -7,10 +7,10 @@ import "state/path.slang";
 import "service/bsdf/contract/sample.slang";
 import "service/bsdf/support/sanitization.slang";
 import "service/reconstruct/nrd/common.slang";
+import "math/packed_geometry.slang";
 import "math/queued_psr.slang";
 import "policy/runtime/config.slang";
 import "math/sampling.slang";
-import "transport/guide/coincidence.slang";
 import "model/material/defaults.slang";
 import "model/material/transparent.slang";
 import "service/bsdf/contract/albedo.slang";
@@ -18,7 +18,6 @@ import "service/bsdf/support/conversion.slang";
 import "service/bsdf/dispatch/sample.slang";
 import "service/bsdf/dispatch/traits.slang";
 import "service/bsdf/dielectric/sample.slang";
-import "service/bsdf/dielectric/discrete.slang";
 import "service/trace/context.slang";
 import "transport/direct/contract.slang";
 import "transport/guide/queued_psr.slang";
@@ -52,7 +51,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
         inout bool diffusePath,
         inout uint guideBounce,
         inout bool directionalGuide,
-        inout bool guideProbeFallback,
+        inout bool guideFallback,
         SurfaceInteraction surface,
         bool transmissionBranch,
         bool guideEnabled,
@@ -66,9 +65,9 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
         return false;
     }
 
-    bool observesIndependentGuide = guideEnabled
+    bool observesGuide = guideEnabled
             && !hasGuide
-            && !guideProbeFallback;
+            && !guideFallback;
 
     float hitDistance = surface.hitKind == PRIME_HIT_NONE
             ? PRIME_NRD_FP16_MAX
@@ -85,7 +84,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
     }
     if (surface.hitKind == PRIME_HIT_NONE) {
         if (guideEnabled && !transmissionBranch && !hasGuide
-                && !guideProbeFallback
+                && !guideFallback
                 && primeQueuedPsrCount(psrState) > 0u
                 && !primeQueuedPsrOverflowed(psrState)) {
             float3 direction =
@@ -108,10 +107,11 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return false;
     }
-    if (observesIndependentGuide
-            && !guideProbeFallback
-            && !primeNrdIsFinite(path.throughput)) {
-        guideProbeFallback = true;
+    if (observesGuide
+            && (primeSurfaceHasMotion(surface)
+                    || !primeNrdIsFinite(path.throughput))) {
+        guideFallback = true;
+        observesGuide = false;
     }
 
     float3 viewDirection = -path.rayDirection;
@@ -131,7 +131,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
     bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     bool discreteContinuation = discreteOnlyInterface;
     bool primarySurfaceReplacement =
-            observesIndependentGuide && !discreteContinuation;
+            observesGuide && !discreteContinuation;
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
@@ -168,10 +168,6 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
             PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
             PRIME_SAMPLE_DIMENSION_PRIMARY);
     PrimePathScatter scatter;
-    bool compareGuideContinuation = observesIndependentGuide
-            && !guideProbeFallback
-            && discreteContinuation;
-    bool guideContinuationReusable = true;
     PrimeDenoiseAlbedos surfaceAlbedos;
     surfaceAlbedos.diffuse = float3(0.0);
     surfaceAlbedos.specular = float3(0.0);
@@ -209,50 +205,6 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
                 scatterSample,
                 volumeStack,
                 primeUsesAirGap());
-        if (compareGuideContinuation) {
-            PrimePathScatter guideScatter;
-            guideScatter.bsdf = primeInvalidBsdfSample();
-            guideScatter.volumeStack = volumeStack;
-            if (transmissive) {
-                PrimeTransmissiveBsdfSample guideSample =
-                        primeSampleMinecraftTransparentContinuation(
-                                surface.baseColor,
-                                primeSurfaceOpacity(surface),
-                                primeSurfaceOutwardShadingNormal(surface),
-                                surface.materialControl,
-                                surface.roughness,
-                                surface.opticalControl,
-                                viewDirection,
-                                surface.t,
-                                volumeStack,
-                                surface.adjacentBaseColor,
-                                surface.adjacentInterfaceControl,
-                                primeUsesAirGap());
-                guideScatter.bsdf = guideSample.bsdfSample;
-                guideScatter.volumeStack = guideSample.volumeStack;
-            } else {
-                guideScatter = primeSamplePathSurface(
-                        context,
-                        surface,
-                        viewDirection,
-                        float3(0.5),
-                        volumeStack,
-                        primeUsesAirGap());
-            }
-            if (!primeGeometricSampleSupport(
-                    primeMaterialUsesNormalMap(surface.opticalControl),
-                    surface.geometricNormal,
-                    viewDirection,
-                    guideScatter.bsdf)) {
-                guideScatter.bsdf = primeInvalidBsdfSample();
-                guideScatter.volumeStack = volumeStack;
-            }
-            guideContinuationReusable = primeTransparentGuideContinuationReusable(
-                    scatter.bsdf,
-                    scatter.volumeStack,
-                    guideScatter.bsdf,
-                    guideScatter.volumeStack);
-        }
     }
     BsdfSample bsdf = scatter.bsdf;
     if (!primeHasScatter(bsdf)) {
@@ -283,7 +235,7 @@ public bool primeIntegrateTransparentWavefrontSurface<Phase, SunNee, AreaNee>(
             skipRoulette || primeTransparentRouletteBlocked(
                     primeTransparentTransportOwnsGuide(
                             false,
-                            guideProbeFallback),
+                            guideFallback),
                     guideEnabled,
                     hasGuide))) {
         return false;

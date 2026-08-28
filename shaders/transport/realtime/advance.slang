@@ -141,7 +141,7 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
                     & PRIME_WAVEFRONT_BYTE_MASK;
     bool directionalGuide = primeWavefrontDirectionalGuide(control);
     bool hadDirectionalGuide = directionalGuide;
-    bool guideProbeFallback = primeWavefrontGuideProbeFallback(
+    bool guideFallback = primeWavefrontGuideFallback(
             record.sourceAndPathControl.w);
     bool continuation = primeIntegrateTransparentWavefrontSurface(
             phase,
@@ -157,7 +157,7 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
             diffusePath,
             guideBounce,
             directionalGuide,
-            guideProbeFallback,
+            guideFallback,
             surface,
             transmissionBranch,
             guideEnabled,
@@ -174,7 +174,7 @@ public bool primeAdvanceTransparentWavefrontRecord<Phase>(
                     guideBounce,
                     directionalGuide,
                     control,
-                    guideProbeFallback,
+                    guideFallback,
                     continuation);
     primeStoreWavefrontTransportRecord(recordIndex, updatedRecord);
     if (continuation && guideEnabled && !hasGuide) {

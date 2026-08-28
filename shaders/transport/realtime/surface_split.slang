@@ -180,7 +180,7 @@ public uint primeInitializeTransparentWavefront(
         bool hasGuide = guideEnabled
                 && hasScatter
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u;
-        bool guideProbeFallback = guideEnabled
+        bool guideFallback = guideEnabled
                 && hasScatter
                 && !hasGuide
                 && primeSurfaceHasMotion(surface);
@@ -260,7 +260,7 @@ public uint primeInitializeTransparentWavefront(
                 diffusePath,
                 guideBounce,
                 primaryReflectionOnly,
-                guideProbeFallback,
+                guideFallback,
                 continuation);
         if (continuation && !deltaWalk) {
             record.transport = primeEnterSecondaryRecord(record.transport);

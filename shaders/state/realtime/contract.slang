@@ -66,9 +66,9 @@ public static const uint PRIME_WAVEFRONT_MEDIUM_COUNT_MASK = 0x3u;
 public static const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
 public static const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 public static const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
-// Transparent full-mode paths use the otherwise-unused top path-control bit to request the old
-// independent probe only after transport can no longer prove that it follows the canonical guide.
-public static const uint PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK = 0x80000000u;
+// Transparent full-mode paths use the otherwise-unused top path-control bit when queued PSR can
+// no longer publish a stable target and the resident visible-interface guide must remain active.
+public static const uint PRIME_WAVEFRONT_GUIDE_FALLBACK = 0x80000000u;
 public static const uint PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT = 16u;
 public static const uint PRIME_WAVEFRONT_LIGHT_NORMAL_MASK = 0xffffu;
 public static const uint PRIME_WAVEFRONT_PRIMARY_MOTION = 1u;
@@ -206,8 +206,8 @@ public bool primeWavefrontDirectionalGuide(uint control) {
     return (control & PRIME_WAVEFRONT_DIRECTIONAL_GUIDE) != 0u;
 }
 
-public bool primeWavefrontGuideProbeFallback(uint pathControl) {
-    return (pathControl & PRIME_WAVEFRONT_GUIDE_PROBE_FALLBACK) != 0u;
+public bool primeWavefrontGuideFallback(uint pathControl) {
+    return (pathControl & PRIME_WAVEFRONT_GUIDE_FALLBACK) != 0u;
 }
 
 public bool primeWavefrontPixelTransparent(uint2 pixel) {

@@ -9,8 +9,6 @@ import "math/light_receiver.slang";
 import "math/projected_solid_angle_domain.slang";
 import "math/projected_solid_angle_sample.slang";
 import "service/light/area_common.slang";
-import "service/light/brdf_common.slang";
-import "service/light/brdf_ltc.slang";
 import "service/light/emission.slang";
 import "service/material/surface.slang";
 
@@ -89,7 +87,6 @@ bool primeIntersectAreaLight(
 AreaLightSample primeSampleAreaLightEmitter(
         float3 surfacePosition,
         uint packedReceiverNormal,
-        uint packedReceiverBrdf,
         uint sectionIndex,
         uint emitterIndex,
         float emitterSelectionPdf,
@@ -119,25 +116,24 @@ AreaLightSample primeSampleAreaLightEmitter(
             + sections[sectionIndex].translation;
     float3 receiverNormal = primeUnpackLightReceiverNormal(
             packedReceiverNormal);
-    PrimeAreaProposal proposal = primeAreaProposal(
-            lightCorner, firstEdge, secondEdge, surfacePosition,
-            receiverNormal, packedReceiverNormal, packedReceiverBrdf);
-    bool diffuseActive = primeProjectedSolidAngleReliable(proposal.data.z);
-    bool specularActive = primeProjectedSolidAngleReliable(proposal.data.w);
-    float diffuseRatio = proposal.data.y;
-    bool sampleTexture = !diffuseActive
+    float projectedArea = 0.0;
+    if (dot(receiverNormal, receiverNormal) > 0.0) {
+        projectedArea = primePrepareProjectedSolidAngleTriangle(
+                lightCorner,
+                firstEdge,
+                secondEdge,
+                surfacePosition,
+                receiverNormal).area;
+    }
+    bool projectedActive = primeProjectedSolidAngleReliable(projectedArea);
+    bool sampleTexture = !projectedActive
             || cellSample < PRIME_AREA_PROJECTED_MIXTURE;
-    float projectedSample = (cellSample - PRIME_AREA_PROJECTED_MIXTURE)
-            / (1.0 - PRIME_AREA_PROJECTED_MIXTURE);
-    bool sampleSpecular = !sampleTexture
-            && specularActive
-            && projectedSample >= diffuseRatio;
 
     uint emitterCellBase = emitters[emitterIndex].metadata.x;
     float2 parentBarycentric;
     uint cellIndex;
     if (sampleTexture) {
-        float textureSample = diffuseActive
+        float textureSample = projectedActive
                 ? cellSample / PRIME_AREA_PROJECTED_MIXTURE
                 : cellSample;
         float aliasValue = textureSample * float(PRIME_LIGHT_CELL_COUNT);
@@ -153,33 +149,24 @@ AreaLightSample primeSampleAreaLightEmitter(
         }
         parentBarycentric = primeSampleLightCell(selectedCell, positionSample);
     } else {
-        PrimeProjectedSolidAngleDomain sampleDomain;
-        if (sampleSpecular) {
-            PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
-            sampleDomain = primePrepareGgxLtcTriangle(
-                    ltc, lightCorner, firstEdge, secondEdge, surfacePosition);
-        } else {
-            sampleDomain = primePrepareProjectedSolidAngleTriangle(
-                    lightCorner, firstEdge, secondEdge, surfacePosition,
-                    receiverNormal);
-        }
+        float3 tangent;
+        float3 bitangent;
+        primeBasis(receiverNormal, tangent, bitangent);
+        PrimeProjectedSolidAngleDomain sampleDomain =
+                primePrepareProjectedSolidAngleTriangleBasis(
+                        lightCorner,
+                        firstEdge,
+                        secondEdge,
+                        surfacePosition,
+                        receiverNormal,
+                        tangent,
+                        bitangent);
         float3 localDirection = primeSampleProjectedSolidAngle(
                 sampleDomain, positionSample);
         // Plane intersection ignores scale; the common path rebuilds the exact direction.
-        float3 direction;
-        if (sampleSpecular) {
-            PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
-            float3 shadingDirection = normalize(
-                    primeGgxLtcCosineToShading(ltc, localDirection));
-            direction = primeGgxLtcShadingToWorld(ltc, shadingDirection);
-        } else {
-            float3 tangent;
-            float3 bitangent;
-            primeBasis(receiverNormal, tangent, bitangent);
-            direction = tangent * localDirection.x
-                    + bitangent * localDirection.y
-                    + receiverNormal * localDirection.z;
-        }
+        float3 direction = tangent * localDirection.x
+                + bitangent * localDirection.y
+                + receiverNormal * localDirection.z;
         if (!primeIntersectAreaLight(
                 surfacePosition, direction, lightCorner, firstEdge, secondEdge,
                 parentBarycentric)) {
@@ -215,21 +202,10 @@ AreaLightSample primeSampleAreaLightEmitter(
             lightPosition,
             lightCosine,
             textureAreaPdf);
-    float diffusePdf = emitterSelectionPdf * primeProjectedSolidAnglePdf(
-            proposal.data.z, receiverNormal, direction);
-    float specularPdf = 0.0;
-    if (specularActive) {
-        PrimeGgxLtc ltc = primeGgxLtc(proposal, packedReceiverNormal, packedReceiverBrdf);
-        specularPdf = emitterSelectionPdf * primeGgxLtcPdf(
-                ltc, proposal.data.w, direction);
-    }
+    float projectedPdf = emitterSelectionPdf * primeProjectedSolidAnglePdf(
+            projectedArea, receiverNormal, direction);
     float pdf = primeAreaMixturePdf(
-            texturePdf,
-            diffusePdf,
-            specularPdf,
-            diffuseActive,
-            specularActive,
-            diffuseRatio);
+            texturePdf, projectedPdf, projectedActive);
     if (!(pdf > 0.0) || isnan(pdf) || isinf(pdf)) {
         return primeInvalidAreaLightSample();
     }
@@ -250,7 +226,6 @@ AreaLightSample primeSampleAreaLightEmitter(
 public AreaLightSample primeSampleAreaLightSelection(
         float3 surfacePosition,
         uint packedReceiverNormal,
-        uint packedReceiverBrdf,
         AreaLightSelection selection,
         float cellSample,
         float2 positionSample) {
@@ -262,7 +237,6 @@ public AreaLightSample primeSampleAreaLightSelection(
     return primeSampleAreaLightEmitter(
             surfacePosition,
             packedReceiverNormal,
-            packedReceiverBrdf,
             selection.sectionIndex,
             selection.emitterIndex,
             selection.pdf,

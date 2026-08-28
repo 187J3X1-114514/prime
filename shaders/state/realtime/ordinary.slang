@@ -42,7 +42,6 @@ public PathState primeWavefrontPath(
             : 0u;
     path.sampleSeed = primePathSampleSeed(
             pixel, primeSampleEpoch(), samplePathIndex);
-    path.previousLightBrdf = asuint(record.throughputAndReserved.w);
     return path;
 }
 
@@ -114,7 +113,7 @@ public PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         bool diffusePath,
         uint guideBounce,
         bool primaryReflectionOnly,
-        bool guideProbeFallback,
+        bool guideFallback,
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
@@ -147,8 +146,8 @@ path,
     }
     record.transport.rayDirectionAndDenoiserControl.w = asfloat(control);
     record = primeWavefrontWithQueuedPsrState(record, psrState);
-    record.transport = primeWavefrontWithGuideProbeFallback(
-            record.transport, guideProbeFallback);
+    record.transport = primeWavefrontWithGuideFallback(
+            record.transport, guideFallback);
     return record;
 }
 
@@ -162,7 +161,7 @@ public PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
         uint guideBounce,
         bool directionalGuide,
         uint previousDenoiserControl,
-        bool guideProbeFallback,
+        bool guideFallback,
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
@@ -189,6 +188,6 @@ path,
             & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK)
             << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT;
     record.rayDirectionAndDenoiserControl.w = asfloat(control);
-    record = primeWavefrontWithGuideProbeFallback(record, guideProbeFallback);
+    record = primeWavefrontWithGuideFallback(record, guideFallback);
     return record;
 }

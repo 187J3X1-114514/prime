@@ -103,8 +103,7 @@
         { "name": "throughput", "type": "vec3", "offset": 32 },
         { "name": "control", "type": "uint", "offset": 44 },
         { "name": "sourcePrimitive", "type": "uvec2", "offset": 48 },
-        { "name": "sampleSeed", "type": "uint", "offset": 56 },
-        { "name": "previousLightBrdf", "type": "uint", "offset": 60 }
+        { "name": "sampleSeed", "type": "uint", "offset": 56 }
       ]
     },
     "tracePayload": {
@@ -206,8 +205,6 @@
     "materialNormalPages": 19,
     "materialOpticalPages": 49,
     "starmap": 34,
-    "ggxLtcMatrix": 35,
-    "ggxLtcAmplitude": 50,
     "sunShadowDepth0": 38,
     "sunShadowDepth1": 39,
     "sunShadowDepth2": 40,

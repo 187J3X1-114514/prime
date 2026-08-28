@@ -248,6 +248,28 @@ public PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate
     return result;
 }
 
+public void primeInvalidatePendingTransparentGuide(
+        uint recordIndex,
+        PrimeWavefrontTransportRecord record) {
+    uint2 pixel = primeWavefrontPixel(recordIndex);
+    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
+    bool transmission = primeWavefrontTransmissionBranch(control);
+    PrimeTransparentBranchResult result =
+            primeLoadTransparentBranchActiveIntermediate(
+                    pixel, transmission, control);
+    result.anchorDistance = -1.0;
+    result.directionalGuide = false;
+    // Invalidating queued PSR only discards its anchor and continuation state. The resident
+    // visible-interface guide remains the exact fallback for chain-limit and overflow exits.
+    primeStoreTransparentBranchActiveIntermediate(
+            pixel,
+            transmission,
+            false,
+            false,
+            (control & PRIME_WAVEFRONT_PRIMARY_REFLECTION_ONLY) != 0u,
+            result);
+}
+
 public void primeStoreTransparentBranchGuide(
         uint2 pixel,
         bool transmissionBranch,

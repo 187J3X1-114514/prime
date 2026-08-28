@@ -6,7 +6,6 @@ import "prime_abi_types.slang";
 import "policy/realtime/queue.slang";
 import "service/trace/context.slang";
 import "transport/realtime/delta_walk_state.slang";
-import "transport/realtime/delta_walk_guide.slang";
 import "transport/realtime/trace.slang";
 import "transport/scatter/delta.slang";
 
@@ -15,6 +14,7 @@ import "state/realtime/light.slang";
 import "state/realtime/ordinary.slang";
 import "state/realtime/queue.slang";
 import "state/realtime/surface.slang";
+import "state/realtime/transparent.slang";
 import "state/realtime/transport.slang";
 import "contract/path.slang";
 
@@ -79,13 +79,13 @@ public void primeProcessDeltaWalkBranch(
                     && primeWavefrontGuideEnabled(control)
                     && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u
                     && !primeWavefrontDirectionalGuide(control)
-                    && !primeWavefrontGuideProbeFallback(
+                    && !primeWavefrontGuideFallback(
                             record.sourceAndPathControl.w);
             if (guidePending) {
-                primeInvalidateDeltaWalkGuide(recordIndex, record);
+                primeInvalidatePendingTransparentGuide(recordIndex, record);
             }
             record = primeWavefrontWithActive(record, false);
-            record = primeWavefrontWithGuideProbeFallback(record, false);
+            record = primeWavefrontWithGuideFallback(record, false);
             primeStoreWavefrontTransportRecord(recordIndex, record);
             return;
         }
@@ -96,9 +96,7 @@ public void primeProcessDeltaWalkBranch(
                         recordIndex,
                         record,
                         surface,
-                        control,
-                        transitions,
-                        maximumTransitions)
+                        control)
                 : primeAdvanceOrdinaryDeltaWalk(
                         context,
                         recordIndex,

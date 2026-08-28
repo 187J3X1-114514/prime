@@ -160,8 +160,9 @@ fixes:
   refraction.
 - Realtime transparent lighting keeps conditional transmission and reflection slots at the first
   interface, straight shadow filtering, and bounded single-branch sampling afterward. A radiance
-  branch supplies its guide while discrete events agree; the first divergence, motion, or invalid
-  state falls back to an independent probe. This does not fully solve arbitrary refractive chains.
+  branch accumulates its guide along the continuation it actually selected; motion, chain overflow,
+  depth limits, or invalid state fall back to the true visible interface without an independent
+  guide replay. This does not fully solve arbitrary refractive chains.
 - Shadow rays connecting a surface to a light do not refract at transparent interfaces. They only
   accumulate absorption along the original direction.
 - Volumetric sun shadows approximate visibility from one sun direction; they do not represent sky
@@ -211,20 +212,37 @@ development runs, and shader debugging are documented in
 
 The technical documents are currently written in Chinese.
 
+### Usage and Overview
+
 - [Known issues and explicitly accepted limitations](docs/FIXME.md)
 - [Build and validation](docs/构建与验证.md)
-- [Architecture and data flow](docs/纯函数式架构.md)
-- [Terrain cluster scene translation](docs/区块簇场景翻译架构.md)
-- [Canonical material IR and closures](docs/统一材质IR与闭包.md)
 - [Rendering implementation](docs/渲染实现.md)
-- [HDR output](docs/HDR输出.md)
-- [GPU geometry tracing precision contract](docs/GPU几何追踪精度契约.md)
+- [Architecture and data flow](docs/纯函数式架构.md)
+
+### Scene, Resources, and Materials
+
+- [Terrain cluster scene translation](docs/区块簇场景翻译架构.md)
+- [Texture translation architecture](docs/纹理翻译架构.md)
+- [Canonical material IR and closures](docs/统一材质IR与闭包.md)
+- [Compact OpenPBR implementation](docs/OpenPBR紧凑模块.md)
+
+### Light Transport and Display
+
 - [Offline light transport contract](docs/离线光传输契约.md)
 - [Transparency and realtime reconstruction](docs/透明渲染与实时重建.md)
-- [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)
-- [Compact OpenPBR implementation](docs/OpenPBR紧凑模块.md)
+- [HDR output](docs/HDR输出.md)
+
+### Engineering Contracts
+
+- [GPU geometry tracing precision contract](docs/GPU几何追踪精度契约.md)
 - [Production shader compilation boundaries](docs/生产Shader编译边界契约.md)
+- [Zero-cost production shader diagnostics](docs/生产Shader零诊断成本契约.md)
+- [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)
+
+### Maintenance Records
+
 - [TODO](docs/TODO.md)
+- [Oblique-water fine black-line investigation](docs/斜水面细密黑纹排查报告.md)
 
 ## Related Open-Source Projects
 

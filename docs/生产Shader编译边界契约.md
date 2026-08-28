@@ -86,12 +86,12 @@ TraceRay 复用而长期保存宽 BSDF 聚合状态；若这会延长 live range
 ## 已落地结构
 
 生产源码只允许位于 `contract`、`math`、`model`、`bsdf/compact`、`service`、`transport`、
-`state`、`policy`、`phase` 与 `entry`。42 个 entry 各自只导入一个 phase；phase 不互相导入，
+`state`、`policy`、`phase` 与 `entry`。每个 entry 各自只导入一个 phase；phase 不互相导入，
 state 不依赖 transport。旧 `core`、`material`、`lighting`、`integrator`、`realtime`、`rt`、
 `post` 顶层以及全功能 BSDF/integrator/wavefront umbrella 均已删除，门禁拒绝恢复。
 
-`shaders/programs.json` 是 58 个实际 artifact、资源名及 realtime/offline schedule 的唯一
-清单。每个 artifact 是独立的 `@CacheableTask`，以精确传递闭包、编译参数、manifest 项、Slang
+`shaders/programs.json` 是实际 artifact、资源名及 realtime/offline schedule 的唯一清单。
+每个 artifact 是独立的 `@CacheableTask`，以精确传递闭包、编译参数、manifest 项、Slang
 版本和 canonical workspace path 为输入；共享 Build Service 限制 slangc 并发。构建产物只保留
 实际 scalar/SER artifact，不复制 `_ser` alias。
 

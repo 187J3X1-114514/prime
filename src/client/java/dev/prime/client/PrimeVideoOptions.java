@@ -362,7 +362,7 @@ public final class PrimeVideoOptions {
                         "prime.options.lighting.transparent_nee_mode.tooltip")),
                 (caption, mode) -> Component.translatable(
                         "prime.options.lighting.transparent_nee_mode." + mode.id()),
-                new OptionInstance.SliderableEnum<>(
+                new OptionInstance.Enum<>(
                         TRANSPARENT_NEE_MODES,
                         Codec.STRING.xmap(TransparentNeeMode::fromId, TransparentNeeMode::id)),
                 PrimeConfig.settings().transparentNeeMode(),

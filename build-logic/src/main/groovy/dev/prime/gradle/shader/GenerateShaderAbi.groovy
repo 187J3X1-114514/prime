@@ -87,7 +87,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096
-				|| starmapContract.baseRadianceScale != 0.075
+				|| starmapContract.baseRadianceScale != 0.025
 				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
 			throw new GradleException(
 					'Prime starmap contract must preserve the full NASA source and its calibrated radiance baseline')

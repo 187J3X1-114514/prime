@@ -173,7 +173,7 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.ASTRONOMY_DEFAULT_SOLAR_LONGITUDE_DEGREES);
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
         assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
-        assertEquals(0.075F, ShaderAbi.STARMAP_BASE_RADIANCE_SCALE);
+        assertEquals(0.025F, ShaderAbi.STARMAP_BASE_RADIANCE_SCALE);
         assertEquals(
                 "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",
                 ShaderAbi.STARMAP_SOURCE_SHA256);

@@ -368,7 +368,7 @@
   "starmapContract": {
     "width": 8192,
     "height": 4096,
-    "baseRadianceScale": 0.075,
+    "baseRadianceScale": 0.025,
     "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
   },
   "realtimeStbnContract": {

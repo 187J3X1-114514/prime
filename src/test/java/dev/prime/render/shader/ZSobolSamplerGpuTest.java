@@ -135,6 +135,18 @@ final class ZSobolSamplerGpuTest {
     }
 
     @Test
+    void sampleHashSeparatesDimensionsAndEpochs() {
+        Set<Long> hashes = new HashSet<>();
+        for (int dimension = 0; dimension < 256; dimension++) {
+            for (int epoch = 0; epoch < 64; epoch++) {
+                assertTrue(
+                        hashes.add(sampleHash(dimension, epoch)),
+                        "dimension=" + dimension + " epoch=" + epoch);
+            }
+        }
+    }
+
+    @Test
     void everyPixelRetainsDyadicTemporalStratification() {
         int[][] cases = {
             {0, 0, 1, 1},
@@ -303,6 +315,10 @@ final class ZSobolSamplerGpuTest {
         int value = (int) higherDigits
                 ^ (int) (higherDigits >>> 32) * 0x9e37_79b9
                 ^ dimensionHash;
+        return avalanche(value);
+    }
+
+    private static int avalanche(int value) {
         value ^= value >>> 16;
         value *= 0x7feb_352d;
         value ^= value >>> 15;
@@ -311,18 +327,12 @@ final class ZSobolSamplerGpuTest {
     }
 
     private static long sampleHash(int dimension, int seed) {
-        long multiplier = 0xc6a4_a793_5bd1_e995L;
-        long hash = 8 * multiplier;
-        long key = Integer.toUnsignedLong(dimension)
-                | Integer.toUnsignedLong(seed) << 32;
-        key *= multiplier;
-        key ^= key >>> 47;
-        key *= multiplier;
-        hash ^= key;
-        hash *= multiplier;
-        hash ^= hash >>> 47;
-        hash *= multiplier;
-        return hash ^ hash >>> 47;
+        int first = avalanche(
+                seed ^ dimension * 0x9e37_79b9 ^ 0xa511_e9b3);
+        int second = avalanche(
+                seed ^ dimension * 0x85eb_ca6b ^ 0x63d8_3595);
+        return Integer.toUnsignedLong(first)
+                | Integer.toUnsignedLong(second) << 32;
     }
 
     private static int dimensionOne(long sampleIndex) {

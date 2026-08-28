@@ -24,19 +24,24 @@ uint64_t primeZSobolConstant(uint high, uint low)
     return (uint64_t(high) << 32u) | uint64_t(low);
 }
 
-// The selector only chooses one of 24 digit permutations. A 32-bit avalanche of
-// both prefix limbs retains nested scrambling without paying for 64-bit products.
-uint primeZSobolSelector(uint64_t higherDigits, uint dimensionHash)
+uint primeZSobolAvalanche(uint value)
 {
-    uint value = uint(higherDigits)
-            ^ (uint(higherDigits >> 32u) * 0x9e3779b9u)
-            ^ dimensionHash;
     value ^= value >> 16u;
     value *= 0x7feb352du;
     value ^= value >> 15u;
     value *= 0x846ca68bu;
     value ^= value >> 16u;
     return value;
+}
+
+// The selector only chooses one of 24 digit permutations. A 32-bit avalanche of
+// both prefix limbs retains nested scrambling without paying for 64-bit products.
+uint primeZSobolSelector(uint64_t higherDigits, uint dimensionHash)
+{
+    return primeZSobolAvalanche(
+            uint(higherDigits)
+                    ^ (uint(higherDigits >> 32u) * 0x9e3779b9u)
+                    ^ dimensionHash);
 }
 
 uint64_t primeZSobolLeftShift2(uint value)
@@ -147,21 +152,15 @@ uint primeZSobolFastOwenFromReversed(uint value, uint seed)
     return reversebits(value);
 }
 
-// pbrt-v4 Hash(dimension, seed), specialized for its two adjacent 32-bit arguments.
-uint64_t primeZSobolSampleHash(uint dimension, uint seed)
+// FastOwen only consumes two 32-bit seeds; independent salted avalanches avoid
+// constructing a 64-bit hash that the shader immediately splits again.
+uint2 primeZSobolSampleHash(uint dimension, uint seed)
 {
-    uint64_t multiplier = primeZSobolConstant(0xc6a4a793, 0x5bd1e995);
-    uint64_t hash = uint64_t(8) * multiplier;
-    uint64_t key = uint64_t(dimension) | (uint64_t(seed) << 32u);
-    key *= multiplier;
-    key ^= key >> 47u;
-    key *= multiplier;
-    hash ^= key;
-    hash *= multiplier;
-    hash ^= hash >> 47u;
-    hash *= multiplier;
-    hash ^= hash >> 47u;
-    return hash;
+    return uint2(
+            primeZSobolAvalanche(
+                    seed ^ (dimension * 0x9e3779b9u) ^ 0xa511e9b3u),
+            primeZSobolAvalanche(
+                    seed ^ (dimension * 0x85ebca6bu) ^ 0x63d83595u));
 }
 
 float primeZSobolFloat(uint value)
@@ -176,10 +175,10 @@ public float2 primeDirectSample2D(
 {
     uint dimension = base.dimensionBase + stream * 2u;
     uint64_t sampleIndex = primeZSobolSampleIndex(base, dimension);
-    uint64_t hash = primeZSobolSampleHash(dimension + 2u, base.seed);
+    uint2 hash = primeZSobolSampleHash(dimension + 2u, base.seed);
     uint first = primeZSobolFastOwenFromReversed(
-            uint(sampleIndex), uint(hash));
+            uint(sampleIndex), hash.x);
     uint second = primeZSobolFastOwenFromReversed(
-            primeZSobolDimensionOneReversed(sampleIndex), uint(hash >> 32u));
+            primeZSobolDimensionOneReversed(sampleIndex), hash.y);
     return float2(primeZSobolFloat(first), primeZSobolFloat(second));
 }

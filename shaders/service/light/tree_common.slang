@@ -11,23 +11,21 @@ public static const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
 public static const uint PRIME_LIGHT_TREE_MAX_DEPTH = 27u;
 public static const uint PRIME_LIGHT_LEAF_WORLD = 0u;
 public static const uint PRIME_LIGHT_LEAF_EMITTER = 1u;
+static const uint PRIME_LIGHT_NODE_WORDS = PRIME_LIGHT_NODE_SIZE / 4u;
+static const uint PRIME_LIGHT_NODE_DIRECTION_WORD = 4u;
+static const uint PRIME_LIGHT_NODE_CHILD_WORD = 5u;
 
 public LightNode* primeWorldLightNodes(uint64_t worldLightAddress) {
     return (LightNode*)worldLightAddress;
 }
 
-public void primeUnpackLightNode(
-        LightNode* nodes,
-        uint index,
-        out float3 centroid,
-        out float power,
-        out uint emissionDirection,
-        out uint childOrLeaf) {
-    LightNode node = nodes[index];
-    centroid = node.centroidPower.xyz;
-    power = node.centroidPower.w;
-    emissionDirection = node.directionChildReserved.x;
-    childOrLeaf = node.directionChildReserved.y;
+public uint primeLoadLightNodeWord(LightNode* nodes, uint index, uint word) {
+    // LightNode is a fixed 32-byte ABI. Raw words keep hot scalar fields as narrow loads.
+    return ((uint*)nodes)[index * PRIME_LIGHT_NODE_WORDS + word];
+}
+
+public uint primeLoadLightNodeChildOrLeaf(LightNode* nodes, uint index) {
+    return primeLoadLightNodeWord(nodes, index, PRIME_LIGHT_NODE_CHILD_WORD);
 }
 
 public float2 primeLoadLightNodeMetrics(
@@ -35,23 +33,13 @@ public float2 primeLoadLightNodeMetrics(
         uint index,
         float3 point,
         float3 receiverNormal) {
-    float3 centroid;
-    float power;
-    uint emissionDirection;
-    uint childOrLeaf;
-    primeUnpackLightNode(
-            nodes,
-            index,
-            centroid,
-            power,
-            emissionDirection,
-            childOrLeaf);
+    float4 centroidPower = nodes[index].centroidPower;
     return primeLightNodeMetrics(
-            centroid,
-            power,
+            centroidPower.xyz,
+            centroidPower.w,
             point,
             receiverNormal,
-            emissionDirection);
+            primeLoadLightNodeWord(nodes, index, PRIME_LIGHT_NODE_DIRECTION_WORD));
 }
 
 public float2 primeEmitterMetrics(
@@ -150,45 +138,38 @@ bool primeLoadWorldLeafEntryMetrics(
     return true;
 }
 
-// A leaf has at most eight entries. Internal nodes use the same target family at their centroids;
-// the terminal world leaf resolves each section root and the terminal section leaf resolves the
-// actual emitter bounds. This is still a light proposal: OpenPBR evaluation remains independent.
-public float primeLoadLightLeafTargetWeights(
-        LightLeaf leaf,
+// Terminal children use their exact section root or emitter bounds in the final branch decision.
+// Internal children retain the compact centroid target. Selection and reverse MIS share this load.
+public bool primeLoadLightChildMetrics(
+        LightNode* nodes,
+        LightLeaf* leaves,
         LightLeafEntry* entries,
         SectionRecord* sections,
         uint64_t emitterAddress,
         uint entryLimit,
         uint leafMode,
+        uint nodeIndex,
+        uint childOrLeaf,
         float3 point,
         float3 receiverNormal,
-        out float weights[PRIME_LIGHT_LEAF_MAX_ENTRIES],
-        out uint lastPositive) {
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        weights[offset] = 0.0;
+        out float2 metrics) {
+    metrics = float2(0.0);
+    if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) == 0u) {
+        metrics = primeLoadLightNodeMetrics(nodes, nodeIndex, point, receiverNormal);
+        return true;
     }
-    lastPositive = 0u;
-    LightEmitter* emitters = (LightEmitter*)emitterAddress;
-    float2 metrics[PRIME_LIGHT_LEAF_MAX_ENTRIES];
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        if (offset >= leaf.entryCount) break;
-        LightLeafEntry entry = entries[leaf.firstEntry + offset];
-        if (entry.index >= entryLimit) return 0.0;
-        bool valid;
-        if (leafMode == PRIME_LIGHT_LEAF_WORLD) {
-            valid = primeLoadWorldLeafEntryMetrics(
-                    sections, entry, point, receiverNormal, metrics[offset]);
-        } else if (leafMode == PRIME_LIGHT_LEAF_EMITTER) {
-            metrics[offset] = primeLoadEmitterMetrics(
-                    emitters, entry, point, receiverNormal);
-            valid = true;
-        } else {
-            return 0.0;
-        }
-        if (!valid) return 0.0;
+    LightLeaf leaf = leaves[childOrLeaf & PRIME_LIGHT_INDEX_MASK];
+    if (leaf.entryCount != 1u) return false;
+    LightLeafEntry entry = entries[leaf.firstEntry];
+    if (entry.index >= entryLimit) return false;
+    if (leafMode == PRIME_LIGHT_LEAF_WORLD) {
+        return primeLoadWorldLeafEntryMetrics(
+                sections, entry, point, receiverNormal, metrics);
     }
-    return primeLightLeafTargetWeights(
-            metrics, leaf.entryCount, weights, lastPositive);
+    if (leafMode == PRIME_LIGHT_LEAF_EMITTER) {
+        metrics = primeLoadEmitterMetrics(
+                (LightEmitter*)emitterAddress, entry, point, receiverNormal);
+        return true;
+    }
+    return false;
 }

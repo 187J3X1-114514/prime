@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Pure CPU builder for both levels of Prime's light tree.
  *
- * <p>The builder emits compact hot nodes, clustered leaves and an exact bit trail for every input
+ * <p>The builder emits compact hot nodes, singleton leaves and an exact bit trail for every input
  * light. Forward sampling and emissive-hit MIS therefore traverse the same records in the same
  * order; no reverse parent stream or higher-precision CPU reconstruction is required.
  */
@@ -14,10 +14,10 @@ public final class CpuLightTree {
     public static final int NO_INDEX = -1;
     static final int LEAF_FLAG = Integer.MIN_VALUE;
     static final int INDEX_MASK = Integer.MAX_VALUE;
-    static final int MAX_LIGHTS_PER_LEAF = 8;
+    private static final int LIGHTS_PER_LEAF = 1;
     static final int MAX_PATH_DEPTH = 27;
-    private static final int PATH_DEPTH_SHIFT = 27;
-    private static final int PATH_TRAIL_MASK = (1 << PATH_DEPTH_SHIFT) - 1;
+    static final int PATH_DEPTH_SHIFT = 27;
+    static final int PATH_TRAIL_MASK = (1 << PATH_DEPTH_SHIFT) - 1;
     private static final int SAH_BIN_COUNT = 12;
     private static final int SAH_CANDIDATE_COUNT = 3 * (SAH_BIN_COUNT - 1);
     // Bound the local SAOH concession before using estimated traversal depth as a tie-breaker.
@@ -77,8 +77,8 @@ public final class CpuLightTree {
      * Populates a node whose aggregate data has already been allocated.
      *
      * <p>Both direct children are appended before either subtree is populated. Every sibling pair
-     * is therefore consecutive in the packed arrays, so a traversal's mandatory two-child read is
-     * spatially coherent without changing the SAH partition or any sampling probability.
+     * is therefore consecutive in the packed arrays, so traversal reads remain spatially coherent
+     * without changing the SAOH partition or any sampling probability.
      */
     private static void populateNode(
             Leaves leaves,
@@ -97,15 +97,12 @@ public final class CpuLightTree {
             throw new IllegalStateException("Empty light tree range");
         }
         int remainingDepth = MAX_PATH_DEPTH - depth;
-        int capacity = MAX_LIGHTS_PER_LEAF << remainingDepth;
+        int capacity = LIGHTS_PER_LEAF << remainingDepth;
         if (count > capacity) {
             throw new IllegalStateException(
                     "Light tree range of " + count + " exceeds packed path capacity " + capacity);
         }
-        Split split = chooseSplit(leaves, start, end, nodes, nodeIndex, workspace);
-        if (count == 1
-                || (count <= MAX_LIGHTS_PER_LEAF
-                        && (remainingDepth == 0 || !split.improvesCost()))) {
+        if (count == 1) {
             int leaf = clusters.add(leaves, start, end);
             nodes.firstChildOrLeaf[nodeIndex] = leaf;
             nodes.direction[nodeIndex] = aggregateDirection(leaves, start, end);
@@ -127,11 +124,12 @@ public final class CpuLightTree {
         if (depth >= MAX_PATH_DEPTH) {
             throw new IllegalStateException("Light tree exceeds packed bit-trail depth");
         }
+        Split split = chooseSplit(leaves, start, end, workspace);
         int middle = partition(leaves, start, end, split, workspace);
-        int childCapacity = MAX_LIGHTS_PER_LEAF << (remainingDepth - 1);
+        int childCapacity = LIGHTS_PER_LEAF << (remainingDepth - 1);
         if (middle - start > childCapacity || end - middle > childCapacity) {
-            // SAH may repeatedly peel off a small child. Use an exact median partition only when
-            // its chosen split would make the existing 27-bit trail impossible to complete.
+            // SAOH can repeatedly peel a small child. Fall back only when its split would exceed
+            // the existing packed-path capacity.
             middle = partitionByMedian(leaves, start, end, workspace.longestCentroidAxis());
         }
         int left = createNode(leaves, start, middle, nodes);
@@ -177,8 +175,6 @@ public final class CpuLightTree {
             Leaves leaves,
             int start,
             int end,
-            Nodes nodes,
-            int nodeIndex,
             Workspace workspace) {
         workspace.findCentroidBounds(leaves, start, end);
         workspace.resetCandidates();
@@ -225,31 +221,21 @@ public final class CpuLightTree {
                 cost *= maximumCentroidExtent / extent;
                 double expectedRemainingDepth =
                         workspace.prefixPower[split]
-                                        * balancedContinuationDepth(leftCount)
+                                * balancedContinuationDepth(leftCount)
                                 + workspace.suffixPower[split + 1]
                                         * balancedContinuationDepth(rightCount);
                 workspace.addCandidate(axis, split, cost, expectedRemainingDepth);
             }
         }
 
-        float unsplitCost = saohCost(
-                nodes.minX[nodeIndex],
-                nodes.minY[nodeIndex],
-                nodes.minZ[nodeIndex],
-                nodes.maxX[nodeIndex],
-                nodes.maxY[nodeIndex],
-                nodes.maxZ[nodeIndex],
-                nodes.power[nodeIndex],
-                aggregateDirection(leaves, start, end));
+        float unsplitCost = rangeSaohCost(leaves, start, end);
         int bestCandidate = workspace.bestCandidate(unsplitCost);
         if (bestCandidate < 0) {
-            return new Split(-1, -1, Float.POSITIVE_INFINITY, unsplitCost);
+            return new Split(-1, -1);
         }
         return new Split(
                 workspace.candidateAxis[bestCandidate],
-                workspace.candidateSplit[bestCandidate],
-                workspace.candidateCost[bestCandidate],
-                unsplitCost);
+                workspace.candidateSplit[bestCandidate]);
     }
 
     private static int partition(
@@ -302,6 +288,29 @@ public final class CpuLightTree {
         return power * spatialMeasure * (1.0F + LightDirection.spread(direction));
     }
 
+    private static float rangeSaohCost(Leaves leaves, int start, int end) {
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
+        float power = 0.0F;
+        LightDirection.Bounds direction = null;
+        for (int index = start; index < end; index++) {
+            minX = Math.min(minX, leaves.minX[index]);
+            minY = Math.min(minY, leaves.minY[index]);
+            minZ = Math.min(minZ, leaves.minZ[index]);
+            maxX = Math.max(maxX, leaves.maxX[index]);
+            maxY = Math.max(maxY, leaves.maxY[index]);
+            maxZ = Math.max(maxZ, leaves.maxZ[index]);
+            direction = combineDirections(
+                    direction, power, leaves.direction[index], leaves.power[index]);
+            power += leaves.power[index];
+        }
+        return saohCost(minX, minY, minZ, maxX, maxY, maxZ, power, direction);
+    }
+
     /** Returns the balanced binary continuation depth used as a receiver-independent estimate. */
     private static double balancedContinuationDepth(int count) {
         if (count <= 1) {
@@ -328,11 +337,7 @@ public final class CpuLightTree {
         return depth << PATH_DEPTH_SHIFT | trail;
     }
 
-    private record Split(int axis, int bucket, float cost, float unsplitCost) {
-        private boolean improvesCost() {
-            return cost < unsplitCost;
-        }
-    }
+    private record Split(int axis, int bucket) {}
 
     private static void sortByAxis(Leaves leaves, int start, int end, int axis) {
         int count = end - start;
@@ -570,8 +575,8 @@ public final class CpuLightTree {
 
         private int add(Leaves leaves, int start, int end) {
             int count = end - start;
-            if (count <= 0 || count > MAX_LIGHTS_PER_LEAF) {
-                throw new IllegalStateException("Invalid clustered light leaf size " + count);
+            if (count != LIGHTS_PER_LEAF) {
+                throw new IllegalStateException("Invalid singleton light leaf size " + count);
             }
             int leaf = this.leafCount++;
             this.firstEntry[leaf] = this.entryCount;

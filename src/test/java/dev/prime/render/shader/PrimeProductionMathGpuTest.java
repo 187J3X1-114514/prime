@@ -705,7 +705,7 @@ final class PrimeProductionMathGpuTest {
                     putInt(input, index, words, 2, 0, transmissiveMacroBase);
                     putInt(input, index, words, 2, 1, expectedPrimitive);
                 } else if (kind == 17) {
-                    putLightLeafTargetCase(input, index, words, local, random);
+                    putLightBranchTargetCase(input, index, words, local, random);
                 } else {
                     putVec4(
                             input,
@@ -1071,35 +1071,31 @@ final class PrimeProductionMathGpuTest {
         };
     }
 
-    private static void putLightLeafTargetCase(
+    private static void putLightBranchTargetCase(
             ByteBuffer input,
             int index,
             int words,
             int local,
             SplittableRandom random) {
-        int count = 1 + local % 8;
-        int probe = (local / 8) % count;
-        putInt(input, index, words, 0, 1, count);
-        putInt(input, index, words, 0, 2, probe);
-        for (int entry = 0; entry < 8; entry++) {
+        for (int child = 0; child < 2; child++) {
             float distanceSquared = positiveFloat(random, -16, 16);
-            if ((local & 31) == 0 && entry < count) {
-                distanceSquared = entry == probe ? 0.0F : distanceSquared;
+            if ((local & 31) == 0) {
+                distanceSquared = child == 0 ? 0.0F : distanceSquared;
             }
             float power = positiveFloat(random, -16, 16);
-            int component = entry * 2;
+            int component = child * 2;
             putFloat(
                     input,
                     index,
                     words,
-                    1 + component / 4,
+                    1,
                     component % 4,
                     distanceSquared);
             putFloat(
                     input,
                     index,
                     words,
-                    1 + component / 4,
+                    1,
                     component % 4 + 1,
                     power);
         }
@@ -1107,7 +1103,7 @@ final class PrimeProductionMathGpuTest {
                 input,
                 index,
                 words,
-                5,
+                3,
                 powerOfTwo(random.nextInt(-8, 9)),
                 powerOfTwo(random.nextInt(-8, 9)),
                 0.0F,

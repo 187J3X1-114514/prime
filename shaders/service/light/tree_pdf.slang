@@ -36,58 +36,55 @@ public float primeLightTreeSelectionPdf(
     [loop]
     for (uint level = 0u; level < PRIME_LIGHT_TREE_MAX_DEPTH; ++level) {
         if (level >= depth) break;
-        uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
-        if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
+        uint firstChild = primeLoadLightNodeChildOrLeaf(nodes, nodeIndex);
+        if ((firstChild & PRIME_LIGHT_LEAF_FLAG) != 0u) {
             return 0.0;
         }
-        uint leftIndex = childOrLeaf;
-        float2 leftMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex, point, receiverNormal);
-        float2 rightMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex + 1u, point, receiverNormal);
-        float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
-        if (!(leftProbability >= 0.0)) {
+        // Keep reverse MIS on the same two-read schedule as forward selection.
+        uint firstChildOrLeaf = primeLoadLightNodeChildOrLeaf(nodes, firstChild);
+        uint secondChildOrLeaf = primeLoadLightNodeChildOrLeaf(nodes, firstChild + 1u);
+        float2 firstMetrics;
+        float2 secondMetrics;
+        if (!primeLoadLightChildMetrics(
+                    nodes,
+                    leaves,
+                    entries,
+                    sections,
+                    emitterAddress,
+                    entryLimit,
+                    leafMode,
+                    firstChild,
+                    firstChildOrLeaf,
+                    point,
+                    receiverNormal,
+                    firstMetrics)
+                || !primeLoadLightChildMetrics(
+                    nodes,
+                    leaves,
+                    entries,
+                    sections,
+                    emitterAddress,
+                    entryLimit,
+                    leafMode,
+                    firstChild + 1u,
+                    secondChildOrLeaf,
+                    point,
+                    receiverNormal,
+                    secondMetrics)) {
             return 0.0;
         }
-        bool right = ((trail >> level) & 1u) != 0u;
-        float branchProbability = right ? 1.0 - leftProbability : leftProbability;
+        float firstProbability = primeLightBranchProbability(firstMetrics, secondMetrics);
+        if (!(firstProbability >= 0.0)) return 0.0;
+        bool second = ((trail >> level) & 1u) != 0u;
+        float branchProbability = second ? 1.0 - firstProbability : firstProbability;
         if (!(branchProbability > 0.0)) return 0.0;
         pdf *= branchProbability;
-        nodeIndex = leftIndex + (right ? 1u : 0u);
+        nodeIndex = firstChild + uint(second);
     }
-    uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
+    uint childOrLeaf = primeLoadLightNodeChildOrLeaf(nodes, nodeIndex);
     if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) == 0u) return 0.0;
     LightLeaf leaf = leaves[childOrLeaf & PRIME_LIGHT_INDEX_MASK];
-    if (leaf.entryCount == 0u
-            || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
-        return 0.0;
-    }
-    if (leaf.entryCount == 1u) {
-        LightLeafEntry entry = entries[leaf.firstEntry];
-        return entry.index == expectedIndex && entry.index < entryLimit ? pdf : 0.0;
-    }
-    float entryWeights[PRIME_LIGHT_LEAF_MAX_ENTRIES];
-    uint lastPositive;
-    float totalWeight = primeLoadLightLeafTargetWeights(
-            leaf,
-            entries,
-            sections,
-            emitterAddress,
-            entryLimit,
-            leafMode,
-            point,
-            receiverNormal,
-            entryWeights,
-            lastPositive);
-    if (!(totalWeight > 0.0)) return 0.0;
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        if (offset >= leaf.entryCount) break;
-        LightLeafEntry entry = entries[leaf.firstEntry + offset];
-        if (entry.index == expectedIndex) {
-            float entryWeight = entryWeights[offset];
-            return entryWeight > 0.0 ? pdf * entryWeight / totalWeight : 0.0;
-        }
-    }
-    return 0.0;
+    if (leaf.entryCount != 1u) return 0.0;
+    LightLeafEntry entry = entries[leaf.firstEntry];
+    return entry.index == expectedIndex && entry.index < entryLimit ? pdf : 0.0;
 }

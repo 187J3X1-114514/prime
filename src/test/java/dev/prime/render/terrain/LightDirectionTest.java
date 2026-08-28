@@ -204,14 +204,12 @@ final class LightDirectionTest {
 
         int[] nodes = tree.packNodes();
         int firstChild = nodes[LIGHT_NODE_CHILD_WORD];
-        assertEquals(
-                LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(nodes[firstChild * LIGHT_NODE_WORDS
-                        + LIGHT_NODE_DIRECTION_WORD]));
-        assertEquals(
-                LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(nodes[(firstChild + 1) * LIGHT_NODE_WORDS
-                        + LIGHT_NODE_DIRECTION_WORD]));
+        for (int child = 0; child < 2; child++) {
+            assertEquals(
+                    LightDirection.MODE_ONE_SIDED_CONE,
+                    LightDirection.mode(nodes[(firstChild + child) * LIGHT_NODE_WORDS
+                            + LIGHT_NODE_DIRECTION_WORD]));
+        }
     }
 
     @Test
@@ -231,14 +229,12 @@ final class LightDirectionTest {
 
         int[] nodes = tree.packNodes();
         int firstChild = nodes[LIGHT_NODE_CHILD_WORD];
-        assertEquals(
-                LightDirection.MODE_LOBES,
-                LightDirection.mode(nodes[firstChild * LIGHT_NODE_WORDS
-                        + LIGHT_NODE_DIRECTION_WORD]));
-        assertEquals(
-                LightDirection.MODE_LOBES,
-                LightDirection.mode(nodes[(firstChild + 1) * LIGHT_NODE_WORDS
-                        + LIGHT_NODE_DIRECTION_WORD]));
+        for (int child = 0; child < 2; child++) {
+            assertEquals(
+                    LightDirection.MODE_LOBES,
+                    LightDirection.mode(nodes[(firstChild + child) * LIGHT_NODE_WORDS
+                            + LIGHT_NODE_DIRECTION_WORD]));
+        }
     }
 
     private static CpuLightTree.Leaf directionalLeaf(

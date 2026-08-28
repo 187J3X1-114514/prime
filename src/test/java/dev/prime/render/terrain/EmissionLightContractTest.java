@@ -32,6 +32,7 @@ final class EmissionLightContractTest {
     private static final int LIGHT_NODE_CONTROL_WORD =
             ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_RESERVED_OFFSET / Integer.BYTES;
     private static final int LIGHT_NODE_CHILD_WORD = LIGHT_NODE_CONTROL_WORD + 1;
+    private static final int LIGHT_NODE_RESERVED_WORD = LIGHT_NODE_CONTROL_WORD + 2;
 
     @Test
     void minecraftLightLevelUsesSquaredRadiusCalibration() {
@@ -198,7 +199,7 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void treePacksConsecutiveSiblingsClusteredLeavesAndBitTrails() {
+    void treePacksConsecutiveSiblingsSingletonLeavesAndBitTrails() {
         List<CpuLightTree.Leaf> leaves = List.of(
                 leaf(0.0F, 1.0F, 0),
                 leaf(4.0F, 2.0F, 1),
@@ -224,13 +225,13 @@ final class EmissionLightContractTest {
         assertEquals(tree.nodeCount() * LIGHT_NODE_WORDS, nodes.length);
         assertEquals(tree.clusterCount() * 2, leafDescriptors.length);
         assertEquals(leaves.size() * 2, entries.length);
+        assertEquals(2 * leaves.size() - 1, tree.nodeCount());
+        assertEquals(leaves.size(), tree.clusterCount());
         for (int node = 0; node < tree.nodeCount(); node++) {
             int childOrLeaf = nodes[node * LIGHT_NODE_WORDS + LIGHT_NODE_CHILD_WORD];
             if ((childOrLeaf & CpuLightTree.LEAF_FLAG) == 0) {
-                int left = childOrLeaf;
-                int right = left + 1;
-                assertEquals(1, left & 1);
-                assertEquals(0, right & 1);
+                assertEquals(0, nodes[node * LIGHT_NODE_WORDS + LIGHT_NODE_RESERVED_WORD]);
+                assertTrue(childOrLeaf + 1 < tree.nodeCount());
             }
         }
         for (int leaf = 0; leaf < leaves.size(); leaf++) {
@@ -239,6 +240,32 @@ final class EmissionLightContractTest {
             int descriptor = nodes[node * LIGHT_NODE_WORDS + LIGHT_NODE_CHILD_WORD];
             assertNotEquals(0, descriptor & CpuLightTree.LEAF_FLAG);
             assertLeafContains(leafDescriptors, entries, descriptor & CpuLightTree.INDEX_MASK, leaf);
+        }
+    }
+
+    @Test
+    void treeMedianSplitsCoincidentLightsIntoSingletonLeaves() {
+        ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>();
+        for (int index = 0; index < 9; index++) {
+            leaves.add(leaf(0.0F, index + 1.0F, index));
+        }
+
+        CpuLightTree.Result tree = CpuLightTree.build(leaves, leaves.size());
+        int[] nodes = tree.packNodes();
+        int[] leafDescriptors = tree.packLeaves();
+        int[] entries = tree.packEntries();
+
+        assertBinaryNodeCount(leaves.size(), tree.nodeCount());
+        assertEquals(leaves.size(), tree.clusterCount());
+        for (int index = 0; index < leaves.size(); index++) {
+            int node = terminalNode(nodes, tree.leafPath(index));
+            int descriptor = nodes[node * LIGHT_NODE_WORDS + LIGHT_NODE_CHILD_WORD];
+            assertNotEquals(0, descriptor & CpuLightTree.LEAF_FLAG);
+            assertLeafContains(
+                    leafDescriptors,
+                    entries,
+                    descriptor & CpuLightTree.INDEX_MASK,
+                    index);
         }
     }
 
@@ -260,7 +287,7 @@ final class EmissionLightContractTest {
 
         for (int index = 0; index < leaves.size(); index++) {
             int path = tree.leafPath(index);
-            assertTrue((path >>> CpuLightTree.MAX_PATH_DEPTH) <= CpuLightTree.MAX_PATH_DEPTH);
+            assertTrue((path >>> CpuLightTree.PATH_DEPTH_SHIFT) <= CpuLightTree.MAX_PATH_DEPTH);
             int node = terminalNode(nodes, path);
             assertEquals(tree.leafNode(index), node);
             int descriptor = nodes[node * LIGHT_NODE_WORDS + LIGHT_NODE_CHILD_WORD];
@@ -274,7 +301,7 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void treePacksPowerWeightedCentroidAndZeroReservedWord() {
+    void treePacksPowerWeightedCentroidAndZeroReservedWords() {
         CpuLightTree.Leaves leaves = new CpuLightTree.Leaves(2);
         leaves.add(
                 0.0F,
@@ -363,7 +390,8 @@ final class EmissionLightContractTest {
         CpuWorldLightTree.Result initial =
                 CpuWorldLightTree.build(worldLightInput(clusters, 0, 0, 0));
         assertWorldLeafMapping(initial, clusters.size());
-        assertTrue(initial.nodeCount() <= 2 * clusters.size() - 1);
+        assertBinaryNodeCount(clusters.size(), initial.nodeCount());
+        assertEquals(clusters.size(), initial.leafCount());
         assertEquals(
                 36.0F,
                 Float.intBitsToFloat(initial.pack()[LIGHT_NODE_POWER_WORD]),
@@ -373,7 +401,8 @@ final class EmissionLightContractTest {
         CpuWorldLightTree.Result rebuilt =
                 CpuWorldLightTree.build(worldLightInput(clusters, 16, 0, 0));
         assertWorldLeafMapping(rebuilt, clusters.size());
-        assertTrue(rebuilt.nodeCount() <= 2 * clusters.size() - 1);
+        assertBinaryNodeCount(clusters.size(), rebuilt.nodeCount());
+        assertEquals(clusters.size(), rebuilt.leafCount());
         assertEquals(
                 35.0F,
                 Float.intBitsToFloat(rebuilt.pack()[LIGHT_NODE_POWER_WORD]),
@@ -387,7 +416,7 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void treeUsesExpectedDepthOnlyInsideTheSaohQualityBand() {
+    void treeBuildsTwoNonemptySaohRootBranches() {
         float[] centers = {
             1.1087142F, 2.5938268F, 3.9133697F, 4.942278F,
             5.5759964F, 6.505394F, 7.0851145F, 8.035374F,
@@ -403,31 +432,12 @@ final class EmissionLightContractTest {
             leaves.add(leaf(centers[index] - 0.5F, powers[index], index));
         }
 
-        int minimumSaohSplit = 1;
-        float minimumSaoh = Float.POSITIVE_INFINITY;
-        for (int split = 1; split < leaves.size(); split++) {
-            float cost = rootSplitSaoh(leaves, split);
-            if (cost < minimumSaoh) {
-                minimumSaoh = cost;
-                minimumSaohSplit = split;
-            }
-        }
-        assertEquals(7, minimumSaohSplit);
-
         CpuLightTree.Result tree = CpuLightTree.build(leaves, leaves.size());
-        int selectedSplit = 0;
+        int[] rootChildren = new int[2];
         for (int index = 0; index < leaves.size(); index++) {
-            if ((tree.leafPath(index) & 1) == 0) {
-                selectedSplit++;
-            }
+            rootChildren[tree.leafPath(index) & 1]++;
         }
-        float selectedSaoh = rootSplitSaoh(leaves, selectedSplit);
-        assertEquals(5, selectedSplit);
-        assertTrue(selectedSaoh > minimumSaoh);
-        assertTrue(selectedSaoh <= minimumSaoh * 1.02F);
-        assertTrue(
-                balancedContinuationCost(leaves, selectedSplit)
-                        < balancedContinuationCost(leaves, minimumSaohSplit));
+        for (int count : rootChildren) assertTrue(count > 0);
     }
 
     @Test
@@ -489,11 +499,8 @@ final class EmissionLightContractTest {
             int leaf = descriptor & CpuLightTree.INDEX_MASK;
             int first = packed[leafOffset + leaf * 2];
             int count = packed[leafOffset + leaf * 2 + 1];
-            boolean found = false;
-            for (int slot = 0; slot < count; slot++) {
-                found |= packed[entryOffset + (first + slot) * 2] == clusterIndex;
-            }
-            assertTrue(found);
+            assertEquals(1, count);
+            assertEquals(clusterIndex, packed[entryOffset + first * 2]);
         }
     }
 
@@ -502,65 +509,28 @@ final class EmissionLightContractTest {
     }
 
     private static int terminalNode(int[] nodes, int nodeOffset, int packedPath) {
-        int depth = packedPath >>> CpuLightTree.MAX_PATH_DEPTH;
+        int depth = packedPath >>> CpuLightTree.PATH_DEPTH_SHIFT;
         int node = 0;
         for (int level = 0; level < depth; level++) {
             int firstChild = nodes[
                     nodeOffset + node * LIGHT_NODE_WORDS + LIGHT_NODE_CHILD_WORD];
             assertEquals(0, firstChild & CpuLightTree.LEAF_FLAG);
-            node = firstChild + (packedPath >>> level & 1);
+            int selected = packedPath >>> level & 1;
+            node = firstChild + selected;
         }
         return node;
+    }
+
+    private static void assertBinaryNodeCount(int leafCount, int nodeCount) {
+        assertEquals(2 * leafCount - 1, nodeCount);
     }
 
     private static void assertLeafContains(
             int[] leaves, int[] entries, int leaf, int expectedIndex) {
         int first = leaves[leaf * 2];
         int count = leaves[leaf * 2 + 1];
-        assertTrue(count > 0 && count <= CpuLightTree.MAX_LIGHTS_PER_LEAF);
-        boolean found = false;
-        for (int slot = 0; slot < count; slot++) {
-            found |= entries[(first + slot) * 2] == expectedIndex;
-        }
-        assertTrue(found);
-    }
-
-    private static float rootSplitSaoh(List<CpuLightTree.Leaf> leaves, int split) {
-        return rootGroupSaoh(leaves, 0, split)
-                + rootGroupSaoh(leaves, split, leaves.size());
-    }
-
-    private static float rootGroupSaoh(
-            List<CpuLightTree.Leaf> leaves, int start, int end) {
-        float minimum = Float.POSITIVE_INFINITY;
-        float maximum = Float.NEGATIVE_INFINITY;
-        float power = 0.0F;
-        for (int index = start; index < end; index++) {
-            CpuLightTree.Leaf leaf = leaves.get(index);
-            minimum = Math.min(minimum, leaf.bounds().minX());
-            maximum = Math.max(maximum, leaf.bounds().maxX());
-            power += leaf.power();
-        }
-        float x = maximum - minimum;
-        return power * (4.0F * x + 2.0F);
-    }
-
-    private static double balancedContinuationCost(
-            List<CpuLightTree.Leaf> leaves, int split) {
-        double leftPower = 0.0;
-        double rightPower = 0.0;
-        for (int index = 0; index < split; index++) {
-            leftPower += leaves.get(index).power();
-        }
-        for (int index = split; index < leaves.size(); index++) {
-            rightPower += leaves.get(index).power();
-        }
-        return leftPower * log2(split)
-                + rightPower * log2(leaves.size() - split);
-    }
-
-    private static double log2(int value) {
-        return value <= 1 ? 0.0 : Math.log(value) / Math.log(2.0);
+        assertEquals(1, count);
+        assertEquals(expectedIndex, entries[first * 2]);
     }
 
     private static WorldLightTreeInput.Entry cluster(int index, float power) {

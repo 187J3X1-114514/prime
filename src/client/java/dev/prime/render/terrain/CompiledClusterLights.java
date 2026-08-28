@@ -177,13 +177,13 @@ public final class CompiledClusterLights {
                 (long) EmissionDistribution.CELL_COUNT,
                 ShaderAbi.LIGHT_CELL_SIZE);
         long distributionCount = (byteSize - cellStart) / distributionBytes;
+        long expectedNodeCount = Math.subtractExact(
+                Math.multiplyExact((long) emitterCount, 2L), 1L);
         if (emitterStart != expectedEmitter
                 || cellStart != expectedCells
                 || (byteSize - cellStart) % distributionBytes != 0L
-                || nodeCount <= 0L
-                || nodeCount > Math.subtractExact(Math.multiplyExact((long) emitterCount, 2L), 1L)
-                || leafCount <= 0L
-                || leafCount > emitterCount
+                || nodeCount != expectedNodeCount
+                || leafCount != emitterCount
                 || entryCount != emitterCount
                 || distributionCount == 0L) {
             throw new IllegalArgumentException(
@@ -251,8 +251,7 @@ public final class CompiledClusterLights {
                             "Compiled light tree contains an invalid leaf");
                 }
             } else if (childOrLeaf < 0
-                    || childOrLeaf + 1L >= nodeCount
-                    || (childOrLeaf & 1) == 0) {
+                    || childOrLeaf + 1L >= nodeCount) {
                 throw new IllegalArgumentException(
                         "Compiled light tree contains invalid children");
             }
@@ -263,9 +262,7 @@ public final class CompiledClusterLights {
             int base = leafWord + leaf * leafWords;
             long first = Integer.toUnsignedLong(words[base]);
             long count = Integer.toUnsignedLong(words[base + 1]);
-            if (count == 0L
-                    || count > CpuLightTree.MAX_LIGHTS_PER_LEAF
-                    || first + count > emitterCount) {
+            if (count != 1L || first + count > emitterCount) {
                 throw new IllegalArgumentException("Compiled light tree contains an invalid leaf range");
             }
             for (long offset = 0; offset < count; offset++) {
@@ -322,9 +319,8 @@ public final class CompiledClusterLights {
             int entryWords,
             int path,
             int expectedEmitter) {
-        int depth = path >>> CpuLightTree.MAX_PATH_DEPTH;
-        int trailMask = (1 << CpuLightTree.MAX_PATH_DEPTH) - 1;
-        int trail = path & trailMask;
+        int depth = path >>> CpuLightTree.PATH_DEPTH_SHIFT;
+        int trail = path & CpuLightTree.PATH_TRAIL_MASK;
         if (depth > CpuLightTree.MAX_PATH_DEPTH
                 || (depth < CpuLightTree.MAX_PATH_DEPTH && (trail >>> depth) != 0)) {
             return false;
@@ -335,7 +331,8 @@ public final class CompiledClusterLights {
             if ((child & CpuLightTree.LEAF_FLAG) != 0) {
                 return false;
             }
-            node = child + ((trail >>> level) & 1);
+            int selected = (trail >>> level) & 1;
+            node = child + selected;
         }
         int childOrLeaf = words[nodeWord + node * nodeWords + childOrLeafWord];
         if ((childOrLeaf & CpuLightTree.LEAF_FLAG) == 0) {
@@ -344,12 +341,7 @@ public final class CompiledClusterLights {
         int leaf = childOrLeaf & CpuLightTree.INDEX_MASK;
         int first = words[leafWord + leaf * leafWords];
         int count = words[leafWord + leaf * leafWords + 1];
-        for (int offset = 0; offset < count; offset++) {
-            if (words[entryWord + (first + offset) * entryWords] == expectedEmitter) {
-                return true;
-            }
-        }
-        return false;
+        return count == 1 && words[entryWord + first * entryWords] == expectedEmitter;
     }
 
     private static long alignUp(long value, long alignment) {

@@ -38,92 +38,70 @@ LightTreePick primePickLightTree(
         float3 receiverNormal,
         float seed) {
     uint nodeIndex = root;
-    float lowerBound = 0.0;
+    float remapped = clamp(seed, 0.0, asfloat(0x3f7fffffu));
     float pdf = 1.0;
     [loop]
     for (uint depth = 0u; depth <= PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        uint childOrLeaf = nodes[nodeIndex].directionChildReserved.y;
+        uint childOrLeaf = primeLoadLightNodeChildOrLeaf(nodes, nodeIndex);
         if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
             uint leafIndex = childOrLeaf & PRIME_LIGHT_INDEX_MASK;
             LightLeaf leaf = leaves[leafIndex];
-            if (leaf.entryCount == 0u
-                    || leaf.entryCount > PRIME_LIGHT_LEAF_MAX_ENTRIES) {
+            if (leaf.entryCount != 1u) {
                 return primeInvalidLightTreePick();
             }
-            float localSeed = clamp(
-                    (seed - lowerBound) / pdf,
-                    0.0,
-                    asfloat(0x3f7fffffu));
-            if (leaf.entryCount == 1u) {
-                LightLeafEntry entry = entries[leaf.firstEntry];
-                if (entry.index >= entryLimit) return primeInvalidLightTreePick();
-                LightTreePick result;
-                result.index = entry.index;
-                result.pdf = pdf;
-                result.remapped = localSeed;
-                result.valid = 1u;
-                return result;
-            }
-            float entryWeights[PRIME_LIGHT_LEAF_MAX_ENTRIES];
-            uint lastPositive;
-            float totalWeight = primeLoadLightLeafTargetWeights(
-                    leaf,
+            LightLeafEntry entry = entries[leaf.firstEntry];
+            if (entry.index >= entryLimit) return primeInvalidLightTreePick();
+            LightTreePick result;
+            result.index = entry.index;
+            result.pdf = pdf;
+            result.remapped = remapped;
+            result.valid = 1u;
+            return result;
+        }
+        uint firstChild = childOrLeaf;
+        // Issue both independent control reads before following either child's pointer chain.
+        uint firstChildOrLeaf = primeLoadLightNodeChildOrLeaf(nodes, firstChild);
+        uint secondChildOrLeaf = primeLoadLightNodeChildOrLeaf(nodes, firstChild + 1u);
+        float2 firstMetrics;
+        float2 secondMetrics;
+        if (!primeLoadLightChildMetrics(
+                    nodes,
+                    leaves,
                     entries,
                     sections,
                     emitterAddress,
                     entryLimit,
                     leafMode,
+                    firstChild,
+                    firstChildOrLeaf,
                     point,
                     receiverNormal,
-                    entryWeights,
-                    lastPositive);
-            if (!(totalWeight > 0.0)) return primeInvalidLightTreePick();
-            float targetWeight = localSeed * totalWeight;
-            float lowerWeight = 0.0;
-            [[unroll]]
-            for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-                if (offset >= leaf.entryCount) break;
-                LightLeafEntry entry = entries[leaf.firstEntry + offset];
-                float entryWeight = entryWeights[offset];
-                float upperWeight = lowerWeight + entryWeight;
-                bool selected = targetWeight < upperWeight || offset == lastPositive;
-                if (selected) {
-                    if (!(entryWeight > 0.0)) {
-                        return primeInvalidLightTreePick();
-                    }
-                    LightTreePick result;
-                    result.index = entry.index;
-                    result.pdf = pdf * (entryWeight / totalWeight);
-                    result.remapped = clamp(
-                            (targetWeight - lowerWeight) / entryWeight,
-                            0.0,
-                            asfloat(0x3f7fffffu));
-                    result.valid = 1u;
-                    return result;
-                }
-                lowerWeight = upperWeight;
-            }
+                    firstMetrics)
+                || !primeLoadLightChildMetrics(
+                    nodes,
+                    leaves,
+                    entries,
+                    sections,
+                    emitterAddress,
+                    entryLimit,
+                    leafMode,
+                    firstChild + 1u,
+                    secondChildOrLeaf,
+                    point,
+                    receiverNormal,
+                    secondMetrics)) {
             return primeInvalidLightTreePick();
         }
-        uint leftIndex = childOrLeaf;
-        uint rightIndex = leftIndex + 1u;
-        float2 leftMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex, point, receiverNormal);
-        float2 rightMetrics = primeLoadLightNodeMetrics(
-                nodes, rightIndex, point, receiverNormal);
-        float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
-        if (!(leftProbability >= 0.0)) {
-            return primeInvalidLightTreePick();
-        }
-        float rightProbability = 1.0 - leftProbability;
-        float split = lowerBound + pdf * leftProbability;
-        bool selectLeft = seed < split || rightProbability <= 0.0;
-        if (selectLeft && leftProbability <= 0.0) {
-            return primeInvalidLightTreePick();
-        }
-        pdf *= selectLeft ? leftProbability : rightProbability;
-        lowerBound = selectLeft ? lowerBound : split;
-        nodeIndex = selectLeft ? leftIndex : rightIndex;
+        float firstProbability = primeLightBranchProbability(firstMetrics, secondMetrics);
+        if (!(firstProbability >= 0.0)) return primeInvalidLightTreePick();
+        bool second = remapped >= firstProbability;
+        float branchProbability = second ? 1.0 - firstProbability : firstProbability;
+        if (!(branchProbability > 0.0)) return primeInvalidLightTreePick();
+        remapped = second
+                ? (remapped - firstProbability) / branchProbability
+                : remapped / branchProbability;
+        pdf *= branchProbability;
+        nodeIndex = firstChild + uint(second);
     }
     return primeInvalidLightTreePick();
 }

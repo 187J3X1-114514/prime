@@ -4,7 +4,6 @@ module "math/light_tree.slang";
 import "math/light_receiver.slang";
 
 public static const float PRIME_LIGHT_RECEIVER_COSINE_FLOOR = 1.0 / 256.0;
-public static const uint PRIME_LIGHT_LEAF_MAX_ENTRIES = 8u;
 public static const uint PRIME_LIGHT_DIRECTION_MODE_SHIFT = 30u;
 public static const uint PRIME_LIGHT_DIRECTION_MODE_LOBES = 2u;
 public static const uint PRIME_LIGHT_DIRECTION_MODE_FULL = 3u;
@@ -223,72 +222,22 @@ public float2 primeLightNodeMetrics(
     return float2(distanceSquared, weightedPower);
 }
 
+// Returns the first-child probability for a receiver-oriented p / r^2 proposal. Scaling both
+// factors before cross multiplication preserves the distribution without overflowing.
 public float primeLightBranchProbability(float2 firstMetrics, float2 secondMetrics) {
-    // Keep this order identical for forward selection and reverse MIS reconstruction.
-    float firstDistanceSquared = firstMetrics.x;
-    float secondDistanceSquared = secondMetrics.x;
     float firstPower = max(firstMetrics.y, 0.0);
     float secondPower = max(secondMetrics.y, 0.0);
     float powerScale = max(firstPower, secondPower);
-    if (powerScale == 0.0) return -1.0;
-    float firstPowerRatio = firstPower / powerScale;
-    float secondPowerRatio = secondPower / powerScale;
-    float distanceScale = max(firstDistanceSquared, secondDistanceSquared);
+    if (!(powerScale > 0.0)) return -1.0;
+    firstPower /= powerScale;
+    secondPower /= powerScale;
+
+    float distanceScale = max(firstMetrics.x, secondMetrics.x);
     if (distanceScale == 0.0) {
-        float firstScore = firstPowerRatio;
-        float secondScore = secondPowerRatio;
-        float sum = firstScore + secondScore;
-        return sum > 0.0 ? firstScore / sum : -1.0;
+        return firstPower / (firstPower + secondPower);
     }
-    float firstScore = firstPowerRatio * (secondDistanceSquared / distanceScale);
-    float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
-    float sum = firstScore + secondScore;
-    return sum > 0.0 ? firstScore / sum : -1.0;
-}
-
-// Converts projected-solid-angle / receiver-oriented targets to bounded weights. Scaling by the
-// largest power and nearest distance preserves the p / r^2 distribution without overflow. Forward
-// leaf selection and reverse MIS reconstruction both call this exact function.
-public float primeLightLeafTargetWeights(
-        float2 metrics[PRIME_LIGHT_LEAF_MAX_ENTRIES],
-        uint count,
-        out float weights[PRIME_LIGHT_LEAF_MAX_ENTRIES],
-        out uint lastPositive) {
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        weights[offset] = 0.0;
-    }
-    lastPositive = 0u;
-    if (count == 0u || count > PRIME_LIGHT_LEAF_MAX_ENTRIES) return 0.0;
-
-    float maximumPower = 0.0;
-    float minimumDistanceSquared = asfloat(0x7f7fffffu);
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        if (offset >= count) break;
-        float2 value = metrics[offset];
-        if (any(isnan(value)) || any(isinf(value))
-                || !(value.x >= 0.0) || !(value.y >= 0.0)) {
-            return 0.0;
-        }
-        maximumPower = max(maximumPower, value.y);
-        minimumDistanceSquared = min(minimumDistanceSquared, value.x);
-    }
-    if (!(maximumPower > 0.0)) return 0.0;
-
-    float totalWeight = 0.0;
-    [[unroll]]
-    for (uint offset = 0u; offset < PRIME_LIGHT_LEAF_MAX_ENTRIES; ++offset) {
-        if (offset >= count) break;
-        float2 value = metrics[offset];
-        float distanceWeight = minimumDistanceSquared == 0.0
-                ? float(value.x == 0.0)
-                : minimumDistanceSquared / value.x;
-        float weight = (value.y / maximumPower) * distanceWeight;
-        if (!(weight >= 0.0) || isnan(weight) || isinf(weight)) return 0.0;
-        weights[offset] = weight;
-        totalWeight += weight;
-        if (weight > 0.0) lastPositive = offset;
-    }
-    return totalWeight;
+    float firstScore = firstPower * (secondMetrics.x / distanceScale);
+    float secondScore = secondPower * (firstMetrics.x / distanceScale);
+    float score = firstScore + secondScore;
+    return score > 0.0 ? firstScore / score : -1.0;
 }

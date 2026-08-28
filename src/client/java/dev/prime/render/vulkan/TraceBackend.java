@@ -27,9 +27,10 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * offline, atmosphere and sun-shadow programs only borrow its descriptor set.
  */
 public final class TraceBackend implements Destroyable {
-    private static final int BINDING_COUNT = 23;
+    private static final int BINDING_COUNT = 24;
     private static final int STARMAP_UPLOAD = 1;
     private static final int BSDF_LOOKUP_UPLOAD = 1 << 1;
+    private static final int REALTIME_STBN_UPLOAD = 1 << 2;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
@@ -38,6 +39,7 @@ public final class TraceBackend implements Destroyable {
     private final VulkanContext context;
     private final StarmapTexture starmap;
     private final BsdfLookupTable bsdfLookup;
+    private final RealtimeStbnTable realtimeStbn;
     private final long descriptorSetLayout;
     private final TraceBindings bindings;
     private SunShadowPipeline sunShadowPipeline;
@@ -52,26 +54,30 @@ public final class TraceBackend implements Destroyable {
         this.context = context;
         StarmapTexture starTexture = null;
         BsdfLookupTable lookup = null;
+        RealtimeStbnTable stbn = null;
         long layout = 0L;
         try {
             starTexture = new StarmapTexture(context);
             lookup = new BsdfLookupTable(context);
+            stbn = new RealtimeStbnTable(context);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 layout = createDescriptorSetLayout(context, stack);
             }
             this.starmap = starTexture;
             this.bsdfLookup = lookup;
+            this.realtimeStbn = stbn;
             this.descriptorSetLayout = layout;
             this.bindings = new TraceBindings(layout);
             this.sunShadowPipeline = new SunShadowPipeline(context, this.bindings);
         } catch (RuntimeException exception) {
-            ResourceCleanup.destroy(this.sunShadowPipeline, exception);
+            RuntimeException failure = ResourceCleanup.destroy(
+                    this.sunShadowPipeline, exception);
             if (layout != 0L) {
                 VK12.vkDestroyDescriptorSetLayout(context.vkDevice(), layout, null);
             }
-            ResourceCleanup.destroy(lookup, exception);
-            ResourceCleanup.destroy(starTexture, exception);
-            throw exception;
+            failure = ResourceCleanup.destroy(stbn, failure);
+            failure = ResourceCleanup.destroy(lookup, failure);
+            throw ResourceCleanup.destroy(starTexture, failure);
         }
     }
 
@@ -130,7 +136,8 @@ public final class TraceBackend implements Destroyable {
                 textureRecords,
                 atmosphere,
                 this.bsdfLookup,
-                this.starmap);
+                this.starmap,
+                this.realtimeStbn);
         SceneBindings previous = this.sceneBindings;
         this.sceneBindings = replacement;
         this.bindings.publishDescriptorSet(replacement.descriptorSet);
@@ -153,6 +160,9 @@ public final class TraceBackend implements Destroyable {
             if (this.bsdfLookup.prepare(commandBuffer, initialization)) {
                 uploads |= BSDF_LOOKUP_UPLOAD;
             }
+            if (this.realtimeStbn.prepare(commandBuffer)) {
+                uploads |= REALTIME_STBN_UPLOAD;
+            }
             if (uploads == 0) {
                 this.staticResourcesPrepared = true;
                 this.bindings.setReady(true);
@@ -170,6 +180,9 @@ public final class TraceBackend implements Destroyable {
             RuntimeException failure = exception;
             if ((uploads & BSDF_LOOKUP_UPLOAD) != 0) {
                 failure = ResourceCleanup.run(this.bsdfLookup::abandon, failure);
+            }
+            if ((uploads & REALTIME_STBN_UPLOAD) != 0) {
+                failure = ResourceCleanup.run(this.realtimeStbn::abandon, failure);
             }
             if ((uploads & STARMAP_UPLOAD) != 0) {
                 failure = ResourceCleanup.run(this.starmap::abandon, failure);
@@ -190,6 +203,9 @@ public final class TraceBackend implements Destroyable {
         if ((this.pendingUploads & BSDF_LOOKUP_UPLOAD) != 0) {
             failure = ResourceCleanup.run(this.bsdfLookup::submitted, failure);
         }
+        if ((this.pendingUploads & REALTIME_STBN_UPLOAD) != 0) {
+            failure = ResourceCleanup.run(this.realtimeStbn::submitted, failure);
+        }
         this.staticResourcesPrepared = failure == null;
         this.pendingFrameToken = 0L;
         this.pendingUploads = 0;
@@ -205,6 +221,9 @@ public final class TraceBackend implements Destroyable {
         RuntimeException failure = null;
         if ((this.pendingUploads & BSDF_LOOKUP_UPLOAD) != 0) {
             failure = ResourceCleanup.run(this.bsdfLookup::abandon, failure);
+        }
+        if ((this.pendingUploads & REALTIME_STBN_UPLOAD) != 0) {
+            failure = ResourceCleanup.run(this.realtimeStbn::abandon, failure);
         }
         if ((this.pendingUploads & STARMAP_UPLOAD) != 0) {
             failure = ResourceCleanup.run(this.starmap::abandon, failure);
@@ -276,6 +295,11 @@ public final class TraceBackend implements Destroyable {
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(ALL_RT_STAGES);
+        bindings.get(cursor++)
+                .binding(ShaderAbi.DESCRIPTOR_REALTIME_STBN)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         for (int binding : sunShadowBindings()) {
             bindings.get(cursor++)
                     .binding(binding)
@@ -328,6 +352,7 @@ public final class TraceBackend implements Destroyable {
             VK12.vkDestroyDescriptorSetLayout(
                     this.context.vkDevice(), this.descriptorSetLayout, null);
             this.bsdfLookup.destroy();
+            this.realtimeStbn.destroy();
             this.starmap.destroy();
         }
     }
@@ -404,7 +429,8 @@ public final class TraceBackend implements Destroyable {
                 VulkanBuffer textureRecords,
                 AtmospherePipeline atmosphere,
                 BsdfLookupTable bsdfLookup,
-                StarmapTexture starmap) {
+                StarmapTexture starmap,
+                RealtimeStbnTable realtimeStbn) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(5, stack);
                 sizes.get(0)
@@ -423,7 +449,7 @@ public final class TraceBackend implements Destroyable {
                         .descriptorCount(1);
                 sizes.get(4)
                         .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                        .descriptorCount(1);
+                        .descriptorCount(2);
                 VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -533,7 +559,7 @@ public final class TraceBackend implements Destroyable {
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
                     VkDescriptorBufferInfo.Buffer bufferInfos =
-                            VkDescriptorBufferInfo.calloc(2, stack);
+                            VkDescriptorBufferInfo.calloc(3, stack);
                     VkDescriptorBufferInfo queryInfo = bufferInfos.get(0);
                     queryInfo
                                     .buffer(atmosphere.sunShadowQuery().handle())
@@ -544,6 +570,11 @@ public final class TraceBackend implements Destroyable {
                             .buffer(textureRecords.handle())
                             .offset(0L)
                             .range(textureRecords.size());
+                    VkDescriptorBufferInfo stbnInfo = bufferInfos.get(2);
+                    stbnInfo
+                            .buffer(realtimeStbn.buffer().handle())
+                            .offset(0L)
+                            .range(realtimeStbn.buffer().size());
                     VkWriteDescriptorSet.Buffer writes =
                             VkWriteDescriptorSet.calloc(BINDING_COUNT, stack);
                     int write = 0;
@@ -621,6 +652,14 @@ public final class TraceBackend implements Destroyable {
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
                                     textureRecordInfo.address(), 1));
+                    writes.get(write++)
+                            .sType$Default()
+                            .dstSet(set)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_REALTIME_STBN)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                            .pBufferInfo(VkDescriptorBufferInfo.create(
+                                    stbnInfo.address(), 1));
                     int[] shadowBindings = sunShadowBindings();
                     for (int index = 0; index < shadowBindings.length; index++) {
                         writes.get(write++)

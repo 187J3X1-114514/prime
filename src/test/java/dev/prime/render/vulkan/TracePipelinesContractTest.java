@@ -245,6 +245,27 @@ final class TracePipelinesContractTest {
     }
 
     @Test
+    void realtimeStbnDoesNotEnterTheOfflineShaderClosure() throws IOException {
+        for (String suffix : List.of("", "_ser")) {
+            Set<Integer> realtime = descriptorBindings(
+                    List.of(wavefrontShader("realtime", "fixed_direct", suffix)),
+                    0);
+            assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_REALTIME_STBN));
+            Set<Integer> offline = descriptorBindings(
+                    wavefrontShaders(
+                            "offline",
+                            suffix,
+                            List.of(
+                                    "camera_surface_step",
+                                    "path_surface_step",
+                                    "area_shadow",
+                                    "sample_resolve")),
+                    0);
+            assertFalse(offline.contains(ShaderAbi.DESCRIPTOR_REALTIME_STBN));
+        }
+    }
+
+    @Test
     void optimizedModulesPreservePayloadAbi() throws IOException {
         String tracePayload = "struct(vec3(f32),f32,vec3(f32),"
                 + "u32,u32,u32,f32,f32,u32,f32,u32,u32,vec3(f32),u32,vec3(f32),u32)";

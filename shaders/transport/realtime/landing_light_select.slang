@@ -39,7 +39,6 @@ public void primeSelectLandingLight(uint launchIndex) {
                 closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
             PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
                     pixel,
-                    primePush.outputExtent,
                     primeSampleIndex(),
                     primeSampleEpoch(),
                     primePathBounce(path.control) + 1u,

@@ -45,7 +45,6 @@ public void primeEvaluateFixedDirect(
 
     PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
             pixel,
-            primePush.outputExtent,
             primeSampleIndex(),
             primeSampleEpoch(),
             primePathBounce(path.control) + 1u,

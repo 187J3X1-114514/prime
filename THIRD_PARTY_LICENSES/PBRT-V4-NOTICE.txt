@@ -4,9 +4,9 @@ Copyright 1998-2020 Matt Pharr, Wenzel Jakob, and Greg Humphreys.
 Source: https://github.com/mmp/pbrt-v4
 Reference commit: 5f7a606806a4ac7b939131ded9d7a30ebd02416e
 
-Prime's realtime direct-light sampler adapts ZSobolSampler, MixBits,
-FastOwenScrambler, Morton encoding, and the first two Sobol generator matrices
-from src/pbrt/samplers.h and src/pbrt/util/{hash,lowdiscrepancy,math}.h and
-sobolmatrices.cpp.
+Prime's Sobol samplers and realtime STBN initializer adapt ZSobolSampler,
+MixBits, FastOwenScrambler, Morton encoding, and the first two Sobol generator
+matrices from src/pbrt/samplers.h and
+src/pbrt/util/{hash,lowdiscrepancy,math}.h and sobolmatrices.cpp.
 
 Licensed under the Apache License, Version 2.0. See APACHE-2.0.txt.

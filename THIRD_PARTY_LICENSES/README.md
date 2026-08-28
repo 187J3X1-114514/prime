@@ -31,8 +31,11 @@ Outdoor Light Scattering Sample. See `OUTDOOR-LIGHT-SCATTERING-NOTICE.txt` and
 Prime's triangle projected-solid-angle light sampler is adapted from Christoph Peters'
 BSD-3-Clause implementation. See `PROJECTED-SOLID-ANGLE-SAMPLING-NOTICE.txt`.
 
-Prime's realtime direct-light sampler adapts pbrt-v4's hierarchical Z-Sobol
-sampler. See `PBRT-V4-NOTICE.txt` and `APACHE-2.0.txt`.
+Prime's Sobol samplers adapt pbrt-v4's Owen-scrambled and hierarchical Z-Sobol
+implementations. See `PBRT-V4-NOTICE.txt` and `APACHE-2.0.txt`.
+
+Prime's realtime spatiotemporal blue-noise lookup table is optimized with EA's
+BSD-3-Clause FastNoise implementation. See `FASTNOISE-NOTICE.txt`.
 
 Prime's night sky uses NASA Scientific Visualization Studio's Deep Star Maps
 2020 with Gaia DR2 data. See `NASA-DEEP-STAR-MAPS-2020-NOTICE.md` for the

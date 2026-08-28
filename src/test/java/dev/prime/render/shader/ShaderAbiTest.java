@@ -63,6 +63,7 @@ final class ShaderAbiTest {
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
+        assertEquals(35, ShaderAbi.DESCRIPTOR_REALTIME_STBN);
         assertEquals(36, ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS);
         assertEquals(37, ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE);
         assertEquals(38, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_0);

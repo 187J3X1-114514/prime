@@ -38,7 +38,6 @@ public void primeSelectFixedLight(uint sourceQueue, uint launchIndex) {
             selection.area = primeInvalidAreaLightSelection();
             PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
                     pixel,
-                    primePush.outputExtent,
                     primeSampleIndex(),
                     primeSampleEpoch(),
                     primePathBounce(path.control) + 1u,

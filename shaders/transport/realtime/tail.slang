@@ -171,7 +171,6 @@ public bool primeIntegrateRealtimeTailSurface(
     if (supportsSolidAngle) {
         PrimeDirectSampleBase directSample = primeMakeDirectSampleBase(
                 primeWavefrontPixel(pathIndex),
-                primePush.outputExtent,
                 primeSampleIndex(),
                 primeSampleEpoch(),
                 primePathBounce(path.control) + 1u,

@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-import "math/direct_sampling.slang";
+import "math/zsobol_sampling.slang";
 
 static const uint PRIME_ZSOBOL_INPUT_WORDS = 2u;
 static const uint PRIME_ZSOBOL_OUTPUT_WORDS = 2u;

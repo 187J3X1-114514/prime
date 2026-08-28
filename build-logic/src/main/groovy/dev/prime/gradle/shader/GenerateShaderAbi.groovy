@@ -39,6 +39,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def atmosphereContract = schema.atmosphereContract
 		def astronomyContract = schema.astronomyContract
 		def starmapContract = schema.starmapContract
+		def realtimeStbnContract = schema.realtimeStbnContract
 		def nrdContract = schema.nrdContract
 		def fsrContract = schema.fsrContract
 		def wavefrontContract = schema.realtimeWavefrontContract
@@ -90,6 +91,17 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
 			throw new GradleException(
 					'Prime starmap contract must preserve the full NASA source and its calibrated radiance baseline')
+		}
+		if (schema.sharedDescriptors.realtimeStbn != 35
+				|| realtimeStbnContract.width != 128
+				|| realtimeStbnContract.height != 128
+				|| realtimeStbnContract.depth != 64
+				|| realtimeStbnContract.bankCount != 3
+				|| realtimeStbnContract.channels != 2
+				|| realtimeStbnContract.channelBits != 16
+				|| !(realtimeStbnContract.resourceSha256 ==~ /[0-9a-f]{64}/)) {
+			throw new GradleException(
+					'Prime realtime STBN contract must remain three 128x128x64 RG16UI banks')
 		}
 		if (astronomyContract.axialTiltDegrees != 23.43928
 				|| astronomyContract.minimumLatitudeDegrees != -90
@@ -336,6 +348,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_DIRECTION = ${schema.realtimeDescriptors.nrdReflectionSpecularDirection};
     public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.realtimeDescriptors.nrdDisplayPosition};
     public static final int DESCRIPTOR_STARMAP = ${schema.sharedDescriptors.starmap};
+    public static final int DESCRIPTOR_REALTIME_STBN = ${schema.sharedDescriptors.realtimeStbn};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
     public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
     public static final int OFFLINE_DESCRIPTOR_RUNNING_MEAN = ${schema.offlineDescriptors.runningMean};
@@ -453,6 +466,13 @@ public final class ShaderAbi {
     public static final int STARMAP_HEIGHT = ${starmapContract.height};
     public static final float STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale}f;
     public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
+    public static final int REALTIME_STBN_WIDTH = ${realtimeStbnContract.width};
+    public static final int REALTIME_STBN_HEIGHT = ${realtimeStbnContract.height};
+    public static final int REALTIME_STBN_DEPTH = ${realtimeStbnContract.depth};
+    public static final int REALTIME_STBN_BANK_COUNT = ${realtimeStbnContract.bankCount};
+    public static final int REALTIME_STBN_CHANNELS = ${realtimeStbnContract.channels};
+    public static final int REALTIME_STBN_CHANNEL_BITS = ${realtimeStbnContract.channelBits};
+    public static final String REALTIME_STBN_RESOURCE_SHA256 = "${realtimeStbnContract.resourceSha256}";
 ${javaOffsets}
 
     private ShaderAbi() {
@@ -469,6 +489,11 @@ module "prime_abi_bindings.slang";
 
 // Generated from shaders/abi.json. Do not edit by hand.
 public static const uint PRIME_TRANSMISSION_GGX_ENERGY_BINDING = ${schema.sharedDescriptors.transmissionGgxEnergy};
+public static const uint PRIME_REALTIME_STBN_BINDING = ${schema.sharedDescriptors.realtimeStbn};
+public static const uint PRIME_REALTIME_STBN_WIDTH = ${realtimeStbnContract.width};
+public static const uint PRIME_REALTIME_STBN_HEIGHT = ${realtimeStbnContract.height};
+public static const uint PRIME_REALTIME_STBN_DEPTH = ${realtimeStbnContract.depth};
+public static const uint PRIME_REALTIME_STBN_BANK_COUNT = ${realtimeStbnContract.bankCount};
 """
 		new File(slangDir, 'prime_abi_types.slang').text = """\
 #language slang 2026

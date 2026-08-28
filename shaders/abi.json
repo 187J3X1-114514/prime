@@ -205,6 +205,7 @@
     "materialNormalPages": 19,
     "materialOpticalPages": 49,
     "starmap": 34,
+    "realtimeStbn": 35,
     "sunShadowDepth0": 38,
     "sunShadowDepth1": 39,
     "sunShadowDepth2": 40,
@@ -369,6 +370,15 @@
     "height": 4096,
     "baseRadianceScale": 0.075,
     "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
+  },
+  "realtimeStbnContract": {
+    "width": 128,
+    "height": 128,
+    "depth": 64,
+    "bankCount": 3,
+    "channels": 2,
+    "channelBits": 16,
+    "resourceSha256": "58ec9b44fcebae64af4ac3d406a26f81f1d5137a26b0ceaead536450e13f7cc5"
   },
   "cutoutAlphaThreshold": 0.5
 }

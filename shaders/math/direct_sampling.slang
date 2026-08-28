@@ -24,15 +24,18 @@ uint64_t primeZSobolConstant(uint high, uint low)
     return (uint64_t(high) << 32u) | uint64_t(low);
 }
 
-// Exact pbrt-v4 MixBits permutation selector, specialized here to keep the direct
-// entry-point closure independent of the generic renderer sampling implementation.
-uint64_t primeZSobolMixBits(uint64_t value)
+// The selector only chooses one of 24 digit permutations. A 32-bit avalanche of
+// both prefix limbs retains nested scrambling without paying for 64-bit products.
+uint primeZSobolSelector(uint64_t higherDigits, uint dimensionHash)
 {
-    value ^= value >> 31u;
-    value *= primeZSobolConstant(0x7fb5d329, 0x728ea185);
-    value ^= value >> 27u;
-    value *= primeZSobolConstant(0x81dadef4, 0xbc2dd44d);
-    value ^= value >> 33u;
+    uint value = uint(higherDigits)
+            ^ (uint(higherDigits >> 32u) * 0x9e3779b9u)
+            ^ dimensionHash;
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
     return value;
 }
 
@@ -85,30 +88,19 @@ public PrimeDirectSampleBase primeMakeDirectSampleBase(
     return result;
 }
 
-// Exact remainder without the out-of-line NVIDIA u64 division helper. 2^32 is 16
-// modulo 24, and the high limb only needs its residue modulo 3.
-uint primeZSobolModulo24(uint64_t value)
+// AGL(2, 2) has 6 invertible matrices and 4 translations, exactly covering all
+// 24 permutations of a base-4 digit without a table or 64-bit remainder.
+uint primeZSobolPermutation(uint selector, uint digit)
 {
-    uint remainder = uint(value) % 24u
-            + 16u * (uint(value >> 32u) % 3u);
-    remainder -= remainder >= 24u ? 24u : 0u;
-    remainder -= remainder >= 24u ? 24u : 0u;
-    return remainder;
-}
-
-// Four two-bit outputs are packed in each byte. The byte order is the exact pbrt-v4
-// table order; it is not the conventional factoradic permutation order.
-uint primeZSobolPermutation(uint permutation, uint digit)
-{
-    uint word = 0x78d8b4e4u;
-    uint wordIndex = permutation >> 2u;
-    word = wordIndex == 1u ? 0xb1e19c6cu : word;
-    word = wordIndex == 2u ? 0x8d2d39c9u : word;
-    word = wordIndex == 3u ? 0x72d236c6u : word;
-    word = wordIndex == 4u ? 0x87271e4eu : word;
-    word = wordIndex == 5u ? 0x93634b1bu : word;
-    uint packed = word >> ((permutation & 3u) * 8u);
-    return (packed >> (digit * 2u)) & 3u;
+    uint matrixSelector = selector >> 2u;
+    // matrixSelector is 30-bit, so this range reduction cannot overflow u32.
+    uint matrixIndex = (matrixSelector + (matrixSelector << 1u)) >> 29u;
+    uint matrix = (0x00b7e6d9u >> (matrixIndex * 4u)) & 15u;
+    uint xMask = 0u - (digit & 1u);
+    uint yMask = 0u - (digit >> 1u);
+    return (selector & 3u)
+            ^ (xMask & (matrix & 3u))
+            ^ (yMask & (matrix >> 2u));
 }
 
 uint64_t primeZSobolSampleIndex(PrimeDirectSampleBase base, uint dimension)
@@ -121,11 +113,9 @@ uint64_t primeZSobolSampleIndex(PrimeDirectSampleBase base, uint dimension)
     uint dimensionHash = 0x55555555u * dimension;
     while (remainingDigits != 0u) {
         uint digit = uint(source >> 62u);
-        uint permutation = primeZSobolModulo24(
-                primeZSobolMixBits(
-                        higherDigits ^ uint64_t(dimensionHash)) >> 24u);
+        uint selector = primeZSobolSelector(higherDigits, dimensionHash);
         sampleIndex = (sampleIndex << 2u)
-                | uint64_t(primeZSobolPermutation(permutation, digit));
+                | uint64_t(primeZSobolPermutation(selector, digit));
         higherDigits = (higherDigits << 2u) | uint64_t(digit);
         source <<= 2u;
         --remainingDigits;

@@ -2,10 +2,13 @@ package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.SplittableRandom;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -32,17 +35,8 @@ final class ZSobolSamplerGpuTest {
         0x8888_0000, 0xcccc_0000, 0xaaaa_0000, 0xffff_0000,
         0x8000_8000, 0xc000_c000, 0xa000_a000, 0xf000_f000
     };
-    private static final int[] PERMUTATIONS = {
-        0, 1, 2, 3,  0, 1, 3, 2,  0, 2, 1, 3,  0, 2, 3, 1,
-        0, 3, 2, 1,  0, 3, 1, 2,  1, 0, 2, 3,  1, 0, 3, 2,
-        1, 2, 0, 3,  1, 2, 3, 0,  1, 3, 2, 0,  1, 3, 0, 2,
-        2, 1, 0, 3,  2, 1, 3, 0,  2, 0, 1, 3,  2, 0, 3, 1,
-        2, 3, 0, 1,  2, 3, 1, 0,  3, 1, 2, 0,  3, 1, 0, 2,
-        3, 2, 1, 0,  3, 2, 0, 1,  3, 0, 2, 1,  3, 0, 1, 2
-    };
-
     @Test
-    void shaderMatchesPinnedPbrtZOrderFastOwenReference() throws IOException {
+    void shaderMatchesPrimeZOrderFastOwenReference() throws IOException {
         ShaderComputeRunner opened;
         try {
             opened = ShaderComputeRunner.open();
@@ -88,6 +82,53 @@ final class ZSobolSamplerGpuTest {
                             ShaderTestBuffer.getInt(
                                     output, caseIndex, OUTPUT_WORDS, word, lane),
                             "case=" + caseIndex + " component=" + component);
+                }
+            }
+        }
+    }
+
+    @Test
+    void affineDigitMappingCoversEveryPermutation() {
+        Set<Integer> permutations = new HashSet<>();
+        for (int matrixIndex = 0; matrixIndex < 6; matrixIndex++) {
+            long matrixSelector = ((2L * matrixIndex + 1) << 30) / 12;
+            for (int translation = 0; translation < 4; translation++) {
+                int selector = (int) ((matrixSelector << 2) | translation);
+                boolean[] occupied = new boolean[4];
+                int packed = 0;
+                for (int digit = 0; digit < 4; digit++) {
+                    int mapped = permuteDigit(selector, digit);
+                    assertFalse(occupied[mapped], "selector=" + selector);
+                    occupied[mapped] = true;
+                    packed |= mapped << (digit * 2);
+                }
+                assertTrue(permutations.add(packed), "selector=" + selector);
+            }
+        }
+        assertEquals(24, permutations.size());
+    }
+
+    @Test
+    void mappedIndicesRemainUniqueAcrossPixelsAndSamples() {
+        int extentX = 16;
+        int extentY = 9;
+        int digitCount = 32 - Integer.numberOfLeadingZeros(
+                Math.max(extentX, extentY) - 1) + 8;
+        for (int dimension : new int[] {0, 7, 191}) {
+            Set<Long> indices = new HashSet<>();
+            for (int pixelY = 0; pixelY < extentY; pixelY++) {
+                for (int pixelX = 0; pixelX < extentX; pixelX++) {
+                    for (int sampleIndex = 0; sampleIndex < 256; sampleIndex++) {
+                        long mortonIndex = (morton(pixelX, pixelY) << 16)
+                                | sampleIndex;
+                        long mapped = mappedIndex(
+                                mortonIndex, digitCount, dimension);
+                        assertTrue(
+                                indices.add(mapped),
+                                "dimension=" + dimension
+                                        + " pixel=" + pixelX + "," + pixelY
+                                        + " sample=" + sampleIndex);
+                    }
                 }
             }
         }
@@ -226,12 +267,23 @@ final class ZSobolSamplerGpuTest {
             int digitShift = 2 * digitIndex;
             int digit = (int) ((mortonIndex >>> digitShift) & 3);
             long higherDigits = mortonIndex >>> (digitShift + 2);
-            long dimensionHash = Integer.toUnsignedLong(0x5555_5555 * dimension);
-            int permutation = (int) ((mixBits(higherDigits ^ dimensionHash) >>> 24) % 24);
-            digit = PERMUTATIONS[permutation * 4 + digit];
+            int dimensionHash = 0x5555_5555 * dimension;
+            int selector = selector(higherDigits, dimensionHash);
+            digit = permuteDigit(selector, digit);
             sampleIndex |= (long) digit << digitShift;
         }
         return sampleIndex;
+    }
+
+    private static int permuteDigit(int selector, int digit) {
+        int matrixSelector = selector >>> 2;
+        int matrixIndex = (matrixSelector + (matrixSelector << 1)) >>> 29;
+        int matrix = (0x00b7_e6d9 >>> (matrixIndex * 4)) & 15;
+        int xMask = -(digit & 1);
+        int yMask = -(digit >>> 1);
+        return (selector & 3)
+                ^ (xMask & (matrix & 3))
+                ^ (yMask & (matrix >>> 2));
     }
 
     private static long morton(int pixelX, int pixelY) {
@@ -247,12 +299,15 @@ final class ZSobolSamplerGpuTest {
         return (expanded ^ expanded << 1) & 0x5555_5555_5555_5555L;
     }
 
-    private static long mixBits(long value) {
-        value ^= value >>> 31;
-        value *= 0x7fb5_d329_728e_a185L;
-        value ^= value >>> 27;
-        value *= 0x81da_def4_bc2d_d44dL;
-        return value ^ value >>> 33;
+    private static int selector(long higherDigits, int dimensionHash) {
+        int value = (int) higherDigits
+                ^ (int) (higherDigits >>> 32) * 0x9e37_79b9
+                ^ dimensionHash;
+        value ^= value >>> 16;
+        value *= 0x7feb_352d;
+        value ^= value >>> 15;
+        value *= 0x846c_a68b;
+        return value ^ value >>> 16;
     }
 
     private static long sampleHash(int dimension, int seed) {

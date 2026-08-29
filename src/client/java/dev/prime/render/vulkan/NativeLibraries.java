@@ -26,7 +26,7 @@ public final class NativeLibraries {
                 && (arch.equals("amd64") || arch.equals("x86_64"));
     }
 
-    public static SharedLibrary loadBundled(
+    public static Path extractBundled(
             String cacheName,
             String resourceName,
             String fileName,
@@ -35,7 +35,15 @@ public final class NativeLibraries {
         Path directory = NativeRuntimeFiles.directory(cacheName, bytes);
         Path libraryPath = directory.resolve(fileName);
         NativeRuntimeFiles.publish(libraryPath, bytes);
-        return APIUtil.apiCreateLibrary(libraryPath.toAbsolutePath().toString());
+        return libraryPath.toAbsolutePath();
+    }
+
+    public static SharedLibrary loadBundled(
+            String cacheName,
+            String resourceName,
+            String fileName,
+            String label) {
+        return APIUtil.apiCreateLibrary(extractBundled(cacheName, resourceName, fileName, label).toString());
     }
 
     public static byte[] readResource(String resourceName, String label) {

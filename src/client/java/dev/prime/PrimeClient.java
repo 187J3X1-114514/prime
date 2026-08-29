@@ -1,13 +1,22 @@
 package dev.prime;
 
+import dev.prime.binding.streamline.Layouts;
+import dev.prime.binding.streamline.Preferences;
+import dev.prime.binding.streamline.Streamline;
 import dev.prime.config.PrimeConfig;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.scene.vanilla.ItemFrameModelFallback;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
+
+import dev.prime.render.vulkan.NativeLibraries;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
 import net.fabricmc.fabric.api.resource.v1.reloader.ResourceReloaderKeys;
@@ -19,6 +28,40 @@ import net.minecraft.server.packs.resources.PreparableReloadListener;
 public final class PrimeClient implements ClientModInitializer {
     private static final Identifier RELOAD_LISTENER_ID = Identifier.fromNamespaceAndPath(
             PrimeInfo.MOD_ID, "ray_tracing_resources");
+
+    private static Streamline streamlineInstance;
+
+    public static Path getStreamlineInterposerPath(){
+        return NativeLibraries.extractBundled(
+                "prime-streamline",
+                "/prime/natives/windows-x86_64/sl.interposer.dll",
+                "sl.interposer.dll",
+                "Streamline interposer library"
+        );
+    }
+
+    public static Path getStreamlineCommonPath(){
+        return NativeLibraries.extractBundled(
+                "prime-streamline",
+                "/prime/natives/windows-x86_64/sl.common.dll",
+                "sl.common.dll",
+                "Streamline common library"
+        );
+    }
+
+    public static void initializeStreamline(){
+        /*
+        Path interposerPath = getStreamlineInterposerPath();
+        Path commonPath = getStreamlineCommonPath();
+        streamlineInstance = Streamline.open(interposerPath);
+
+        try (Arena arena = Arena.ofConfined()) {
+            var preferences = Preferences.allocate(arena);
+            streamlineInstance.init(preferences);
+        }
+        */
+    }
+
     @Override
     public void onInitializeClient() {
         PrimeConfig.load();

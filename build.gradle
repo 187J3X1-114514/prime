@@ -17,16 +17,34 @@ def developmentGraphicsBackend = providers.gradleProperty('primeBackend').orElse
 
 repositories {
 	mavenCentral()
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
 }
 
 loom {
 	splitEnvironmentSourceSets()
 	accessWidenerPath = file('src/client/resources/prime.accesswidener')
 
+	var streamlineSourceSets = sourceSets.maybeCreate("streamline")
+	sourceSets.main.compileClasspath += streamlineSourceSets.output
+	sourceSets.main.runtimeClasspath += streamlineSourceSets.output
+	sourceSets.client.compileClasspath += streamlineSourceSets.output
+	sourceSets.client.runtimeClasspath += streamlineSourceSets.output
+	
 	mods {
 		prime {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
+			sourceSet streamlineSourceSets
 		}
 	}
 
@@ -59,10 +77,15 @@ dependencies {
 			'fabric-renderer-api-v1',
 			'fabric-renderer-indigo',
 			'fabric-rendering-v1',
-			'fabric-resource-loader-v1'
+			'fabric-resource-loader-v1',
+			'fabric-command-api-v2'
 	].each { module ->
 		implementation fabricApi.module(module, project.fabric_api_version)
 	}
+	// Spark
+	// https://modrinth.com/mod/spark/version/1.10.173-fabric
+	implementation "maven.modrinth:l6YH9Als:iYFOl6lQ"
+
 
 	testImplementation platform('org.junit:junit-bom:6.1.3')
 	testImplementation 'org.junit.jupiter:junit-jupiter'

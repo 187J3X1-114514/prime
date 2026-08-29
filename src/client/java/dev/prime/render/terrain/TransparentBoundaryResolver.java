@@ -30,8 +30,8 @@ final class TransparentBoundaryResolver {
         int clusterWorldY = cluster.clusterY() << 4;
         int clusterWorldZ = cluster.clusterZ() << 4;
         for (int localIndex = 0;
-                localIndex < SectionCluster.SECTION_COUNT;
-                localIndex++) {
+             localIndex < SectionCluster.SECTION_COUNT;
+             localIndex++) {
             CapturedSectionGeometry section = cluster.section(localIndex);
             if (section == null) {
                 continue;
@@ -139,15 +139,15 @@ final class TransparentBoundaryResolver {
         TwoSidedQuadReducer.ResolvedQuad substrateResolved = aOverlay ? second : first;
         if (aOverlay == bOverlay
                 || FaceKind.of(
-                                (aOverlay ? b : a).surface(),
-                                substrateResolved.definition()
-                                        .primary()
-                                        .transmissiveTopology())
-                        != FaceKind.OPAQUE
+                (aOverlay ? b : a).surface(),
+                substrateResolved.definition()
+                        .primary()
+                        .transmissiveTopology())
+                != FaceKind.OPAQUE
                 || a.normalX() * b.normalX()
-                                + a.normalY() * b.normalY()
-                                + a.normalZ() * b.normalZ()
-                        <= 0.0F) {
+                + a.normalY() * b.normalY()
+                + a.normalZ() * b.normalZ()
+                <= 0.0F) {
             return null;
         }
         CapturedSectionGeometry.Quad geometry = aOverlay ? b : a;
@@ -164,14 +164,14 @@ final class TransparentBoundaryResolver {
                 layer.u(mapping[2]), layer.v(mapping[2]),
                 layer.u(mapping[3]), layer.v(mapping[3]));
         return new SurfaceDefinition.MaterialBinding[] {
-            new SurfaceDefinition.MaterialBinding(
-                    layer.surface(),
-                    overlayUv,
-                    layerResolved.definition().primary().transmissiveTopology()),
-            new SurfaceDefinition.MaterialBinding(
-                    geometry.surface(),
-                    SurfaceDefinition.UvMapping.of(geometry),
-                    geometryResolved.definition().primary().transmissiveTopology())
+                new SurfaceDefinition.MaterialBinding(
+                        layer.surface(),
+                        overlayUv,
+                        layerResolved.definition().primary().transmissiveTopology()),
+                new SurfaceDefinition.MaterialBinding(
+                        geometry.surface(),
+                        SurfaceDefinition.UvMapping.of(geometry),
+                        geometryResolved.definition().primary().transmissiveTopology())
         };
     }
 
@@ -488,8 +488,8 @@ final class TransparentBoundaryResolver {
                 Candidate solid = negativeKind == FaceKind.SOLID_TRANSMISSIVE
                         ? negativeFace
                         : (positiveKind == FaceKind.SOLID_TRANSMISSIVE
-                                ? positiveFace
-                                : negativeFace);
+                        ? positiveFace
+                        : negativeFace);
                 emitActual(
                         List.of(solid),
                         minimumU,
@@ -537,7 +537,7 @@ final class TransparentBoundaryResolver {
                     minimumV,
                     maximumV,
                     null,
-                output);
+                    output);
         }
 
         private static boolean allTransmissive(List<Candidate> candidates) {
@@ -647,7 +647,7 @@ final class TransparentBoundaryResolver {
             if (substrate.kind() != FaceKind.OPAQUE
                     || substrate.quad.peerOnly()
                     || Math.abs(overlay.plane - substrate.plane)
-                            > ATTACHED_SURFACE_EPSILON) {
+                    > ATTACHED_SURFACE_EPSILON) {
                 return false;
             }
             output[substrate.sectionIndex].add(overlaySlice(
@@ -702,8 +702,8 @@ final class TransparentBoundaryResolver {
             CapturedSectionGeometry.Surface surface = candidate.quad.surface();
             return surface.rasterOverlay()
                     || ClusterSceneTranslator.isCutout(surface)
-                            && surface.animated()
-                            && surface.lightEmission() > 0;
+                    && surface.animated()
+                    && surface.lightEmission() > 0;
         }
 
         private static boolean sameRectangle(Candidate first, Candidate second) {
@@ -748,7 +748,7 @@ final class TransparentBoundaryResolver {
             for (int index = 0; index < size; index++) {
                 if (unique == 0
                         || Math.abs(values[index] - values[unique - 1])
-                                > POSITION_EPSILON) {
+                        > POSITION_EPSILON) {
                     values[unique++] = values[index];
                 }
             }
@@ -767,7 +767,7 @@ final class TransparentBoundaryResolver {
                     || a.sprite().id().equals(b.sprite().id());
             return a.water() == b.water()
                     && ClusterSceneTranslator.averageColor(a)
-                            == ClusterSceneTranslator.averageColor(b)
+                    == ClusterSceneTranslator.averageColor(b)
                     && sameIdentity;
         }
     }
@@ -869,7 +869,7 @@ final class TransparentBoundaryResolver {
             CapturedSectionGeometry.BlockFacts owner = surface.block();
             if (owner == null
                     || resolved.definition().interfaceMode()
-                            != SurfaceDefinition.InterfaceMode.SINGLE
+                    != SurfaceDefinition.InterfaceMode.SINGLE
                     || !surface.mergeable() && surface.fluid() == null) {
                 return null;
             }
@@ -989,7 +989,7 @@ final class TransparentBoundaryResolver {
             SurfaceDefinition definition = adjacentMedium == null
                     ? SurfaceDefinition.single(primary)
                     : SurfaceDefinition.boundary(
-                            primary, adjacentMedium, this.mediumEndpoint());
+                    primary, adjacentMedium, this.mediumEndpoint());
             return new ResolvedQuad(
                     this,
                     null,

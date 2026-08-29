@@ -35,66 +35,6 @@ public class NativeLibrary {
         this.bundledPath = bundledPath;
     }
 
-    public boolean isAvailable() {
-        return available;
-    }
-
-    public SharedLibrary getOrCreateLibrary() {
-        tryToExtract();
-        return APIUtil.apiCreateLibrary(this.extractedPath.toAbsolutePath().toString());
-    }
-
-    public Path tryToExtract(){
-        if (isAvailable()) return this.extractedPath;
-        Path path = targetPath.resolve(fileName);
-        File file = path.toFile();
-        if (file.exists()){
-            String bundledChecksum = getBundledChecksum();
-            String existsChecksum = getChecksum(path);
-            if (bundledChecksum.equals(existsChecksum)) return path;
-        }
-        try {
-            Files.createDirectories(path.getParent());
-        } catch (FileAlreadyExistsException _){
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        try (InputStream input = NativeLibrary.class.getResourceAsStream(bundledPath)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing bundled " + label + " " + bundledPath);
-            }
-            Files.copy(input,path, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException exception) {
-            throw new RuntimeException("Failed to extract bundled library",exception);
-        }
-        this.extractedPath = path;
-        available = true;
-        return path;
-    }
-
-    private String getChecksum(Path file){
-        try (InputStream input = Files.newInputStream(file)) {
-            return calculateChecksum(input);
-        } catch (IOException exception) {
-            return null;
-        }
-    }
-
-    private String getBundledChecksum(){
-        try (InputStream input = NativeLibrary.class.getResourceAsStream(bundledPath)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing bundled " + label + " " + bundledPath);
-            }
-            return calculateChecksum(input);
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to calculate bundled library checksum" + label, exception);
-        }
-    }
-
-    public Path getPath() {
-        return this.extractedPath;
-    }
-
     private static MessageDigest createSha256Digest() {
         try {
             return MessageDigest.getInstance("SHA-256");
@@ -111,5 +51,71 @@ public class NativeLibrary {
             digest.update(buffer, 0, length);
         }
         return HexFormat.of().formatHex(digest.digest());
+    }
+
+    public boolean isAvailable() {
+        return available;
+    }
+
+    public SharedLibrary getOrCreateLibrary() {
+        tryToExtract();
+        return APIUtil.apiCreateLibrary(this.extractedPath.toAbsolutePath().toString());
+    }
+
+    public Path tryToExtract() {
+        if (isAvailable()) {
+            return this.extractedPath;
+        }
+        Path path = this.targetPath.resolve(this.fileName);
+        File file = path.toFile();
+        if (file.exists()) {
+            String bundledChecksum = getBundledChecksum();
+            String existsChecksum = getChecksum(path);
+            this.extractedPath = path;
+            this.available = true;
+            if (bundledChecksum.equals(existsChecksum)) {
+                return path;
+            }
+        }
+        try {
+            Files.createDirectories(path.getParent());
+        } catch (FileAlreadyExistsException _) {
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        try (InputStream input = NativeLibrary.class.getResourceAsStream(this.bundledPath)) {
+            if (input == null) {
+                throw new IllegalStateException("Missing bundled " + label + " " + this.bundledPath);
+            }
+            Files.copy(input, path, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException exception) {
+            throw new RuntimeException("Failed to extract bundled library", exception);
+        }
+        this.extractedPath = path;
+        this.available = true;
+        return path;
+    }
+
+    private String getChecksum(Path file) {
+        try (InputStream input = Files.newInputStream(file)) {
+            return calculateChecksum(input);
+        } catch (IOException exception) {
+            return null;
+        }
+    }
+
+    private String getBundledChecksum() {
+        try (InputStream input = NativeLibrary.class.getResourceAsStream(bundledPath)) {
+            if (input == null) {
+                throw new IllegalStateException("Missing bundled " + label + " " + bundledPath);
+            }
+            return calculateChecksum(input);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Unable to calculate bundled library checksum" + label, exception);
+        }
+    }
+
+    public Path getPath() {
+        return this.extractedPath;
     }
 }

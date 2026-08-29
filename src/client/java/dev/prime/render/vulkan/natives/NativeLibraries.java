@@ -5,8 +5,6 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.SharedLibrary;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 
 public final class NativeLibraries {
@@ -22,19 +20,41 @@ public final class NativeLibraries {
     public static final NativeLibrary NATIVE_NRD;
     public static final NativeLibrary NATIVE_FFXFSR;
 
+    public static final NativeLibrary NATIVE_STREAMLINE_COMMON;
+    public static final NativeLibrary NATIVE_STREAMLINE_INTERPOSER;
+    public static final NativeLibrary NATIVE_STREAMLINE_PCL;
+    public static final NativeLibrary NATIVE_STREAMLINE_REFLEX;
+    public static final NativeLibrary NATIVE_STREAMLINE_DLSSG;
+    public static final NativeLibrary NATIVE_STREAMLINE_DLSSG_FEATURE;
+    public static final NativeLibrary NATIVE_STREAMLINE_LOWLATENCY_FEATURE;
+
 
     static {
-        if (isWindowsX64()){
-            NATIVE_DLSSRR_BRIDGE = createLibrary("prime_dlss_rr.dll","Prime DLSS RR Bridge");
-            NATIVE_DLSSRR_FEATURE = createLibrary("nvngx_dlssd.dll","Prime DLSS RR Feature");
-            NATIVE_NRD = createLibrary("prime_nrd.dll","Prime NRD Library");
-            NATIVE_FFXFSR = createLibrary("amd_fidelityfx_vk.dll","Prime FidelityFX Library");
+        if (isWindowsX64()) {
+            NATIVE_DLSSRR_BRIDGE = createLibrary("prime_dlss_rr.dll", "Prime DLSS RR Bridge");
+            NATIVE_DLSSRR_FEATURE = createLibrary("nvngx_dlssd.dll", "DLSS RR Feature");
+            NATIVE_NRD = createLibrary("prime_nrd.dll", "Prime NRD Library");
+            NATIVE_FFXFSR = createLibrary("amd_fidelityfx_vk.dll", "FidelityFX Library");
+            NATIVE_STREAMLINE_COMMON = createLibrary("sl.common.dll", "Streamline SDK Common");
+            NATIVE_STREAMLINE_INTERPOSER = createLibrary("sl.interposer.dll", "Streamline SDK Interposer");
+            NATIVE_STREAMLINE_PCL = createLibrary("sl.pcl.dll", "Streamline SDK PCL Plugin");
+            NATIVE_STREAMLINE_REFLEX = createLibrary("sl.reflex.dll", "Streamline SDK Reflex Plugin");
+            NATIVE_STREAMLINE_DLSSG = createLibrary("sl.dlss_g.dll", "Streamline SDK DLSS-FG Plugin");
+            NATIVE_STREAMLINE_DLSSG_FEATURE = createLibrary("nvngx_dlssg.dll", "DLSS FG Feature");
+            NATIVE_STREAMLINE_LOWLATENCY_FEATURE = createLibrary("nvngx_dlssg.dll", "Reflex Low Latency Feature");
         } else {
             // TODO
             NATIVE_DLSSRR_BRIDGE = null;
             NATIVE_DLSSRR_FEATURE = null;
             NATIVE_NRD = null;
             NATIVE_FFXFSR = null;
+            NATIVE_STREAMLINE_COMMON = null;
+            NATIVE_STREAMLINE_INTERPOSER = null;
+            NATIVE_STREAMLINE_PCL = null;
+            NATIVE_STREAMLINE_REFLEX = null;
+            NATIVE_STREAMLINE_DLSSG = null;
+            NATIVE_STREAMLINE_DLSSG_FEATURE = null;
+            NATIVE_STREAMLINE_LOWLATENCY_FEATURE = null;
         }
     }
 

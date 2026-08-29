@@ -60,7 +60,9 @@ loom {
 			}
 			programArgs '--graphicsBackend', selectedBackend
 			if (selectedBackend == 'vulkan') {
-				programArgs '--vulkanValidation'
+				// Streamline broke it.
+				// Fuck NVIDIA again.
+				//programArgs '--vulkanValidation'
 			}
 		}
 	}

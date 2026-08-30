@@ -114,6 +114,24 @@ public abstract class VideoSettingsScreenMixin {
             if (reflexWidget != null) {
                 reflexWidget.active = StreamlineReflex.available();
             }
+            list.addBig(this.prime$options.streamline().dlssFrameGenerationEnabled());
+            list.addBig(this.prime$options.streamline().dlssFrameGenerationMultiplier());
+            list.addBig(this.prime$options.streamline().dlssFrameGenerationUiRecomposition());
+            AbstractWidget dlssFrameGenerationWidget =
+                    list.findOption(this.prime$options.streamline().dlssFrameGenerationEnabled());
+            AbstractWidget dlssFrameGenerationMultiplierWidget =
+                    list.findOption(this.prime$options.streamline().dlssFrameGenerationMultiplier());
+            AbstractWidget dlssFrameGenerationUiRecompositionWidget =
+                    list.findOption(this.prime$options.streamline().dlssFrameGenerationUiRecomposition());
+            if (dlssFrameGenerationWidget != null) {
+                dlssFrameGenerationWidget.active = StreamlineReflex.available();
+            }
+            if (dlssFrameGenerationMultiplierWidget != null) {
+                dlssFrameGenerationMultiplierWidget.active = StreamlineReflex.available();
+            }
+            if (dlssFrameGenerationUiRecompositionWidget != null) {
+                dlssFrameGenerationUiRecompositionWidget.active = StreamlineReflex.available();
+            }
             list.addHeader(PRIME$DIAGNOSTICS_HEADER);
             list.addBig(this.prime$options.diagnostics().rendererDiagnostics());
             list.addBig(this.prime$options.diagnostics().rawOutput());
@@ -226,10 +244,31 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$options.diagnostics().rrInputView(), RrInputView.OFF);
         this.prime$refresh(this.prime$options.diagnostics().nrdInputView(), NrdInputView.OFF);
         this.prime$refresh(this.prime$options.streamline().reflexMode(), ReflexMode.OFF);
+        this.prime$refresh(
+                this.prime$options.streamline().dlssFrameGenerationEnabled(), false);
+        this.prime$refresh(
+                this.prime$options.streamline().dlssFrameGenerationMultiplier(), 2);
+        this.prime$refresh(
+                this.prime$options.streamline().dlssFrameGenerationUiRecomposition(), false);
         AbstractWidget reflexWidget =
                 list.findOption(this.prime$options.streamline().reflexMode());
         if (reflexWidget != null) {
             reflexWidget.active = StreamlineReflex.available();
+        }
+        AbstractWidget dlssFrameGenerationWidget =
+                list.findOption(this.prime$options.streamline().dlssFrameGenerationEnabled());
+        if (dlssFrameGenerationWidget != null) {
+            dlssFrameGenerationWidget.active = StreamlineReflex.available();
+        }
+        AbstractWidget dlssFrameGenerationMultiplierWidget =
+                list.findOption(this.prime$options.streamline().dlssFrameGenerationMultiplier());
+        if (dlssFrameGenerationMultiplierWidget != null) {
+            dlssFrameGenerationMultiplierWidget.active = StreamlineReflex.available();
+        }
+        AbstractWidget dlssFrameGenerationUiRecompositionWidget =
+                list.findOption(this.prime$options.streamline().dlssFrameGenerationUiRecomposition());
+        if (dlssFrameGenerationUiRecompositionWidget != null) {
+            dlssFrameGenerationUiRecompositionWidget.active = StreamlineReflex.available();
         }
     }
 

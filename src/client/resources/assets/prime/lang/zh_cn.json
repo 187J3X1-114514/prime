@@ -141,5 +141,11 @@
   "prime.options.low_latency.reflex_mode.unavailable.tooltip": "需要 Windows、NVIDIA 显卡，且 Streamline 初始化成功。",
   "prime.options.low_latency.reflex_mode.off": "关闭",
   "prime.options.low_latency.reflex_mode.on": "开启",
-  "prime.options.low_latency.reflex_mode.boost": "开启 + Boost"
+  "prime.options.low_latency.reflex_mode.boost": "开启 + Boost",
+  "prime.options.streamline.dlss_frame_generation": "DLSS 帧生成",
+  "prime.options.streamline.dlss_frame_generation.tooltip": "通过 NVIDIA Streamline DLSS-G 生成插值帧。需要 Windows、兼容的 NVIDIA 显卡、Streamline 和 Reflex；Reflex 关闭时本功能不会生效。",
+  "prime.options.streamline.dlss_frame_generation_multiplier": "DLSS 帧生成倍率",
+  "prime.options.streamline.dlss_frame_generation_multiplier.tooltip": "设置每个真实渲染帧对应的输出帧倍率。实际可用上限由驱动和 Streamline 决定。",
+  "prime.options.streamline.dlss_frame_generation_ui_recomposition": "DLSS UI 重混合",
+  "prime.options.streamline.dlss_frame_generation_ui_recomposition.tooltip": "提取游戏 UI 不透明度供 DLSS-G 重混合使用。需要启用 DLSS 帧生成，并且 Streamline UI Alpha 路径可用。"
 }

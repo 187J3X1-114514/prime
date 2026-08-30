@@ -17,7 +17,10 @@ record PrimeConfigData(
         int terrainWorkerPercentage,
         boolean hdrEnabled,
         int referenceWhiteNits,
-        ReflexMode reflexMode) {
+        ReflexMode reflexMode,
+        boolean dlssFrameGenerationEnabled,
+        int dlssFrameGenerationMultiplier,
+        boolean dlssFrameGenerationUiRecomposition) {
     PrimeConfigData {
         Objects.requireNonNull(settings, "settings");
         Objects.requireNonNull(reflexMode, "reflexMode");
@@ -27,6 +30,10 @@ record PrimeConfigData(
         terrainWorkerPercentage =
                 TerrainWorkerSettings.validatePercentage(terrainWorkerPercentage);
         referenceWhiteNits = HdrOutput.validateReferenceWhiteNits(referenceWhiteNits);
+        if (dlssFrameGenerationMultiplier < 2) {
+            throw new IllegalArgumentException(
+                    "DLSS frame generation multiplier must be at least 2");
+        }
     }
 
     static PrimeConfigData defaults() {
@@ -38,6 +45,9 @@ record PrimeConfigData(
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 false,
                 HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS,
-                ReflexMode.OFF);
+                ReflexMode.OFF,
+                false,
+                2,
+                false);
     }
 }

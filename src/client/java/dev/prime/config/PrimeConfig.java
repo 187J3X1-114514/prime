@@ -33,6 +33,9 @@ public final class PrimeConfig {
     private static boolean hdrEnabled;
     private static int referenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
     private static ReflexMode reflexMode = ReflexMode.OFF;
+    private static boolean dlssFrameGenerationEnabled;
+    private static int dlssFrameGenerationMultiplier = 2;
+    private static boolean dlssFrameGenerationUiRecomposition;
     private static long rendererRevision;
     private static boolean dirty;
 
@@ -72,6 +75,9 @@ public final class PrimeConfig {
         referenceWhiteNits = loaded.referenceWhiteNits();
         HdrOutput.setReferenceWhiteNits(referenceWhiteNits);
         reflexMode = loaded.reflexMode();
+        dlssFrameGenerationEnabled = loaded.dlssFrameGenerationEnabled();
+        dlssFrameGenerationMultiplier = loaded.dlssFrameGenerationMultiplier();
+        dlssFrameGenerationUiRecomposition = loaded.dlssFrameGenerationUiRecomposition();
         rendererRevision = 0L;
         dirty = rewriteNeeded;
     }
@@ -188,6 +194,42 @@ public final class PrimeConfig {
         }
     }
 
+    public static boolean dlssFrameGenerationEnabled() {
+        return dlssFrameGenerationEnabled;
+    }
+
+    public static void setDlssFrameGenerationEnabled(boolean enabled) {
+        if (enabled != dlssFrameGenerationEnabled) {
+            dlssFrameGenerationEnabled = enabled;
+            dirty = true;
+        }
+    }
+
+    public static int dlssFrameGenerationMultiplier() {
+        return dlssFrameGenerationMultiplier;
+    }
+
+    public static void setDlssFrameGenerationMultiplier(int multiplier) {
+        if (multiplier < 2) {
+            throw new IllegalArgumentException("DLSS frame generation multiplier must be at least 2");
+        }
+        if (multiplier != dlssFrameGenerationMultiplier) {
+            dlssFrameGenerationMultiplier = multiplier;
+            dirty = true;
+        }
+    }
+
+    public static boolean dlssFrameGenerationUiRecomposition() {
+        return dlssFrameGenerationUiRecomposition;
+    }
+
+    public static void setDlssFrameGenerationUiRecomposition(boolean enabled) {
+        if (enabled != dlssFrameGenerationUiRecomposition) {
+            dlssFrameGenerationUiRecomposition = enabled;
+            dirty = true;
+        }
+    }
+
     public static void setTerrainWorkerPercentage(int percentage) {
         int replacement = TerrainWorkerSettings.validatePercentage(percentage);
         if (replacement != terrainWorkerPercentage) {
@@ -269,6 +311,9 @@ public final class PrimeConfig {
         setHdrEnabled(false);
         setReferenceWhiteNits(HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
         setReflexMode(ReflexMode.OFF);
+        setDlssFrameGenerationEnabled(false);
+        setDlssFrameGenerationMultiplier(2);
+        setDlssFrameGenerationUiRecomposition(false);
     }
 
     static PrimeSettings restoredDefaults(PrimeSettings current) {
@@ -320,7 +365,10 @@ public final class PrimeConfig {
                 terrainWorkerPercentage,
                 hdrEnabled,
                 referenceWhiteNits,
-                reflexMode);
+                reflexMode,
+                dlssFrameGenerationEnabled,
+                dlssFrameGenerationMultiplier,
+                dlssFrameGenerationUiRecomposition);
     }
 
     private static void update(PrimeSettings replacement) {

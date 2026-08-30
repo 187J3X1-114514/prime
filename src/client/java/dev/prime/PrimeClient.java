@@ -14,6 +14,7 @@ import dev.prime.client.PrimeRuntime;
 import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.scene.vanilla.ItemFrameModelFallback;
 import dev.prime.streamline.StreamlineReflex;
+import dev.prime.streamline.StreamlineFrameGeneration;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.PrimeClient;
 import dev.prime.mixin.MinecraftAccessor;
+import dev.prime.config.PrimeConfig;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.diagnostic.NrdInputView;
@@ -158,6 +159,36 @@ public final class PrimeRuntime {
         }
         try {
             activeRenderer.render(mainTarget, settings);
+        } catch (RuntimeException exception) {
+            this.fail(exception);
+        }
+    }
+
+    public void clearUiAlpha(RenderTarget mainTarget) {
+        VulkanRenderer activeRenderer = this.lifecycle.renderer();
+        if (activeRenderer == null
+                || this.lifecycle.state() != RuntimeState.ACTIVE
+                || activeRenderer.screenshotActive()) {
+            return;
+        }
+        try {
+            activeRenderer.clearUiAlpha(
+                    mainTarget, PrimeConfig.dlssFrameGenerationUiRecomposition());
+        } catch (RuntimeException exception) {
+            this.fail(exception);
+        }
+    }
+
+    public void captureUiAlpha(RenderTarget mainTarget) {
+        VulkanRenderer activeRenderer = this.lifecycle.renderer();
+        if (activeRenderer == null
+                || this.lifecycle.state() != RuntimeState.ACTIVE
+                || activeRenderer.screenshotActive()) {
+            return;
+        }
+        try {
+            activeRenderer.captureUiAlpha(
+                    mainTarget, PrimeConfig.dlssFrameGenerationUiRecomposition());
         } catch (RuntimeException exception) {
             this.fail(exception);
         }

@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import dev.prime.binding.streamline.ReflexMode;
 import dev.prime.config.PrimeConfig;
 import dev.prime.mixin.MinecraftAccessor;
+import dev.prime.streamline.StreamlineFrameGeneration;
 import dev.prime.streamline.StreamlineReflex;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
@@ -87,7 +88,10 @@ public final class PrimeVideoOptions {
                         rrInputView(diagnosticChanged),
                         nrdInputView(diagnosticChanged)),
                 new Streamline(
-                        reflexMode()));
+                        reflexMode(),
+                        dlssFrameGenerationEnabled(),
+                        dlssFrameGenerationMultiplier(),
+                        dlssFrameGenerationUiRecomposition()));
     }
 
     private static OptionInstance<Boolean> pathTracingEnabled() {
@@ -605,6 +609,39 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setReflexMode);
     }
 
+    private static OptionInstance<Boolean> dlssFrameGenerationEnabled() {
+        return OptionInstance.createBoolean(
+                "prime.options.streamline.dlss_frame_generation",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.streamline.dlss_frame_generation.tooltip")),
+                PrimeConfig.dlssFrameGenerationEnabled(),
+                PrimeConfig::setDlssFrameGenerationEnabled);
+    }
+
+    private static OptionInstance<Integer> dlssFrameGenerationMultiplier() {
+        int maximumMultiplier = StreamlineFrameGeneration.maximumMultiplier();
+        int effectiveMultiplier = Math.min(
+                PrimeConfig.dlssFrameGenerationMultiplier(), maximumMultiplier);
+        return new OptionInstance<>(
+                "prime.options.streamline.dlss_frame_generation_multiplier",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.streamline.dlss_frame_generation_multiplier.tooltip")),
+                (caption, multiplier) -> Options.genericValueLabel(
+                        caption, Component.literal(multiplier + "x")),
+                new OptionInstance.IntRange(2, maximumMultiplier),
+                effectiveMultiplier,
+                PrimeConfig::setDlssFrameGenerationMultiplier);
+    }
+
+    private static OptionInstance<Boolean> dlssFrameGenerationUiRecomposition() {
+        return OptionInstance.createBoolean(
+                "prime.options.streamline.dlss_frame_generation_ui_recomposition",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.streamline.dlss_frame_generation_ui_recomposition.tooltip")),
+                PrimeConfig.dlssFrameGenerationUiRecomposition(),
+                PrimeConfig::setDlssFrameGenerationUiRecomposition);
+    }
+
     private static OptionInstance<Boolean> hdr() {
         return OptionInstance.createBoolean(
                 "prime.options.display.hdr",
@@ -677,6 +714,9 @@ public final class PrimeVideoOptions {
     }
 
     public record Streamline(
-            OptionInstance<ReflexMode> reflexMode) {
+            OptionInstance<ReflexMode> reflexMode,
+            OptionInstance<Boolean> dlssFrameGenerationEnabled,
+            OptionInstance<Integer> dlssFrameGenerationMultiplier,
+            OptionInstance<Boolean> dlssFrameGenerationUiRecomposition) {
     }
 }

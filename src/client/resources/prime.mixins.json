@@ -23,6 +23,7 @@
         "ItemFrameRendererMixin",
         "LevelExtractorMixin",
         "LevelRendererMixin",
+        "MainTargetMixin",
         "MinecraftAccessor",
         "MinecraftMixin",
         "ModelBlockRendererMixin",

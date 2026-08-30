@@ -141,5 +141,10 @@
   "prime.options.low_latency.reflex_mode.unavailable.tooltip": "Requires Windows, an NVIDIA GPU, and a successful Streamline initialization.",
   "prime.options.low_latency.reflex_mode.off": "Off",
   "prime.options.low_latency.reflex_mode.on": "On",
-  "prime.options.low_latency.reflex_mode.boost": "On + Boost"
-}
+  "prime.options.low_latency.reflex_mode.boost": "On + Boost",
+  "prime.options.streamline.dlss_frame_generation": "DLSS Frame Generation",
+  "prime.options.streamline.dlss_frame_generation.tooltip": "Generates interpolated frames through NVIDIA Streamline DLSS-G. Requires Windows, a compatible NVIDIA GPU, Streamline, and Reflex; it is inactive while Reflex is off.",
+  "prime.options.streamline.dlss_frame_generation_multiplier": "DLSS Frame Generation Multiplier",
+  "prime.options.streamline.dlss_frame_generation_multiplier.tooltip": "Sets the output-frame multiplier for each rendered frame. The available maximum is determined by the driver and Streamline.",
+  "prime.options.streamline.dlss_frame_generation_ui_recomposition": "DLSS UI Recomposition",
+  "prime.options.streamline.dlss_frame_generation_ui_recomposition.tooltip": "Separates the game's UI opacity for DLSS-G recomposition. Requires DLSS Frame Generation and a compatible Streamline UI alpha path."}

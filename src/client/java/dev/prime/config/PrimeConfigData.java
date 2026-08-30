@@ -1,5 +1,6 @@
 package dev.prime.config;
 
+import dev.prime.binding.streamline.ReflexMode;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.MaximumBounceSettings;
 import dev.prime.render.MinimumBounceSettings;
@@ -15,9 +16,11 @@ record PrimeConfigData(
         int maximumBounces,
         int terrainWorkerPercentage,
         boolean hdrEnabled,
-        int referenceWhiteNits) {
+        int referenceWhiteNits,
+        ReflexMode reflexMode) {
     PrimeConfigData {
         Objects.requireNonNull(settings, "settings");
+        Objects.requireNonNull(reflexMode, "reflexMode");
         additionalSpecularBounces = SpecularBounceSettings.validateCount(additionalSpecularBounces);
         minimumBounces = MinimumBounceSettings.validateCount(minimumBounces);
         maximumBounces = MaximumBounceSettings.validateCount(maximumBounces);
@@ -34,6 +37,7 @@ record PrimeConfigData(
                 MaximumBounceSettings.DEFAULT_COUNT,
                 TerrainWorkerSettings.DEFAULT_PERCENTAGE,
                 false,
-                HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
+                HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS,
+                ReflexMode.OFF);
     }
 }

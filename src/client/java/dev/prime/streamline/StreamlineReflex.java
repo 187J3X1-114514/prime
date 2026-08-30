@@ -75,6 +75,14 @@ public final class StreamlineReflex {
         return available() && gameLoaded && !currentToken.equals(MemorySegment.NULL);
     }
 
+    public static MemorySegment currentToken() {
+        return currentToken;
+    }
+
+    public static int currentFrameIndex() {
+        return frameCounter;
+    }
+
     public static void onGameLoadFinished() {
         gameLoaded = true;
     }
@@ -150,7 +158,13 @@ public final class StreamlineReflex {
         if (limit <= 0 || limit >= 260) {
             return 0;
         }
-        return (1_000_000 + limit - 1) / limit;
+        int frameLimitUs = (1_000_000 + limit - 1) / limit;
+        if (PrimeConfig.dlssFrameGenerationEnabled()) {
+            frameLimitUs = Math.max(
+                    1,
+                    frameLimitUs * StreamlineFrameGeneration.effectiveOutputMultiplier());
+        }
+        return frameLimitUs;
     }
 
     public static void release() {

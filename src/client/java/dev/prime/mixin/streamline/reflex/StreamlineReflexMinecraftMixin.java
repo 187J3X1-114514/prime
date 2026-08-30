@@ -2,6 +2,7 @@ package dev.prime.mixin.streamline.reflex;
 
 import dev.prime.PrimeClient;
 import dev.prime.streamline.StreamlineReflex;
+import dev.prime.streamline.StreamlineFrameGeneration;
 import net.minecraft.client.FramerateLimiter;
 import net.minecraft.client.GameLoadCookie;
 import net.minecraft.client.Minecraft;
@@ -16,6 +17,7 @@ public abstract class StreamlineReflexMinecraftMixin {
     @Inject(method = "runTick", at = @At("HEAD"))
     private void prime$reflexBeginFrame(boolean advanceGameTime, CallbackInfo ci) {
         StreamlineReflex.beginFrame();
+        StreamlineFrameGeneration.beginFrame(StreamlineReflex.currentFrameIndex());
     }
 
     @Inject(
@@ -44,6 +46,7 @@ public abstract class StreamlineReflexMinecraftMixin {
     @Inject(method = "onGameLoadFinished", at = @At("RETURN"))
     private void prime$reflexGameLoadFinished(GameLoadCookie cookie, CallbackInfo ci) {
         StreamlineReflex.initialize(PrimeClient.streamline());
+        StreamlineFrameGeneration.initialize(PrimeClient.streamline());
         StreamlineReflex.onGameLoadFinished();
     }
 }

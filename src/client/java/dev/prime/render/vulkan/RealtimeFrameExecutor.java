@@ -6,6 +6,8 @@ import dev.prime.render.RealtimeFramePlan;
 import dev.prime.infrastructure.ResourceCleanup;
 import dev.prime.render.diagnostic.ImageDiagnosticSelection;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
+import dev.prime.streamline.StreamlineFrameGeneration;
+import dev.prime.streamline.StreamlineReflex;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
@@ -50,6 +52,7 @@ public final class RealtimeFrameExecutor {
         long atmosphereFrame = 0L;
         MaterialTexturePages.FrameToken materialFrame = null;
         DisplayExposureDiagnostics.Capture exposureCapture = null;
+        StreamlineInputFlipPass streamlineInputs = null;
         VulkanFrameSubmission submission =
                 new VulkanFrameSubmission(this.imageInitialization);
         try {
@@ -117,12 +120,30 @@ public final class RealtimeFrameExecutor {
                     mainColor,
                     processor.displayWidth(),
                     processor.displayHeight());
+            StreamlineFrameGeneration.publish(
+                    StreamlineReflex.currentFrameIndex(),
+                    plan.integrator().camera(),
+                    processor.rawFrame(),
+                    output,
+                    processor.displayWidth(),
+                    processor.displayHeight(),
+                    output.format(),
+                    0);
+            streamlineInputs = StreamlineInputFlipPass.create(
+                    this.context,
+                    processor.rawFrame().viewZ(),
+                    processor.rawFrame().transportMetadata(),
+                    output);
+            streamlineInputs.record(commandBuffer);
+            StreamlineFrameGeneration.prepare(commandBuffer, streamlineInputs);
             this.context.device().instance().debug().endDebugGroup(
                     commandBuffer);
             submission.submit(
                     encoder,
                     commandBuffer,
                     "end Prime realtime command buffer");
+            this.context.defer(streamlineInputs);
+            streamlineInputs = null;
             HdrPresentation.publish(this.context, processor.hdrDisplayOutput(), output);
             // A normal return transfers command/resource ownership and advances Prime histories.
             submission.submitted();
@@ -159,6 +180,9 @@ public final class RealtimeFrameExecutor {
                 failure = ResourceCleanup.run(
                         () -> processor.abandon(processorFrame),
                         failure);
+                if (streamlineInputs != null) {
+                    failure = ResourceCleanup.destroy(streamlineInputs, failure);
+                }
                 DisplayExposureDiagnostics.Capture abandonedExposureCapture =
                         exposureCapture;
                 failure = ResourceCleanup.run(

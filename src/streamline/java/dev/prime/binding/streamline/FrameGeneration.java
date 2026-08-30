@@ -31,8 +31,12 @@ public final class FrameGeneration {
 
     /** @param options optional {@link DlssgOptions} queried together with the state, may be null */
     public int getState(ViewportHandle viewport, DlssgState stateOut, DlssgOptions options) {
+        MemorySegment optionsSegment = options == null
+                ? MemorySegment.NULL
+                : options.segment();
         try {
-            return (int) this.slDLSSGGetState.invokeExact(viewport.segment(), stateOut.segment(), options == null ? MemorySegment.NULL : options.segment());
+            return (int) this.slDLSSGGetState.invokeExact(
+                    viewport.segment(), stateOut.segment(), optionsSegment);
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }

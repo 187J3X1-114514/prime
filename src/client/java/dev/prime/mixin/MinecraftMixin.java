@@ -3,6 +3,7 @@ package dev.prime.mixin;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.streamline.StreamlineReflex;
+import dev.prime.streamline.StreamlineFrameGeneration;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -27,6 +28,7 @@ public abstract class MinecraftMixin {
     @Inject(method = "close()V", at = @At("HEAD"))
     private void prime$shutdown(CallbackInfo ci) {
         StreamlineReflex.shutdown();
+        StreamlineFrameGeneration.shutdown();
         PrimeRuntime.instance().shutdown();
     }
 }

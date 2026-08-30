@@ -19,6 +19,7 @@ import dev.prime.config.PrimeConfig;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.vulkan.RawWavefrontFrame;
+import dev.prime.render.vulkan.StreamlineInputFlipPass;
 import dev.prime.render.vulkan.VulkanImage;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -134,9 +135,12 @@ public final class StreamlineFrameGeneration {
         }
     }
 
-    public static synchronized boolean prepare(VkCommandBuffer commandBuffer) {
+    public static synchronized boolean prepare(
+            VkCommandBuffer commandBuffer, StreamlineInputFlipPass flippedInputs) {
         Frame current = frame;
-        if (current == null || current.logicalFrameIndex != currentFrameIndex()) {
+        if (current == null
+                || flippedInputs == null
+                || current.logicalFrameIndex != currentFrameIndex()) {
             return false;
         }
         try (Arena callArena = Arena.ofConfined()) {
@@ -148,12 +152,13 @@ public final class StreamlineFrameGeneration {
                     != Streamline.RESULT_OK) {
                 return fail("set-constants", "slSetConstants failed", null);
             }
-            VulkanImage depth = current.rawFrame.viewZ();
-            VulkanImage motion = current.rawFrame.transportMetadata();
+            VulkanImage depth = flippedInputs.depth();
+            VulkanImage motion = flippedInputs.motion();
+            VulkanImage color = flippedInputs.color();
             MemorySegment tags = ResourceTag.allocateArray(callArena, 3);
             tag(ResourceTag.wrap(tags, 0), depth, BufferType.DEPTH, callArena);
             tag(ResourceTag.wrap(tags, 1), motion, BufferType.MOTION_VECTORS, callArena);
-            tag(ResourceTag.wrap(tags, 2), current.color, BufferType.HUD_LESS_COLOR, callArena);
+            tag(ResourceTag.wrap(tags, 2), color, BufferType.HUD_LESS_COLOR, callArena);
             if (streamline.setTagForFrame(
                     currentToken,
                     viewport,
@@ -173,7 +178,7 @@ public final class StreamlineFrameGeneration {
                     current.colorFormat,
                     motion.format(),
                     depth.format(),
-                    current.color.format(),
+                    color.format(),
                     PrimeConfig.dlssFrameGenerationUiRecomposition(),
                     PrimeConfig.dlssFrameGenerationUiRecomposition()
                             ? VK12.VK_FORMAT_R8_UNORM

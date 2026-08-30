@@ -741,11 +741,24 @@ public final class VulkanRenderer implements AutoCloseable {
                 mainColorView.vkImageView(),
                 mainColor.getWidth(0),
                 mainColor.getHeight(0));
-        StreamlineFrameGeneration.prepareUiAlpha(
+        if (alpha == null) {
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end Prime UI alpha extraction command buffer");
+            encoder.execute(commandBuffer);
+            return;
+        }
+        if (!StreamlineFrameGeneration.prepareUiAlpha(
                 commandBuffer,
                 alpha,
                 mainColor.getWidth(0),
-                mainColor.getHeight(0));
+                mainColor.getHeight(0))) {
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end Prime UI alpha extraction command buffer");
+            encoder.execute(commandBuffer);
+            return;
+        }
         VulkanContext.check(
                 VK12.vkEndCommandBuffer(commandBuffer),
                 "end Prime UI alpha extraction command buffer");

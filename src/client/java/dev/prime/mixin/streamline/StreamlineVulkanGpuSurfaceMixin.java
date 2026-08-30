@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.systems.GpuSurface;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import com.mojang.blaze3d.vulkan.VulkanGpuSurface;
+import dev.prime.streamline.StreamlineReflex;
 import org.lwjgl.glfw.GLFWNativeWin32;
 import org.lwjgl.glfw.GLFWVulkan;
 import org.lwjgl.system.JNI;
@@ -119,6 +120,22 @@ public class StreamlineVulkanGpuSurfaceMixin {
                         VK10.VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                 VK10.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
         );
+    }
+
+    @Inject(method = "configure", at = @At("HEAD"))
+    private void prime$invalidateReflexPacing(GpuSurface.Configuration config, CallbackInfo ci) {
+        StreamlineReflex.invalidatePacing();
+    }
+
+    @Inject(method = "present", at = @At("HEAD"))
+    private void prime$reflexPresentBegin(CallbackInfo ci) {
+        StreamlineReflex.endRenderSubmission();
+        StreamlineReflex.beginPresent();
+    }
+
+    @Inject(method = "present", at = @At("RETURN"))
+    private void prime$reflexPresentEnd(CallbackInfo ci) {
+        StreamlineReflex.endPresent();
     }
 
     @Redirect(method = "present",

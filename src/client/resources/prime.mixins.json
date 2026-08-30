@@ -40,13 +40,16 @@
         "VulkanInstanceMixin",
         "accessor.SpriteContentsAccessor",
         "accessor.TextureAtlasAccessor",
-        "accessor.TextureAtlasSpriteAccessor"
+        "accessor.TextureAtlasSpriteAccessor",
+        "streamline.StreamlineHookMixin",
+        "streamline.reflex.StreamlineReflexKeyboardMixin",
+        "streamline.reflex.StreamlineReflexMinecraftMixin",
+        "streamline.reflex.StreamlineReflexMouseMixin",
+        "streamline.StreamlineVulkanGpuSurfaceMixin"
     ],
     "injectors": {
         "defaultRequire": 1
     },
     "mixins": [
-        "streamline.StreamlineHookMixin",
-        "streamline.StreamlineVulkanGpuSurfaceMixin"
     ]
 }

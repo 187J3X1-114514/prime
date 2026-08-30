@@ -13,6 +13,7 @@ import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.scene.vanilla.ItemFrameModelFallback;
+import dev.prime.streamline.StreamlineReflex;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -39,16 +40,20 @@ public final class PrimeClient implements ClientModInitializer {
     private static final Identifier RELOAD_LISTENER_ID = Identifier.fromNamespaceAndPath(
             PrimeInfo.MOD_ID, "ray_tracing_resources");
 
+    public static Streamline streamline() {
+        return streamlineInstance;
+    }
+
     private static Streamline streamlineInstance;
 
     public static void initializeStreamline(){
         NativeLibraries.NATIVE_STREAMLINE_COMMON.getOrCreateLibrary();
-        Path interposerPath = NativeLibraries.NATIVE_STREAMLINE_INTERPOSER.tryToExtract();
         NativeLibraries.NATIVE_STREAMLINE_PCL.getOrCreateLibrary();
         NativeLibraries.NATIVE_STREAMLINE_REFLEX.getOrCreateLibrary();
         NativeLibraries.NATIVE_STREAMLINE_DLSSG.getOrCreateLibrary();
         NativeLibraries.NATIVE_STREAMLINE_DLSSG_FEATURE.getOrCreateLibrary();
         NativeLibraries.NATIVE_STREAMLINE_LOWLATENCY_FEATURE.getOrCreateLibrary();
+        Path interposerPath = NativeLibraries.NATIVE_STREAMLINE_INTERPOSER.tryToExtract();
         streamlineInstance = Streamline.open(interposerPath);
 
         try (Arena arena = Arena.ofConfined()) {
@@ -76,8 +81,15 @@ public final class PrimeClient implements ClientModInitializer {
             preferences.engineVersion(arena.allocateFrom("0.1.0"));
             preferences.projectId(arena.allocateFrom("07210721-0721-4E6F-A8C1-1145142D0A3C"));
             preferences.showConsole(true);
-            streamlineInstance.init(preferences);
+            int initResult = streamlineInstance.init(preferences);
+            if (initResult != Streamline.RESULT_OK) {
+                PrimeInfo.LOGGER.warn(
+                        "Streamline slInit failed (result {}); Reflex/PCL features disabled",
+                        initResult);
+                return;
+            }
         }
+        PrimeInfo.LOGGER.info("Streamline initialized (Reflex available: {})", StreamlineReflex.available());
     }
 
     @Override

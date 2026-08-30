@@ -2,6 +2,7 @@ package dev.prime.client;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.prime.PrimeClient;
 import dev.prime.mixin.MinecraftAccessor;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.RendererSettings;
@@ -19,6 +20,8 @@ import dev.prime.render.runtime.VulkanRenderer;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.HdrPresentation;
 import java.util.List;
+
+import dev.prime.streamline.StreamlineReflex;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import org.joml.Matrix4fc;

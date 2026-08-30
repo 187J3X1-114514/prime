@@ -41,7 +41,7 @@ public final class NativeLibraries {
             NATIVE_STREAMLINE_REFLEX = createLibrary("sl.reflex.dll", "Streamline SDK Reflex Plugin");
             NATIVE_STREAMLINE_DLSSG = createLibrary("sl.dlss_g.dll", "Streamline SDK DLSS-FG Plugin");
             NATIVE_STREAMLINE_DLSSG_FEATURE = createLibrary("nvngx_dlssg.dll", "DLSS FG Feature");
-            NATIVE_STREAMLINE_LOWLATENCY_FEATURE = createLibrary("nvngx_dlssg.dll", "Reflex Low Latency Feature");
+            NATIVE_STREAMLINE_LOWLATENCY_FEATURE = createLibrary("NvLowLatencyVk.dll", "Reflex Low Latency Feature");
         } else {
             // TODO
             NATIVE_DLSSRR_BRIDGE = null;
